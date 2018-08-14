@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+
+cp -a /src/build/. /go/src/gitlab.com/remp/pythia/cmd/pythia_segments 1>&2
+make build-static 1>&2
+tar -cf - pythia_segments swagger
