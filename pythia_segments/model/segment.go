@@ -136,7 +136,7 @@ func (sDB *SegmentDB) CacheSegments() error {
 
 	sg := &SegmentGroup{
 		ID:      1,
-		Name:    "Conversion probability",
+		Name:    "Conversion probability (based on machine learned model)",
 		Code:    "conversion_probability",
 		Sorting: 100,
 	}
@@ -157,7 +157,7 @@ func (sDB *SegmentDB) CacheSegments() error {
 		},
 		&Segment{
 			ID:     2,
-			Name:   "Sharing account",
+			Name:   "Sharing account (logged to account with active subscription recently)",
 			Code:   "shared_account_login",
 			Active: true,
 			Group:  sg,
