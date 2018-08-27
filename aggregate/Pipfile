@@ -1,0 +1,14 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+ua-parser = "==0.8.0"
+"psycopg2" = "==2.7.5"
+"psycopg2-binary" = "==2.7.5"
+arrow = "==0.12.1"
+pyyaml = "==3.13"
+user-agents = "==1.1.0"
+
+[dev-packages]
