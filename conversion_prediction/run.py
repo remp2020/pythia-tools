@@ -499,10 +499,9 @@ if __name__ == "__main__":
     parser.add_argument('action',
                         help='Should either be "train" for model training or "predict for prediction"',
                         type=str)
-    parser.add_argument('--min_date',
+    parser.add_argument('min_date',
                         help='Min date denoting from when to fetch data',
                         type=mkdatetime,
-                        required=False,
                         nargs='?')
     parser.add_argument('--max_date',
                         help='Max date denoting up to when to fetch data',
