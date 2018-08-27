@@ -27,10 +27,10 @@ range_start=$1
 file_date=${range_start//-/}
 
 files=("pageviews_time_spent" "pageviews" "commerce")
-#for idx in "${files[@]}"; do
-#    echo "Processing ${idx}, date: ${range_start}"
-#    es2csv -u $ELASTIC_ADDR -i "${idx}" -q "time: [ ${range_start} TO ${range_start} ]" -o ${idx}_${file_date}.csv
-#done
+for idx in "${files[@]}"; do
+    echo "Processing ${idx}, date: ${range_start}"
+    es2csv -u $ELASTIC_ADDR -i "${idx}" -q "time: [ ${range_start} TO ${range_start} ]" -o ${idx}_${file_date}.csv
+done
 
 python utils/aggregate.py ${file_date}
 python utils/conversion_events.py ${file_date}
