@@ -19,7 +19,6 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
     split_type, LABELS, CURRENT_MODEL_VERSION
 from utils.db_utils import create_connection, retrieve_data_for_query_key
-from utils.path import relative_to_file
 from utils.queries import queries
 
 load_dotenv()
@@ -165,20 +164,6 @@ def instantiate_label_encoder(labels: List['str']):
     le.fit(labels)
 
     return le
-
-
-def find_path_to_file_folder():
-    '''
-    This functions identifies the path to data/models/conversion_prediction folder based on where the script is ran
-    :return:
-    '''
-    current_file_path = relative_to_file(__file__, '')
-    distance_from_data_folder = len([dir for dir in current_file_path.split('/') if dir != ''])
-
-    if 'data' not in os.listdir(current_file_path + ('../' * distance_from_data_folder)):
-        raise ValueError('''Couldn't find data folder in expected path''')
-    else:
-        return current_file_path + ('../' * distance_from_data_folder) + 'data/models/conversion_prediction/'
 
 
 def create_train_test_transformations(

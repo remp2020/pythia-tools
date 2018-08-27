@@ -5,24 +5,15 @@ import pandas as pd
 import sqlalchemy
 from dotenv import load_dotenv
 
-from utils.path import relative_to_file
-
-dotenv_path = relative_to_file(__file__, '../.env')
-if isfile(dotenv_path):
-    load_dotenv(dotenv_path)
-
-
-def create_connection(connection_name: str, autocommit: bool=True):
+def create_connection(connection_string: str, autocommit: bool=True):
     '''
     Creates a connection to a DB based on a connection string in .env file
-    :param connection_name: needs to correspond to the variable name in .env
+    :param connection_string: connection string to connect to
     :param autocommit:
     :return:
     '''
-    connection_string = environ.get(connection_name, None)
-
     if connection_string is None:
-        raise ValueError(f'Unknown connection, please check if .env contains {connection_name}')
+        raise ValueError(f'Unknown connection, please check if .env contains connection string')
 
     engine = sqlalchemy \
         .create_engine(connection_string)
@@ -52,7 +43,7 @@ def retrieve_data_for_query_key(
 
 
 def create_predictions_table():
-    _, postgres = create_connection('POSTGRES_CONNECTION_STRING')
+    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
 
     if check_table_existence('conversion_predictions_daily'):
         query = '''
@@ -99,7 +90,7 @@ def create_predictions_table():
 
 
 def create_predictions_job_log():
-    _, postgres = create_connection('POSTGRES_CONNECTION_STRING')
+    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING')')
 
     if check_table_existence('prediction_job_log'):
         query = '''
@@ -128,7 +119,7 @@ def create_predictions_job_log():
 
 
 def check_table_existence(table_name: str) -> bool:
-    _, postgres = create_connection('POSTGRES_CONNECTION_STRING')
+    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
 
     query = sqlalchemy.sql.text('''
         SELECT 
@@ -146,7 +137,7 @@ def check_table_existence(table_name: str) -> bool:
 
 
 def check_user_defined_type_exists(type_name: str) -> bool:
-    _, postgres = create_connection('POSTGRES_CONNECTION_STRING')
+    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
 
     query = sqlalchemy.sql.text('''
         SELECT 
