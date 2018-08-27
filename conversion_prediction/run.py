@@ -1,29 +1,29 @@
-import pandas as pd
-import re
-import os
-import json
 import argparse
+import json
+import os
+import re
+import pandas as pd
 import sqlalchemy
-from typing import List, Dict
+
 from datetime import datetime, timedelta
+from os import environ
+from os.path import isfile
+from typing import List, Dict
 from dateutil.parser import parse
-from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from dotenv import load_dotenv
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.externals import joblib
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
-from sklearn.externals import joblib
-from os.path import isfile
-from dotenv import load_dotenv
-from utils.path import relative_to_file
-from os import environ
+from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
+from utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
+    split_type, LABELS, CURRENT_MODEL_VERSION
 from utils.db_utils import create_connection, retrieve_data_for_query_key
-from utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, split_type, LABELS, \
-    CURRENT_MODEL_VERSION
-from queries import queries
+from utils.path import relative_to_file
+from utils.queries import queries
 
-
-dotenv_path = relative_to_file(__file__, '../.env')
+dotenv_path = relative_to_file(__file__, '.env')
 if isfile(dotenv_path):
     load_dotenv(dotenv_path)
 
@@ -541,7 +541,7 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             training_split_parameters=args['training_split_parameters'],
             # model_arguments=args['model_arguments'],
-            model_arguments={'n_estimators': 1000, },
+            model_arguments={'n_estimators': 500, },
             overwrite_files=args['overwrite_files']
         )
 
