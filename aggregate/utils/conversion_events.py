@@ -8,7 +8,6 @@ import arrow
 from datetime import date
 from utils import load_env, create_con, migrate
 
-# BASE_PATH = os.path.dirname(os.path.realpath(__file__))
 BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
 
 class Commerce:
@@ -160,7 +159,7 @@ class PageViewsParser:
 
 
 def run(file_date):
-    env_vars = load_env()
+    load_env()
     commerce_file = BASE_PATH + "/commerce_" + file_date + ".csv"
     pageviews_file = BASE_PATH + "/pageviews_" + file_date + ".csv"
 
@@ -177,7 +176,7 @@ def run(file_date):
     day = int(file_date[6:8])
     cur_date = date(year, month, day)
 
-    conn, cur = create_con(env_vars['POSTGRES_USER'], env_vars['POSTGRES_PASS'], env_vars['POSTGRES_DB'], env_vars['POSTGRES_HOST'])
+    conn, cur = create_con(os.getenv("POSTGRES_USER"), os.getenv("POSTGRES_PASS"), os.getenv("POSTGRES_DB"),os.getenv("POSTGRES_HOST"))
     migrate(cur)
     conn.commit()
 

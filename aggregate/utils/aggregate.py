@@ -1,6 +1,7 @@
 from __future__ import print_function
 import csv
 import sys
+import os
 import os.path
 from user_agents import parse as ua_parse
 import re
@@ -129,14 +130,15 @@ class Parser:
 
 
 def run(file_date):
-    env_vars = load_env()
+    # env_vars = load_env()
+    load_env()
     pageviews_file = BASE_PATH + "/pageviews_" + file_date + ".csv"
 
     if not os.path.isfile(pageviews_file):
         print("Error: file " + pageviews_file + " does not exist")
         return
 
-    conn, cur = create_con(env_vars['POSTGRES_USER'], env_vars['POSTGRES_PASS'], env_vars['POSTGRES_DB'], env_vars['POSTGRES_HOST'])
+    conn, cur = create_con(os.getenv("POSTGRES_USER"), os.getenv("POSTGRES_PASS"), os.getenv("POSTGRES_DB"), os.getenv("POSTGRES_HOST"))
     migrate(cur)
     conn.commit()
 

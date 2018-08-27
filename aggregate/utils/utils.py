@@ -1,17 +1,12 @@
 import os.path
 import psycopg2
+from dotenv import load_dotenv
 
 
 def load_env(env_path=None):
     if env_path is None:
         env_path = os.path.dirname(os.path.realpath(__file__)) + "/../.env"
-    env_vars = {}
-    with open(env_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            ar = line.split('=')
-            env_vars[ar[0]] = ar[1]
-    return env_vars
+    load_dotenv(dotenv_path=env_path)
 
 
 def create_con(username, password, db, server):
