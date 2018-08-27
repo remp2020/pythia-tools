@@ -6,7 +6,6 @@ import pandas as pd
 import sqlalchemy
 
 from datetime import datetime, timedelta
-from os import environ
 from os.path import isfile
 from typing import List, Dict
 from dateutil.parser import parse
@@ -23,10 +22,7 @@ from utils.db_utils import create_connection, retrieve_data_for_query_key
 from utils.path import relative_to_file
 from utils.queries import queries
 
-dotenv_path = relative_to_file(__file__, '.env')
-if isfile(dotenv_path):
-    load_dotenv(dotenv_path)
-
+load_dotenv()
 
 def get_user_profiles_by_date(
         min_date: datetime=datetime.utcnow() - timedelta(days=31),
@@ -40,7 +36,7 @@ def get_user_profiles_by_date(
     :param moving_window_length:
     :return:
     '''
-    _, postgres = create_connection('POSTGRES_CONNECTION_STRING')
+    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
     query_string = queries['user_profiles_by_date']
     min_date = min_date.replace(hour=0, minute=0, second=0, microsecond=0)
     max_date = max_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -215,7 +211,7 @@ def create_train_test_transformations(
     X_test = data.iloc[test_indices].drop(columns='outcome')
     category_lists_dict = generate_category_lists_dict(X_train, CATEGORICAL_COLUMNS)
 
-    path_to_model_files = environ.get('PATH_TO_MODEL_FILES', None)
+    path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
     with open(
             f'{path_to_model_files}category_lists_{model_date}.json', 'w') as outfile:
         json.dump(category_lists_dict, outfile)
@@ -259,7 +255,7 @@ def delete_existing_model_file_for_same_date(filename: str, model_date) -> datet
         suffix = 'pkl'
     else:
         suffix = 'json'
-    path_to_model_files = environ.get('PATH_TO_MODEL_FILES', None)
+    path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
     if f'scaler_{model_date}.pkl' in os.listdir(
             path_to_model_files):
         os.remove(f'{path_to_model_files}{filename}_{model_date}.{suffix}')
@@ -369,7 +365,7 @@ def model_training_pipeline(
     model, outcome_frame = train_model(feature_frame,
                                        training_split_parameters=training_split_parameters,
                                        model_arguments=model_arguments)
-    path_to_model_files = environ.get('PATH_TO_MODEL_FILES', None)
+    path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
     joblib.dump(
         model,
         f'{path_to_model_files}model_{model_date}.pkl'
@@ -386,7 +382,7 @@ def load_model_related_constructs(
     :param scoring_date:
     :return:
     '''
-    path_to_model_files = environ.get('PATH_TO_MODEL_FILES', None)
+    path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
     model_related_file_list = os.listdir(path_to_model_files)
     last_model_related_files = {}
     for model_related_file in ['category_lists', 'scaler', 'model']:
@@ -474,7 +470,7 @@ def generate_and_upload_prediction(
     predictions['model_version'] = CURRENT_MODEL_VERSION
     predictions['created_at'] = datetime.utcnow()
     predictions['updated_at'] = datetime.utcnow()
-    _, postgres = create_connection('POSTGRES_CONNECTION_STRING')
+    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
     postgres.execute(
         sqlalchemy.sql.text(queries['upsert_predictions']), predictions.to_dict('records')
     )
@@ -499,10 +495,10 @@ if __name__ == "__main__":
     parser.add_argument('action',
                         help='Should either be "train" for model training or "predict for prediction"',
                         type=str)
-    parser.add_argument('min_date',
+    parser.add_argument('--min_date',
                         help='Min date denoting from when to fetch data',
                         type=mkdatetime,
-                        nargs='?')
+                        required=True)
     parser.add_argument('--max_date',
                         help='Max date denoting up to when to fetch data',
                         type=mkdatetime,
