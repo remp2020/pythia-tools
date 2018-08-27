@@ -4,7 +4,7 @@ import psycopg2
 
 def load_env(env_path=None):
     if env_path is None:
-        env_path = os.path.dirname(os.path.realpath(__file__)) + "/.env"
+        env_path = os.path.dirname(os.path.realpath(__file__)) + "/../.env"
     env_vars = {}
     with open(env_path, 'r') as f:
         for line in f:

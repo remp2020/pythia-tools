@@ -1,15 +1,22 @@
-###Data aggregation for Pythia
+###Data Aggregation for Pythia
+
+Aggregation script moving data from Elastic storage to PostgreSQL DB for Pythia processing.
+
+####Requirements
+Python 2 is only supported (because of es2csv). 
+All required Python packages are described in `requirements.txt` file. 
 
 ####Installation
-First install `pipenv` using `pip instal --user pipenv`
-Next install all vendor requirements using `pipenv install`
-Script requires connection to PostreSQL DB, credentials should be specified in `.env` file.
+First install all requirements using pip:
+
+`pip install -r requirements.txt`
+
+Script requires connection variables for PostreSQL DB and address of Elastic storage, 
+put these to `.env` file according to `.env.example` format.
 
 ####Usage
-Script works by downloading exported data from Google Drive (you will be asked to provide authentication token during first run), 
-extracting, aggregating it and saving results to database.
+Run aggregation for particular day using:
 
-Script can be run in two variants:
-`./aggregate.sh <date>`
-`./aggregate.sh <start_date> <end_date>`
+`./run.sh <date>`
+
 Date format is YYYY-MM-DD.

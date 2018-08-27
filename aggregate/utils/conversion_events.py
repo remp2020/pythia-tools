@@ -8,9 +8,8 @@ import arrow
 from datetime import date
 from utils import load_env, create_con, migrate
 
-
-BASE_PATH = os.path.dirname(os.path.realpath(__file__))
-
+# BASE_PATH = os.path.dirname(os.path.realpath(__file__))
+BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
 
 class Commerce:
     def __init__(self, row):

@@ -9,7 +9,7 @@ import psycopg2
 import psycopg2.extras
 from utils import load_env, create_con, migrate
 
-BASE_PATH = os.path.dirname(os.path.realpath(__file__))
+BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
 
 pattern = re.compile("(.*)pageviews_([0-9]+).csv")
 ua_cache = {}
