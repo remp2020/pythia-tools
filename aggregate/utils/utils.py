@@ -43,3 +43,9 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
 ) WITH (oids = false);
 '''
     cur.execute(sql)
+
+    sql2 = '''
+    ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS user_id text;
+    
+    '''
+    cur.execute(sql2)

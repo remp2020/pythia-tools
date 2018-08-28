@@ -29,6 +29,7 @@ class Parser:
                 'timespent': 0,
                 'sessions': set(),
                 'sessions_without_ref': set(),
+                'user_id': None,
             }
 
     def parse_user_agent(self, browser_id, user_agent):
@@ -50,6 +51,10 @@ class Parser:
                 self.create_record(row['browser_id'])
                 self.data[row['browser_id']]['pageviews'] += 1
                 self.data[row['browser_id']]['sessions'].add(row['remp_session_id'])
+                if row['user_id']:
+                    # There might be conflicts (multiple users on same browser)
+                    # but this error is acceptable for our use case
+                    self.data[row['browser_id']]['user_id'] = row['user_id']
                 if row['ref_source'] == 'direct':
                     self.data[row['browser_id']]['sessions_without_ref'].add(row['remp_session_id'])
                 self.parse_user_agent(row['browser_id'], row['user_agent'])
@@ -88,8 +93,8 @@ class Parser:
 
         sql = '''INSERT INTO aggregated_browser_days (date, browser_id, pageviews, timespent, 
         sessions, sessions_without_ref, browser_family, browser_version, os_family, os_version,
-        device_family, device_brand, device_model, is_desktop, is_tablet, is_mobile) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,%s, %s, %s) 
+        device_family, device_brand, device_model, is_desktop, is_tablet, is_mobile, user_id) 
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,%s, %s, %s, %s) 
         ON CONFLICT (date, browser_id) DO UPDATE SET 
         pageviews = EXCLUDED.pageviews,
         timespent = EXCLUDED.timespent,
@@ -104,7 +109,8 @@ class Parser:
         device_model = EXCLUDED.device_model,
         is_desktop = EXCLUDED.is_desktop,
         is_tablet = EXCLUDED.is_tablet,
-        is_mobile = EXCLUDED.is_mobile
+        is_mobile = EXCLUDED.is_mobile,
+        user_id = EXCLUDED.user_id
         '''
         psycopg2.extras.execute_batch(cur, sql, [(
             processed_date,
@@ -125,6 +131,8 @@ class Parser:
             browser_data['ua'].is_pc,
             browser_data['ua'].is_tablet,
             browser_data['ua'].is_mobile,
+
+            browser_data['user_id'],
         ) for browser_id, browser_data in self.data.items()
         ])
 
