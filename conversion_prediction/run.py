@@ -480,31 +480,31 @@ if __name__ == "__main__":
     parser.add_argument('action',
                         help='Should either be "train" for model training or "predict for prediction"',
                         type=str)
-    parser.add_argument('--min_date',
+    parser.add_argument('--min-date',
                         help='Min date denoting from when to fetch data',
                         type=mkdatetime,
                         required=True)
-    parser.add_argument('--max_date',
+    parser.add_argument('--max-date',
                         help='Max date denoting up to when to fetch data',
                         type=mkdatetime,
                         default=datetime.utcnow() - timedelta(days=1),
                         required=False)
-    parser.add_argument('--moving_window_length',
+    parser.add_argument('--moving-window-length',
                         help='Lenght for rolling sum windows for user profiles',
                         type=int,
                         default=7,
                         required=False)
-    parser.add_argument('--training_split_parameters',
+    parser.add_argument('--training-split-parameters',
                         help='Speficies split_type (random vs time_based) and split_ratio for train/test split',
                         type=json.loads,
                         default={'split_type': 'time_based', 'split_ratio': 6 / 10},
                         required=False)
-    parser.add_argument('--model_arguments',
+    parser.add_argument('--model-arguments',
                         help='Parameters for scikit model training',
                         type=json.loads,
                         default={'n_estimators': 50},
                         required=False)
-    parser.add_argument('--overwrite_files',
+    parser.add_argument('--overwrite-files',
                         help='Bool implying whether newly trained model should overwrite existing one for the same date',
                         type=bool,
                         default=True,

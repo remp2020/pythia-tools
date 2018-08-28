@@ -90,7 +90,7 @@ def create_predictions_table():
 
 
 def create_predictions_job_log():
-    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING')')
+    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
 
     if check_table_existence('prediction_job_log'):
         query = '''
