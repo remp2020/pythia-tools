@@ -10,6 +10,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+// possible prediction outcomes
+const (
+	OutcomeConversion    = "conversion"
+	OutcomeNoConversion  = "no_conversion"
+	OutcomeSharedAccount = "shared_account_login"
+)
+
 // SegmentStorage represents interface to get segment related data.
 type SegmentStorage interface {
 	Get(code string) (*Segment, bool)
@@ -184,16 +191,16 @@ func (sDB *SegmentDB) CacheBrowsers(now time.Time) error {
 SELECT browser_id, predicted_outcome
 FROM conversion_predictions_daily
 WHERE date = (
-	SELECT MAX(processed_date)
-	FROM conversion_predictions_processing
-	WHERE processed_date <= $1
+	SELECT MAX(date)
+	FROM prediction_job_log
+	WHERE date <= $1
 )`, now.Format("2006-01-02"))
 
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil
 		}
-		return errors.Wrap(err, "unable to cache segments from PostgreSQL")
+		return errors.Wrap(err, "unable to cache browser segments from PostgreSQL")
 	}
 
 	browsers := make(map[string]BrowserSet)
@@ -205,5 +212,59 @@ WHERE date = (
 		browsers[pc.Outcome][pc.BrowserID] = true
 	}
 	sDB.Browsers = browsers
+	return nil
+}
+
+// CacheUsers refreshes user cache of all segments. Data are selected for last
+// processed date before provided "now".
+func (sDB *SegmentDB) CacheUsers(now time.Time) error {
+	cpc := []ConversionPrediction{}
+	err := sDB.Postgres.Select(&cpc, `
+SELECT user_id, predicted_outcome
+FROM conversion_predictions_daily
+WHERE date = (
+	SELECT MAX(date)
+	FROM prediction_job_log
+	WHERE date <= $1
+)
+AND user_id IS NOT NULL
+`, now.Format("2006-01-02"))
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return errors.Wrap(err, "unable to cache user segments from PostgreSQL")
+	}
+
+	users := make(map[string]UserSet)
+
+	for _, pc := range cpc {
+		if _, ok := users[pc.Outcome]; !ok {
+			users[pc.Outcome] = make(UserSet)
+		}
+
+		switch pc.Outcome {
+		case OutcomeConversion:
+			users[OutcomeConversion][pc.UserID] = true
+			delete(users[OutcomeNoConversion], pc.UserID)
+			delete(users[OutcomeSharedAccount], pc.UserID)
+		case OutcomeSharedAccount:
+			if _, ok := users[OutcomeConversion][pc.UserID]; ok {
+				break
+			}
+			users[OutcomeSharedAccount][pc.UserID] = true
+			delete(users[OutcomeNoConversion], pc.UserID)
+		case OutcomeNoConversion:
+			if _, ok := users[OutcomeConversion][pc.UserID]; ok {
+				break
+			}
+			if _, ok := users[OutcomeSharedAccount][pc.UserID]; ok {
+				break
+			}
+			users[OutcomeNoConversion][pc.UserID] = true
+		}
+	}
+	sDB.Users = users
 	return nil
 }
