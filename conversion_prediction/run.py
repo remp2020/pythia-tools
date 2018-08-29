@@ -428,7 +428,7 @@ def batch_predict(
         predictions.columns = [re.sub(str(i), label_encoder.inverse_transform(i) + '_probability', str(column))
                                for column in predictions.columns]
 
-    predictions = pd.concat([feature_frame[['date', 'browser_id']],  predictions], axis=1)
+    predictions = pd.concat([feature_frame[['date', 'browser_id', 'user_id']],  predictions], axis=1)
     predictions['predicted_outcome'] = label_encoder.inverse_transform(model.predict(X_all))
 
     return predictions

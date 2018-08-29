@@ -13,6 +13,7 @@ queries['user_profiles_by_date'] = '''
                 SELECT
                     summable_metrics_with_outcome_by_browser_id_by_date.date AS date,
                     summable_metrics_with_outcome_by_browser_id_by_date.browser_id AS browser_id,
+                    summable_metrics_with_outcome_by_browser_id_by_date.user_id AS user_id,
                     pageview_count,
                     timespent_sum,
                     direct_visit_count,
@@ -126,7 +127,8 @@ queries['upsert_predictions'] = '''
         INSERT INTO
                conversion_predictions_daily (
                    date,
-                   browser_id, 
+                   browser_id,
+                   user_id,
                    predicted_outcome, 
                    conversion_probability, 
                    no_conversion_probability,
@@ -137,6 +139,7 @@ queries['upsert_predictions'] = '''
            VALUES (
                :date,
                :browser_id,
+               :user_id,
                :predicted_outcome, 
                :conversion_probability, 
                :no_conversion_probability,
