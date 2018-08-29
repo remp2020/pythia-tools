@@ -83,10 +83,16 @@ func main() {
 			service.LogError("unable to cache browsers", "err", err)
 		}
 	}
+	cacheUsers := func() {
+		if err := segmentStorage.CacheUsers(time.Now()); err != nil {
+			service.LogError("unable to cache users", "err", err)
+		}
+	}
 
 	wg.Add(1)
 	segmentStorage.CacheSegments()
 	cacheBrowsers()
+	cacheUsers()
 
 	go func() {
 		defer wg.Done()
@@ -96,6 +102,7 @@ func main() {
 			case <-ticker.C:
 				segmentStorage.CacheSegments()
 				cacheBrowsers()
+				cacheUsers()
 			case <-ctx.Done():
 				service.LogInfo("caching stopped")
 				return

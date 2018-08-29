@@ -53,9 +53,10 @@ type SegmentGroup struct {
 
 // ConversionPrediction represents calculated result of users actions
 type ConversionPrediction struct {
-	Outcome   string `db:"predicted_outcome"`
-	UserID    string `db:"user_id"`
-	BrowserID string `db:"browser_id"`
+	Outcome     string  `db:"predicted_outcome"`
+	Probability float64 `db:"conversion_probability"`
+	UserID      string  `db:"user_id"`
+	BrowserID   string  `db:"browser_id"`
 }
 
 // UserSet is set of Users keyed by userID.
@@ -150,20 +151,34 @@ func (sDB *SegmentDB) CacheSegments() error {
 	sc := SegmentCollection{
 		&Segment{
 			ID:     1,
-			Name:   "Probably will convert",
-			Code:   "conversion",
+			Name:   "High conversion probability",
+			Code:   "high_conversion",
 			Active: true,
 			Group:  sg,
 		},
 		&Segment{
 			ID:     2,
+			Name:   "Medium conversion probability",
+			Code:   "medium_conversion",
+			Active: true,
+			Group:  sg,
+		},
+		&Segment{
+			ID:     3,
+			Name:   "Low conversion probability",
+			Code:   "low_conversion",
+			Active: true,
+			Group:  sg,
+		},
+		&Segment{
+			ID:     4,
 			Name:   "Probably will not convert",
 			Code:   "no_conversion",
 			Active: true,
 			Group:  sg,
 		},
 		&Segment{
-			ID:     2,
+			ID:     5,
 			Name:   "Sharing account (logged to account with active subscription recently)",
 			Code:   "shared_account_login",
 			Active: true,
@@ -188,7 +203,7 @@ func (sDB *SegmentDB) CacheSegments() error {
 func (sDB *SegmentDB) CacheBrowsers(now time.Time) error {
 	cpc := []ConversionPrediction{}
 	err := sDB.Postgres.Select(&cpc, `
-SELECT browser_id, predicted_outcome
+SELECT browser_id, predicted_outcome, conversion_probability
 FROM conversion_predictions_daily
 WHERE date = (
 	SELECT MAX(date)
@@ -204,12 +219,12 @@ WHERE date = (
 	}
 
 	browsers := make(map[string]BrowserSet)
-
-	for _, pc := range cpc {
-		if _, ok := browsers[pc.Outcome]; !ok {
-			browsers[pc.Outcome] = make(BrowserSet)
+	for _, cp := range cpc {
+		segment := sDB.segmentByPrediction(cp)
+		if _, ok := browsers[segment]; !ok {
+			browsers[segment] = make(BrowserSet)
 		}
-		browsers[pc.Outcome][pc.BrowserID] = true
+		browsers[segment][cp.BrowserID] = true
 	}
 	sDB.Browsers = browsers
 	return nil
@@ -220,7 +235,7 @@ WHERE date = (
 func (sDB *SegmentDB) CacheUsers(now time.Time) error {
 	cpc := []ConversionPrediction{}
 	err := sDB.Postgres.Select(&cpc, `
-SELECT user_id, predicted_outcome
+SELECT user_id, predicted_outcome, conversion_probability
 FROM conversion_predictions_daily
 WHERE date = (
 	SELECT MAX(date)
@@ -238,33 +253,26 @@ AND user_id IS NOT NULL
 	}
 
 	users := make(map[string]UserSet)
-
-	for _, pc := range cpc {
-		if _, ok := users[pc.Outcome]; !ok {
-			users[pc.Outcome] = make(UserSet)
+	for _, cp := range cpc {
+		segment := sDB.segmentByPrediction(cp)
+		if _, ok := users[segment]; !ok {
+			users[segment] = make(UserSet)
 		}
-
-		switch pc.Outcome {
-		case OutcomeConversion:
-			users[OutcomeConversion][pc.UserID] = true
-			delete(users[OutcomeNoConversion], pc.UserID)
-			delete(users[OutcomeSharedAccount], pc.UserID)
-		case OutcomeSharedAccount:
-			if _, ok := users[OutcomeConversion][pc.UserID]; ok {
-				break
-			}
-			users[OutcomeSharedAccount][pc.UserID] = true
-			delete(users[OutcomeNoConversion], pc.UserID)
-		case OutcomeNoConversion:
-			if _, ok := users[OutcomeConversion][pc.UserID]; ok {
-				break
-			}
-			if _, ok := users[OutcomeSharedAccount][pc.UserID]; ok {
-				break
-			}
-			users[OutcomeNoConversion][pc.UserID] = true
-		}
+		users[segment][cp.UserID] = true
 	}
 	sDB.Users = users
 	return nil
+}
+
+func (sDB *SegmentDB) segmentByPrediction(cp ConversionPrediction) string {
+	switch {
+	case cp.Outcome == OutcomeConversion:
+		return "high_conversion"
+	case cp.Probability >= 0.2:
+		return "medium_conversion"
+	case cp.Probability >= 0.1:
+		return "low_conversion"
+	default:
+		return cp.Outcome
+	}
 }
