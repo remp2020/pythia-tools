@@ -68,6 +68,7 @@ def create_predictions_table():
           id SERIAL PRIMARY KEY,
           date TIMESTAMPTZ,
           browser_id TEXT,
+          user_id TEXT NULL,
           predicted_outcome conversion_prediction_outcomes,
           conversion_probability FLOAT,
           no_conversion_probability FLOAT,
@@ -83,6 +84,7 @@ def create_predictions_table():
 
     for index_query in [
         'CREATE INDEX browser_id ON conversion_predictions_daily (browser_id);',
+        'CREATE INDEX user_id ON conversion_predictions_daily (user_id);',
         'CREATE INDEX browser_date ON conversion_predictions_daily (date, browser_id);',
         'CREATE INDEX predicted_outcome ON conversion_predictions_daily (predicted_outcome)'
     ]:

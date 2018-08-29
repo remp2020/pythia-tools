@@ -41,6 +41,8 @@ queries['user_profiles_by_date'] = '''
                     SELECT
                         date_gap_filler AS date,
                         active_browser_id AS browser_id,
+                        active_user_id AS user_id,
+                        user_id,
                         SUM(pageviews) OVER (PARTITION BY active_browser_id ORDER BY date_gap_filler ROWS BETWEEN :moving_window_length - 1 PRECEDING AND CURRENT ROW) AS pageview_count,
                         SUM(timespent) OVER (PARTITION BY active_browser_id ORDER BY date_gap_filler ROWS BETWEEN :moving_window_length - 1 PRECEDING AND CURRENT ROW) AS timespent_sum,
                         SUM(sessions_without_ref) OVER (PARTITION BY active_browser_id ORDER BY date_gap_filler ROWS BETWEEN :moving_window_length - 1 PRECEDING AND CURRENT ROW) AS direct_visit_count,
@@ -70,7 +72,8 @@ queries['user_profiles_by_date'] = '''
                                     '1 DAY')::DATE AS date_gap_filler) date_filler
                         CROSS JOIN (
                             SELECT
-                                DISTINCT(browser_id) AS active_browser_id
+                                DISTINCT(browser_id) AS active_browser_id,
+                                user_id as active_user_id
                             FROM
                                 time_filtered_aggregations
                             ) active_browser_ids
