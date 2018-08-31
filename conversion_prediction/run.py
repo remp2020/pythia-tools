@@ -16,12 +16,14 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
+from utils.db_utils import create_predictions_table, create_predictions_job_log
 from utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
     split_type, LABELS, CURRENT_MODEL_VERSION
 from utils.db_utils import create_connection, retrieve_data_for_query_key
 from utils.queries import queries
 
 load_dotenv()
+
 
 def get_user_profiles_by_date(
         min_date: datetime=datetime.utcnow() - timedelta(days=31),
@@ -419,8 +421,7 @@ def batch_predict(
     X_all = pd.concat([feature_frame_numeric, feature_frame[
         [column for column in feature_frame.columns
          if column not in NUMERIC_COLUMNS + CONFIG_COLUMNS + BOOL_COLUMNS]].sort_index()], axis=1)
-    X_all = X_all.drop('outcome', axis=1)
-
+    X_all = X_all.drop(['outcome', 'user_id'], axis=1)
     predictions = pd.DataFrame(model.predict_proba(X_all))
     label_range = range(len(LABELS))
     label_encoder = instantiate_label_encoder(LABELS)
@@ -455,7 +456,10 @@ def generate_and_upload_prediction(
     predictions['model_version'] = CURRENT_MODEL_VERSION
     predictions['created_at'] = datetime.utcnow()
     predictions['updated_at'] = datetime.utcnow()
+
     _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
+    create_predictions_table(postgres)
+    create_predictions_job_log(postgres)
     postgres.execute(
         sqlalchemy.sql.text(queries['upsert_predictions']), predictions.to_dict('records')
     )
