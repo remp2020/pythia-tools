@@ -194,8 +194,8 @@ def create_train_test_transformations(
         train_indices = data[data['date'] <= train_date.date()].index
         test_indices = data[data['date'] > train_date.date()].index
 
-    X_train = data.iloc[train_indices].drop(columns='outcome')
-    X_test = data.iloc[test_indices].drop(columns='outcome')
+    X_train = data.iloc[train_indices].drop(columns=['outcome', 'user_id'])
+    X_test = data.iloc[test_indices].drop(columns=['outcome', 'user_id'])
     category_lists_dict = generate_category_lists_dict(X_train, CATEGORICAL_COLUMNS)
 
     path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
@@ -525,7 +525,7 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             training_split_parameters=args['training_split_parameters'],
             # model_arguments=args['model_arguments'],
-            model_arguments={'n_estimators': 500, },
+            model_arguments={'n_estimators': 500},
             overwrite_files=args['overwrite_files']
         )
 
