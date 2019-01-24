@@ -38,7 +38,6 @@ BOOL_COLUMNS = [
 
 CONFIG_COLUMNS = [
     'date',
-    'browser_id',
     'user_id'
 ]
 
