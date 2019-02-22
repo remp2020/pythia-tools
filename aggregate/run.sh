@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+export PATH=".virtualenv/bin:$PATH"
+
 function usage {
     echo "Aggregation script moving data from Elastic storage to PostgreSQL DB for Pythia processing"
     echo "Usage: $0 <DATE>" >&2
