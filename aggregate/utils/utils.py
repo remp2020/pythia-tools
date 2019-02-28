@@ -23,6 +23,7 @@ def migrate(cur):
 CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
     "date" date NOT NULL,
     "browser_id" character varying NOT NULL,
+    "user_id" text,
     "pageviews" integer NOT NULL,
     "timespent" integer,
     "sessions" integer NOT NULL,
@@ -44,8 +45,5 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
 '''
     cur.execute(sql)
 
-    sql2 = '''
-    ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS user_id text;
-    
-    '''
+    sql2 = 'ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS category_pageviews json;'
     cur.execute(sql2)

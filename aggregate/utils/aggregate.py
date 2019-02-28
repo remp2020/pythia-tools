@@ -3,11 +3,13 @@ import csv
 import sys
 import os
 import os.path
-from user_agents import parse as ua_parse
 import re
-from datetime import date
 import psycopg2
 import psycopg2.extras
+import arrow
+import json
+from datetime import date
+from user_agents import parse as ua_parse
 from utils import load_env, create_con, migrate
 
 BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
@@ -30,6 +32,11 @@ class Parser:
                 'sessions': set(),
                 'sessions_without_ref': set(),
                 'user_id': None,
+                'category_pageviews': {
+                    "referer_medium": {},
+                    "article_category": {},
+                    "hour_interval": {},
+                }
             }
 
     def parse_user_agent(self, browser_id, user_agent):
@@ -47,15 +54,20 @@ class Parser:
                     continue
 
                 self.browser_id_mapping[row['remp_pageview_id']] = row['browser_id']
-
                 self.create_record(row['browser_id'])
                 self.data[row['browser_id']]['pageviews'] += 1
                 self.data[row['browser_id']]['sessions'].add(row['remp_session_id'])
+
+                add_one(self.data[row['browser_id']]['category_pageviews']['referer_medium'], row['derived_referer_medium'])
+                add_one(self.data[row['browser_id']]['category_pageviews']['article_category'], row['category'])
+                hour = str(arrow.get(row['time']).to('utc').hour).zfill(2)
+                add_one(self.data[row['browser_id']]['category_pageviews']['hour_interval'], hour + ":00-" + hour + ":59")
+
                 if row['user_id']:
                     # There might be conflicts (multiple users on same browser)
                     # but this error is acceptable for our use case
                     self.data[row['browser_id']]['user_id'] = row['user_id']
-                if row['ref_source'] == 'direct':
+                if row['derived_referer_medium'] == 'direct':
                     self.data[row['browser_id']]['sessions_without_ref'].add(row['remp_session_id'])
                 self.parse_user_agent(row['browser_id'], row['user_agent'])
 
@@ -93,8 +105,8 @@ class Parser:
 
         sql = '''INSERT INTO aggregated_browser_days (date, browser_id, pageviews, timespent, 
         sessions, sessions_without_ref, browser_family, browser_version, os_family, os_version,
-        device_family, device_brand, device_model, is_desktop, is_tablet, is_mobile, user_id) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,%s, %s, %s, %s) 
+        device_family, device_brand, device_model, is_desktop, is_tablet, is_mobile, user_id, category_pageviews) 
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,%s, %s, %s, %s, %s) 
         ON CONFLICT (date, browser_id) DO UPDATE SET 
         pageviews = EXCLUDED.pageviews,
         timespent = EXCLUDED.timespent,
@@ -110,7 +122,8 @@ class Parser:
         is_desktop = EXCLUDED.is_desktop,
         is_tablet = EXCLUDED.is_tablet,
         is_mobile = EXCLUDED.is_mobile,
-        user_id = EXCLUDED.user_id
+        user_id = EXCLUDED.user_id,
+        category_pageviews = EXCLUDED.category_pageviews
         '''
         psycopg2.extras.execute_batch(cur, sql, [(
             processed_date,
@@ -133,6 +146,7 @@ class Parser:
             browser_data['ua'].is_mobile,
 
             browser_data['user_id'],
+            json.dumps(browser_data['category_pageviews'])
         ) for browser_id, browser_data in self.data.items()
         ])
 
@@ -167,6 +181,12 @@ def run(file_date):
     conn.commit()
     cur.close()
     conn.close()
+
+
+def add_one(where, category):
+    if category not in where:
+        where[category] = 0
+    where[category] += 1
 
 
 def usage():
