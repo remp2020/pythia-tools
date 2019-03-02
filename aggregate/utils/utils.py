@@ -45,5 +45,11 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
 '''
     cur.execute(sql)
 
-    sql2 = 'ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS category_pageviews json;'
+    sql2 = 'ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS referer_medium_pageviews jsonb;'
     cur.execute(sql2)
+
+    sql3 = 'ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS article_category_pageviews jsonb;'
+    cur.execute(sql3)
+
+    sql4 = 'ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS hour_interval_pageviews jsonb;'
+    cur.execute(sql4)

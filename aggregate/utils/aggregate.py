@@ -7,10 +7,12 @@ import re
 import psycopg2
 import psycopg2.extras
 import arrow
+import string
 import json
 from datetime import date
 from user_agents import parse as ua_parse
 from utils import load_env, create_con, migrate
+from collections import OrderedDict
 
 BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
 
@@ -32,11 +34,11 @@ class Parser:
                 'sessions': set(),
                 'sessions_without_ref': set(),
                 'user_id': None,
-                'category_pageviews': {
-                    "referer_medium": {},
-                    "article_category": {},
-                    "hour_interval": {},
-                }
+
+                # pageviews per:
+                "referer_medium_pageviews": {},
+                "article_category_pageviews": {},
+                "hour_interval_pageviews": {},
             }
 
     def parse_user_agent(self, browser_id, user_agent):
@@ -58,10 +60,10 @@ class Parser:
                 self.data[row['browser_id']]['pageviews'] += 1
                 self.data[row['browser_id']]['sessions'].add(row['remp_session_id'])
 
-                add_one(self.data[row['browser_id']]['category_pageviews']['referer_medium'], row['derived_referer_medium'])
-                add_one(self.data[row['browser_id']]['category_pageviews']['article_category'], row['category'])
+                add_one(self.data[row['browser_id']]['referer_medium_pageviews'], row['derived_referer_medium'])
+                add_one(self.data[row['browser_id']]['article_category_pageviews'], row['category'])
                 hour = str(arrow.get(row['time']).to('utc').hour).zfill(2)
-                add_one(self.data[row['browser_id']]['category_pageviews']['hour_interval'], hour + ":00-" + hour + ":59")
+                add_one(self.data[row['browser_id']]['hour_interval_pageviews'], hour + ":00-" + hour + ":59")
 
                 if row['user_id']:
                     # There might be conflicts (multiple users on same browser)
@@ -103,52 +105,51 @@ class Parser:
     def store_in_db(self, conn, cur, processed_date):
         print("Storing data for date " + str(processed_date))
 
-        sql = '''INSERT INTO aggregated_browser_days (date, browser_id, pageviews, timespent, 
-        sessions, sessions_without_ref, browser_family, browser_version, os_family, os_version,
-        device_family, device_brand, device_model, is_desktop, is_tablet, is_mobile, user_id, category_pageviews) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,%s, %s, %s, %s, %s) 
-        ON CONFLICT (date, browser_id) DO UPDATE SET 
-        pageviews = EXCLUDED.pageviews,
-        timespent = EXCLUDED.timespent,
-        sessions = EXCLUDED.sessions, 
-        sessions_without_ref = EXCLUDED.sessions_without_ref,
-        browser_family = EXCLUDED.browser_family,
-        browser_version = EXCLUDED.browser_version,
-        os_family = EXCLUDED.os_family,
-        os_version = EXCLUDED.os_version,
-        device_family = EXCLUDED.device_family,
-        device_brand = EXCLUDED.device_brand,
-        device_model = EXCLUDED.device_model,
-        is_desktop = EXCLUDED.is_desktop,
-        is_tablet = EXCLUDED.is_tablet,
-        is_mobile = EXCLUDED.is_mobile,
-        user_id = EXCLUDED.user_id,
-        category_pageviews = EXCLUDED.category_pageviews
-        '''
-        psycopg2.extras.execute_batch(cur, sql, [(
-            processed_date,
-            browser_id,
-            browser_data['pageviews'],
-            browser_data['timespent'],
-            len(browser_data['sessions']),
-            len(browser_data['sessions_without_ref']),
+        params = {
+            'pageviews': lambda d: d['pageviews'],
+            'timespent': lambda d: d['timespent'],
+            'sessions': lambda d: len(d['sessions']),
+            'sessions_without_ref': lambda d: len(d['sessions_without_ref']),
 
-            browser_data['ua'].browser.family,
-            browser_data['ua'].browser.version_string,
-            browser_data['ua'].os.family,
-            browser_data['ua'].os.version_string,
-            browser_data['ua'].device.family,
-            browser_data['ua'].device.brand,
-            browser_data['ua'].device.model,
+            'browser_family': lambda d: d['ua'].browser.family,
+            'browser_version': lambda d: d['ua'].browser.version_string,
+            'os_family': lambda d: d['ua'].os.family,
+            'os_version': lambda d: d['ua'].os.version_string,
+            'device_family': lambda d: d['ua'].device.family,
+            'device_brand': lambda d: d['ua'].device.brand,
+            'device_model': lambda d: d['ua'].device.model,
+            'is_desktop': lambda d: d['ua'].is_pc,
+            'is_tablet': lambda d: d['ua'].is_tablet,
+            'is_mobile': lambda d: d['ua'].is_mobile,
 
-            browser_data['ua'].is_pc,
-            browser_data['ua'].is_tablet,
-            browser_data['ua'].is_mobile,
+            'user_id': lambda d: d['user_id'],
 
-            browser_data['user_id'],
-            json.dumps(browser_data['category_pageviews'])
-        ) for browser_id, browser_data in self.data.items()
-        ])
+            'referer_medium_pageviews': lambda d: json.dumps(d['referer_medium_pageviews']),
+            'article_category_pageviews': lambda d: json.dumps(d['article_category_pageviews']),
+            'hour_interval_pageviews': lambda d: json.dumps(d['hour_interval_pageviews']),
+        }
+
+        # Create SQL
+        ordered_params = OrderedDict([(key, params[key]) for key in params])
+        keys = list(ordered_params.keys())
+
+        concatenated_keys = string.join(keys, ', ')
+        key_placeholders = string.join(['%s'] * len(keys), ', ')
+        update_keys = string.join(["{} = EXCLUDED.{}".format(key, key) for key in keys], ', ')
+
+        sql = '''INSERT INTO aggregated_browser_days (date, browser_id, {}) 
+        VALUES (%s, %s, {}) 
+        ON CONFLICT (date, browser_id) DO UPDATE SET {}
+        '''.format(concatenated_keys, key_placeholders, update_keys)
+
+        # Compute values
+        data_to_insert = []
+        for browser_id, browser_data in self.data.items():
+            computed_values = tuple([func(browser_data) for key, func in ordered_params.items()])
+            data_to_insert.append((processed_date, browser_id) + computed_values)
+
+        # Insert in batch
+        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
 
 
 def run(file_date):
