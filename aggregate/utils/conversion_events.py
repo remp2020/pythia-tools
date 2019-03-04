@@ -1,10 +1,10 @@
 from __future__ import print_function
 import csv
-import sys
 import psycopg2
 import psycopg2.extras
 import os.path
 import arrow
+import argparse
 from datetime import date
 from utils import load_env, create_con, migrate
 
@@ -129,6 +129,8 @@ class PageViewsParser:
                         self.logged_in_browsers_time[p.browser_id] = logged_in_time
 
     def __save_in_db(self):
+        print("Storing commerce data for date " + str(self.cur_date))
+
         # first delete that particular day
         for browser_id in self.logged_in_browsers:
             self.cursor.execute('''
@@ -158,10 +160,10 @@ class PageViewsParser:
         self.__save_in_db()
 
 
-def run(file_date):
+def run(file_date, aggregate_folder):
     load_env()
-    commerce_file = BASE_PATH + "/commerce_" + file_date + ".csv"
-    pageviews_file = BASE_PATH + "/pageviews_" + file_date + ".csv"
+    commerce_file = os.path.join(aggregate_folder, "commerce", "commerce_" + file_date + ".csv")
+    pageviews_file = os.path.join(aggregate_folder, "pageviews", "pageviews_" + file_date + ".csv")
 
     if not os.path.isfile(commerce_file):
         print("Error: file " + commerce_file + " does not exist")
@@ -192,16 +194,15 @@ def run(file_date):
     conn.close()
 
 
-def usage():
-    print("Script to process future events commerce data")
-    print("usage: ./" + sys.argv[0] + " <date>")
+def main():
+    parser = argparse.ArgumentParser(
+        description='Script to process future events commerce data')
+    parser.add_argument('date', metavar='date', help='Aggregate date, format YYYYMMDD')
+    parser.add_argument('--dir', metavar='AGGREGATE_DIRECTORY', dest='dir', default=BASE_PATH,
+                        help='where to look for aggregated CSV files')
 
-
-def main(argv):
-    if len(argv) == 0:
-        usage()
-    else:
-        run(argv[0])
+    args = parser.parse_args()
+    run(args.date, args.dir)
 
 if __name__ == '__main__':
-    main(sys.argv[1:])
+    main()
