@@ -1,6 +1,5 @@
 from __future__ import print_function
 import csv
-import sys
 import os
 import os.path
 import re
@@ -9,6 +8,7 @@ import psycopg2.extras
 import arrow
 import string
 import json
+import argparse
 from datetime import date
 from user_agents import parse as ua_parse
 from utils import load_env, create_con, migrate
@@ -97,10 +97,12 @@ class Parser:
                 else:
                     self.data[browser_id]['timespent'] += int(row['sum'])
 
-    def process_files(self, pageviews_file, pageviews_timespent_files):
+    def process_files(self, pageviews_file, pageviews_timespent_file):
         self.process_pageviews(pageviews_file)
-        if os.path.isfile(pageviews_timespent_files):
-            self.process_pageviews_timespent(pageviews_timespent_files)
+        if os.path.isfile(pageviews_timespent_file):
+            self.process_pageviews_timespent(pageviews_timespent_file)
+        else:
+            print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 
     def store_in_db(self, conn, cur, processed_date):
         print("Storing data for date " + str(processed_date))
@@ -152,10 +154,10 @@ class Parser:
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
 
 
-def run(file_date):
-    # env_vars = load_env()
+def run(file_date, aggregate_folder):
     load_env()
-    pageviews_file = BASE_PATH + "/pageviews_" + file_date + ".csv"
+    pageviews_file = os.path.join(aggregate_folder, "pageviews", "pageviews_" + file_date + ".csv")
+    pageviews_time_spent_file = os.path.join(aggregate_folder, "pageviews_time_spent", "pageviews_time_spent_" + file_date + ".csv")
 
     if not os.path.isfile(pageviews_file):
         print("Error: file " + pageviews_file + " does not exist")
@@ -168,9 +170,7 @@ def run(file_date):
     parser = Parser()
 
     m = pattern.search(pageviews_file)
-    path_str = m.group(1)
     date_str = m.group(2)
-    pageviews_time_spent_file = path_str + "pageviews_time_spent_" + date_str + ".csv"
 
     parser.process_files(pageviews_file, pageviews_time_spent_file)
 
@@ -190,19 +190,14 @@ def add_one(where, category):
     where[category] += 1
 
 
-def usage():
-    print("Script to parse elastic CSV export, process it and insert into PostgreSQL")
-    print("usage: ./" + sys.argv[0] + " <date>")
+def main():
+    parser = argparse.ArgumentParser(description='Script to parse elastic CSV export, process it and insert into PostgreSQL')
+    parser.add_argument('date', metavar='date', help='Aggregate date, format YYYYMMDD')
+    parser.add_argument('--dir', metavar='AGGREGATE_DIRECTORY', dest='dir', default=BASE_PATH, help='where to look for aggregated CSV files')
 
-
-def main(argv):
-    if len(argv) == 0:
-        usage()
-    else:
-        run(argv[0])
+    args = parser.parse_args()
+    run(args.date, args.dir)
 
 if __name__ == '__main__':
-    main(sys.argv[1:])
-
-
+    main()
 
