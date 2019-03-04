@@ -6,3 +6,4 @@ pyyaml==3.13
 user-agents==1.1.0
 es2csv==5.5.2
 python-dotenv==0.9.1
+unidecode==1.0.23

@@ -9,6 +9,7 @@ import arrow
 import string
 import json
 import argparse
+from unidecode import unidecode
 from datetime import date
 from user_agents import parse as ua_parse
 from utils import load_env, create_con, migrate
@@ -42,6 +43,7 @@ class Parser:
             }
 
     def parse_user_agent(self, browser_id, user_agent):
+        user_agent = unidecode(user_agent.decode("utf8"))
         if user_agent not in ua_cache:
             ua_cache[user_agent] = ua_parse(user_agent)
         self.data[browser_id]['ua'] = ua_cache[user_agent]
