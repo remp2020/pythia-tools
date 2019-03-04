@@ -123,7 +123,7 @@ while [ "$di" != "$end_on" ]; do
             gzip -k -f $cur_file_csv
         else
             # unpack .csv.gz file
-            gzip -k -d $cur_file_gz
+            gzip -k -f -d $cur_file_gz
         fi
     done
 
