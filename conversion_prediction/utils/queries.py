@@ -130,11 +130,11 @@ def get_device_information_subquery(
                  'Desktop')
             ],
             else_= filtered_data.c['device_brand']
-        ).label('device_brand'),
-        filtered_data.c['browser_family'],
+        ).label('device_brand').label('device'),
+        filtered_data.c['browser_family'].label('browser'),
         filtered_data.c['is_desktop'],
         filtered_data.c['is_mobile'],
-        filtered_data.c['os_family'],
+        filtered_data.c['os_family'].label('os'),
         filtered_data.c['is_mobile'],
         filtered_data.c['browser_id']
     ).order_by(
@@ -177,10 +177,10 @@ def join_all_partial_queries(
 ):
     # {name of the resulting column : source / calculation}
     column_source_to_name_mapping = {
-        'pageviews': filtered_data.c['pageviews'],
+        'pageview': filtered_data.c['pageviews'],
         'timespent': filtered_data.c['timespent'],
-        'direct_visits': filtered_data.c['sessions_without_ref'],
-        'visits': filtered_data.c['sessions'],
+        'direct_visit': filtered_data.c['sessions_without_ref'],
+        'visit': filtered_data.c['sessions'],
         'days_active': case(
             [
                 (
@@ -273,7 +273,7 @@ def filter_joined_queries_adding_derived_metrics(
     start_time: datetime
 ):
     filtered_w_derived_metrics = session.query(
-        *[column.label(re.sub('timespent_count', 'timespend_sum', column.name))
+        *[column.label(re.sub('timespent_count', 'timespent_sum', column.name))
           for column in joined_partial_queries.columns
           if not re.search('outcome', column.name)
           and column.name != 'row_number'],
