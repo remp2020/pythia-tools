@@ -16,11 +16,11 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
-from utils.db_utils import create_predictions_table, create_predictions_job_log
-from utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
+from .utils.db_utils import create_predictions_table, create_predictions_job_log
+from .utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
     split_type, LABELS, CURRENT_MODEL_VERSION
-from utils.db_utils import create_connection, retrieve_data_for_query_key
-from utils.queries import queries
+from .utils.db_utils import create_connection, retrieve_data_for_query_key
+from .utils.queries import queries
 
 load_dotenv()
 
