@@ -26,6 +26,7 @@ def get_feature_frame_via_sqlalchemy(
 
     feature_frame = pd.read_sql(full_query.statement,full_query.session.bind)
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
+    feature_frame['date'] = pd.to_datetime(feature_frame['date'])
 
     return feature_frame
 
