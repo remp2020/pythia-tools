@@ -214,7 +214,7 @@ def join_all_partial_queries(
         browser_ids.c['user_id'].label('user_id'),
         generated_time_series.c['date_gap_filler'].label('date'),
         *rolling_agg_columns,
-        (filtered_data.c['pageviews'] > 0.0).label('active_on_date'),
+        (filtered_data.c['pageviews'] > 0.0).label('is_active_on_date'),
         extract('day',
             # last day in the current window
             create_rolling_agg_function(
@@ -273,7 +273,16 @@ def filter_joined_queries_adding_derived_metrics(
     start_time: datetime
 ):
     filtered_w_derived_metrics = session.query(
-        joined_partial_queries,
+        *[column for column in joined_partial_queries.columns if not re.search('outcome', column.name)],
+        case(
+            [
+                (joined_partial_queries.c['is_active_on_date'] == True,
+                 joined_partial_queries.c['outcome_original']),
+                (joined_partial_queries.c['is_active_on_date'] == False,
+                 joined_partial_queries.c['outcome_filled']),
+            ],
+            else_='no_conversion'
+        ).label('outcome'),
         *[
             func.coalesce((
                 joined_partial_queries.c[DERIVED_METRICS_CONFIG[key]['nominator'] + suffix] /
