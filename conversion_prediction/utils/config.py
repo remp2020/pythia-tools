@@ -50,3 +50,26 @@ split_type = Enum(
 LABELS = ['no_conversion', 'shared_account_login', 'conversion']
 
 CURRENT_MODEL_VERSION = '1.0'
+
+DERIVED_METRICS_CONFIG = {
+    'pageviews_per_visit': {
+        'nominator': 'pageviews_count',
+        'denominator': 'visits_count'
+    },
+    'visits_per_day_active': {
+        'nominator': 'visits_count',
+        'denominator': 'days_active_count'
+    },
+    'direct_visits_share': {
+        'nominator': 'direct_visits_count',
+        'denominator': 'visits_count'
+    },
+    'timespent_per_visit': {
+        'nominator': 'timespent_count',
+        'denominator': 'visits_count'
+    },
+    'timespent_per_pageview': {
+        'nominator': 'timespent_count',
+        'denominator': 'pageviews_count'
+    },
+}

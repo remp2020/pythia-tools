@@ -1,6 +1,9 @@
 import pandas as pd
 import sqlalchemy
+import os
 from typing import List
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import MetaData, Table
 
 
 CUSTOM_USER_DEFINED_TYPES = ['conversion_prediction_outcomes', 'conversion_prediction_model_versions']
@@ -41,6 +44,21 @@ def retrieve_data_for_query_key(
     data.columns = query.keys()
 
     return data
+
+
+def get_sqla_table(table_name, engine, schema='public'):
+    meta = MetaData()
+    table = Table(table_name, meta, schema=schema, autoload=True,
+                  autoload_with=engine)
+    return table
+
+
+def get_aggregated_browser_days_w_session():
+    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
+    aggregated_browser_days = get_sqla_table(table_name='aggregated_browser_days', engine=postgres)
+    session = sessionmaker(bind=postgres)()
+
+    return aggregated_browser_days, session
 
 
 def create_predictions_table(connection: sqlalchemy.engine):
