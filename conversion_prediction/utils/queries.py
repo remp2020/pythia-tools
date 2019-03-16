@@ -1,5 +1,6 @@
 import re
 import pandas as pd
+import sqlalchemy
 from sqlalchemy.types import TIMESTAMP, Float
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_
@@ -69,7 +70,7 @@ def get_full_features_query(
 def get_filtered_cte(
     start_time: datetime,
     end_time: datetime,
-) -> session.query.cte:
+):
     filtered_data = session.query(
         aggregated_browser_days).filter(
         aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
@@ -82,10 +83,10 @@ def get_filtered_cte(
 
 
 def get_subqueries_for_non_gapped_time_series(
-        filtered_data: session.query.cte,
+        filtered_data,
         start_time: datetime,
         end_time: datetime,
-) -> (session.query.subquey, session.query.subquey):
+):
     generated_time_series = session.query(
         func.generate_series(
             start_time,
@@ -103,8 +104,8 @@ def get_subqueries_for_non_gapped_time_series(
 
 
 def get_unique_events_subquery(
-        filtered_data: session.query.cte
-) -> session.query.subquery:
+        filtered_data
+):
     unique_events = session.query(
             filtered_data.c['browser_id'].label('event_browser_id'),
             filtered_data.c['next_event_time'].label('next_event_time_filled'),
@@ -120,8 +121,8 @@ def get_unique_events_subquery(
 
 
 def get_device_information_subquery(
-        filtered_data: session.query.cte
-) -> session.query.subquery:
+        filtered_data
+):
     device_information = session.query(
         case(
             [
@@ -166,13 +167,13 @@ def create_rolling_agg_function(
 
 
 def join_all_partial_queries(
-        filtered_data: session.query.cte,
-        browser_ids: session.query.subquery,
-        generated_time_series: session.query.subquery,
-        unique_events: session.query.subquery,
-        device_information: session.query.subquery,
+        filtered_data,
+        browser_ids,
+        generated_time_series,
+        unique_events,
+        device_information,
         moving_window_length: int
-) -> session.query.subquery:
+):
     # {name of the resulting column : source / calculation}
     column_source_to_name_mapping = {
         'pageviews': filtered_data.c['pageviews'],
@@ -267,9 +268,9 @@ def join_all_partial_queries(
 
 
 def filter_joined_queries_adding_derived_metrics(
-    joined_partial_queries: session.query.subquery,
+    joined_partial_queries,
     start_time: datetime
-) -> session.query.subquery:
+):
     filtered_w_derived_metrics = session.query(
         joined_partial_queries,
         *[
@@ -291,8 +292,8 @@ def filter_joined_queries_adding_derived_metrics(
 
 
 def add_all_time_delta_columns(
-        filtered_w_derived_metrics: session.query.subquery
-) -> session.query.subquery:
+        filtered_w_derived_metrics
+):
     all_time_delta_columns = session.query(
         filtered_w_derived_metrics,
         *[
