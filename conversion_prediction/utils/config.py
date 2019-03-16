@@ -65,11 +65,11 @@ DERIVED_METRICS_CONFIG = {
         'denominator': 'visit_count'
     },
     'timespent_per_visit': {
-        'nominator': 'timespent_sum',
+        'nominator': 'timespent_count',
         'denominator': 'visit_count'
     },
     'timespent_per_pageview': {
-        'nominator': 'timespent_sum',
+        'nominator': 'timespent_count',
         'denominator': 'pageview_count'
     },
 }
