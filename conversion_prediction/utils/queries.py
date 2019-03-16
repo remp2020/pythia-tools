@@ -161,7 +161,8 @@ def create_rolling_agg_function(
     result_function = agg_function(column).over(
         partition_by=partitioning_column,
         order_by=ordering_column,
-        rows=lower_bound)
+        rows=(lower_bound, 0)
+    )
 
     return result_function
 
