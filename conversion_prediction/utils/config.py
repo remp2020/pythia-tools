@@ -53,23 +53,23 @@ CURRENT_MODEL_VERSION = '1.0'
 
 DERIVED_METRICS_CONFIG = {
     'pageviews_per_visit': {
-        'nominator': 'pageviews_count',
-        'denominator': 'visits_count'
+        'nominator': 'pageview_count',
+        'denominator': 'visit_count'
     },
     'visits_per_day_active': {
-        'nominator': 'visits_count',
+        'nominator': 'visit_count',
         'denominator': 'days_active_count'
     },
     'direct_visits_share': {
-        'nominator': 'direct_visits_count',
-        'denominator': 'visits_count'
+        'nominator': 'direct_visit_count',
+        'denominator': 'visit_count'
     },
     'timespent_per_visit': {
-        'nominator': 'timespent_count',
-        'denominator': 'visits_count'
+        'nominator': 'timespent_sum',
+        'denominator': 'visit_count'
     },
     'timespent_per_pageview': {
-        'nominator': 'timespent_count',
-        'denominator': 'pageviews_count'
+        'nominator': 'timespent_sum',
+        'denominator': 'pageview_count'
     },
 }
