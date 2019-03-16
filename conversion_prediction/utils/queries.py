@@ -273,7 +273,10 @@ def filter_joined_queries_adding_derived_metrics(
     start_time: datetime
 ):
     filtered_w_derived_metrics = session.query(
-        *[column for column in joined_partial_queries.columns if not re.search('outcome', column.name)],
+        *[column.label(re.sub('timespent_count', 'timespend_sum', column.name))
+          for column in joined_partial_queries.columns
+          if not re.search('outcome', column.name)
+          and column.name != 'row_number'],
         case(
             [
                 (joined_partial_queries.c['is_active_on_date'] == True,
