@@ -38,19 +38,8 @@ def get_user_profiles_by_date(
     :param moving_window_length:
     :return:
     '''
-    # _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
-    # query_string = queries['user_profiles_by_date']
     min_date = min_date.replace(hour=0, minute=0, second=0, microsecond=0)
     max_date = max_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    # user_profiles_by_date = retrieve_data_for_query_key(
-    #     query_string,
-    #     query_arguments={
-    #         'min_date' : min_date,
-    #         'max_date' : max_date,
-    #         'moving_window_length': moving_window_length,
-    #         'moving_window_length_str': str(moving_window_length)
-    #     },
-    #     connection=postgres)
 
     user_profiles_by_date = get_feature_frame_via_sqlalchemy(
         min_date,
