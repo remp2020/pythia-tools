@@ -299,7 +299,7 @@ def filter_joined_queries_adding_derived_metrics(
     ).filter(
         and_(
             joined_partial_queries.c['pageview_count'] > 0,
-            joined_partial_queries.c['date'] >= start_time + timedelta(days=7),
+            joined_partial_queries.c['date'] >= start_time,
             joined_partial_queries.c['row_number'] == 1)
     ).subquery()
 
