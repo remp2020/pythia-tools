@@ -16,11 +16,12 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
-from utils.db_utils import create_predictions_table, create_predictions_job_log
-from utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
+from .utils.db_utils import create_predictions_table, create_predictions_job_log
+from .utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
     split_type, LABELS, CURRENT_MODEL_VERSION
-from utils.db_utils import create_connection, retrieve_data_for_query_key
-from utils.queries import queries
+from .utils.db_utils import create_connection, retrieve_data_for_query_key
+from .utils.queries import queries
+from .utils.queries import get_feature_frame_via_sqlalchemy
 
 load_dotenv()
 
@@ -37,19 +38,14 @@ def get_user_profiles_by_date(
     :param moving_window_length:
     :return:
     '''
-    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
-    query_string = queries['user_profiles_by_date']
     min_date = min_date.replace(hour=0, minute=0, second=0, microsecond=0)
     max_date = max_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    user_profiles_by_date = retrieve_data_for_query_key(
-        query_string,
-        query_arguments={
-            'min_date' : min_date,
-            'max_date' : max_date,
-            'moving_window_length': moving_window_length,
-            'moving_window_length_str': str(moving_window_length)
-        },
-        connection=postgres)
+
+    user_profiles_by_date = get_feature_frame_via_sqlalchemy(
+        min_date,
+        max_date,
+        moving_window_length
+    )
 
     user_profiles_by_date[NUMERIC_COLUMNS].fillna(0, inplace=True)
 
