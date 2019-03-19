@@ -110,6 +110,11 @@ class Parser:
             print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 
     def store_in_db(self, conn, cur, processed_date):
+        print("Deleting data for date " + str(processed_date))
+
+        cur.execute('DELETE FROM aggregated_browser_days WHERE date = %s', (processed_date,))
+        conn.commit()
+
         print("Storing data for date " + str(processed_date))
 
         params = {
