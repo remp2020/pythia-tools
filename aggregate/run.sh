@@ -5,7 +5,10 @@ export PATH=".virtualenv/bin:$PATH"
 function usage {
     echo "Aggregation script moving data from Elastic storage to PostgreSQL DB for Pythia processing"
     echo "Usage: $0 --min_date=<DATE> --max_date=<DATE> | $0 --date=<DATE>" >&2
-    echo "Optional argument is --dir=<DIR>, specifying where to look for/save aggregated elastic CSV files" >&2
+    echo "Optional arguments:"
+    echo "  --dir=<DIR>, specifying where to look for/save aggregated elastic CSV files" >&2
+    echo "  --env=<FILE>, specifying .env file for sourcing" >&2
+    echo "  --dryrun, specifying to check/save the CSVs, but prevent execution of aggregation" >&2
     echo "Date format is YYYY-MM-DD" >&2
 }
 
@@ -42,6 +45,15 @@ while [ $# -gt 0 ]; do
       ;;
     --dir=*)
       dir="${1#*=}"
+      ;;
+    --dryrun)
+      dryrun=1
+      ;;
+    --env=*)
+      env="${1#*=}"
+      ;;
+    --)
+      break
       ;;
     *)
       printf "***************************\n"
@@ -98,14 +110,18 @@ else
     dir=$(pwd)
 fi
 
+if [ -z $env ]; then
+    env=".env"
+fi
 
-export $(grep -v '^#' .env | xargs)
+echo "Sourcing environment variables from $env"
+export $(grep -v '^#' $env | xargs)
 
 echo "Searching for aggregated files in $dir"
 
-files=("pageviews_time_spent" "pageviews" "commerce")
+files=("pageviews_time_spent" "pageviews" "commerce" "events")
 
-# For every date, aggregate CSV files into Postgre (optionally download CSV files from elastic)
+# For every date, aggregate CSV files into Postgres (optionally download CSV files from elastic)
 while [ "$di" != "$end_on" ]; do
     file_date=${di//-/}
 
@@ -117,11 +133,13 @@ while [ "$di" != "$end_on" ]; do
         cur_file_csv="${cur_dir}/${idx}_${file_date}.csv"
 
         if [ ! -f $cur_file_gz ]; then
-            echo "File ${cur_file_gz} not found, downloading from Elastic"
+            echo "File ${cur_file_gz} not found, downloading from Elastic ($ELASTIC_ADDR): ${idx} [ ${di} TO ${di} ]"
             # aggregate CSV file from elastic
             es2csv -u $ELASTIC_ADDR -i "${idx}" -q "time: [ ${di} TO ${di} ]" -o $cur_file_csv
-            # pack file to .gz
-            gzip -k -f $cur_file_csv
+            # pack file to .gz if it was downloaded (at least one record was present for the day)
+            if [ -f $cur_file_csv ]; then
+                gzip -k -f -c $cur_file_csv > $cur_file_gz
+            fi
         else
             # unpack .csv.gz file
             gzip -k -f -d $cur_file_gz
@@ -129,14 +147,18 @@ while [ "$di" != "$end_on" ]; do
     done
 
     # Run aggregation
-    python utils/aggregate.py ${file_date} --dir=$dir
-    python utils/conversion_events.py ${file_date} --dir=$dir
+    if [ -z $dryrun ]; then
+        python utils/aggregate.py ${file_date} --dir=$dir
+        python utils/conversion_events.py ${file_date} --dir=$dir
+    fi
 
     # Delete csv files
     for idx in "${files[@]}"; do
         cur_dir="$dir/$idx"
         cur_file_csv="${cur_dir}/${idx}_${file_date}.csv"
+        if [ -f $cur_file_csv ]; then
         rm $cur_file_csv
+        fi
     done
 
     di=$(add_day $di)
