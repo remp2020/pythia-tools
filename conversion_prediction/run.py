@@ -22,6 +22,7 @@ from .utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CO
 from .utils.db_utils import create_connection, retrieve_data_for_query_key
 from .utils.queries import queries
 from .utils.queries import get_feature_frame_via_sqlalchemy
+from .utils.data_transformations import unique_list
 
 load_dotenv()
 
@@ -48,6 +49,7 @@ def get_user_profiles_by_date(
     )
 
     user_profiles_by_date[NUMERIC_COLUMNS].fillna(0, inplace=True)
+    user_profiles_by_date['user_ids'] = user_profiles_by_date['user_ids'].apply(unique_list)
 
     if user_profiles_by_date['date'].min()  > min_date.date():
         raise ValueError(f'''While the specified min_date is {min_date.date()}, 
@@ -190,8 +192,8 @@ def create_train_test_transformations(
         train_indices = data[data['date'] <= train_date.date()].index
         test_indices = data[data['date'] > train_date.date()].index
 
-    X_train = data.iloc[train_indices].drop(columns=['outcome', 'user_id'])
-    X_test = data.iloc[test_indices].drop(columns=['outcome', 'user_id'])
+    X_train = data.iloc[train_indices].drop(columns=['outcome', 'user_ids'])
+    X_test = data.iloc[test_indices].drop(columns=['outcome', 'user_ids'])
     category_lists_dict = generate_category_lists_dict(X_train, CATEGORICAL_COLUMNS)
 
     path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
@@ -365,7 +367,7 @@ def load_model_related_constructs(
     :param scoring_date:
     :return:
     '''
-    path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
+    path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')        
     model_related_file_list = os.listdir(path_to_model_files)
     last_model_related_files = {}
     for model_related_file in ['category_lists', 'scaler', 'model']:
@@ -382,6 +384,8 @@ def load_model_related_constructs(
             scaler date: {last_model_related_files['scaler']}
             model date: {last_model_related_files['model']}
             ''')
+    if not path_to_model_files:
+        path_to_model_files = ''
     with open(path_to_model_files +
               'category_lists_' + str(last_model_related_files['category_lists']) + '.json', 'r') as outfile:
         category_lists_dict = json.load(outfile)
@@ -417,7 +421,7 @@ def batch_predict(
     X_all = pd.concat([feature_frame_numeric, feature_frame[
         [column for column in feature_frame.columns
          if column not in NUMERIC_COLUMNS + CONFIG_COLUMNS + BOOL_COLUMNS]].sort_index()], axis=1)
-    X_all = X_all.drop(['outcome', 'user_id'], axis=1)
+    X_all = X_all.drop(['outcome', 'user_ids'], axis=1)
     predictions = pd.DataFrame(model.predict_proba(X_all))
     label_range = range(len(LABELS))
     label_encoder = instantiate_label_encoder(LABELS)
@@ -425,7 +429,7 @@ def batch_predict(
         predictions.columns = [re.sub(str(i), label_encoder.inverse_transform(i) + '_probability', str(column))
                                for column in predictions.columns]
 
-    predictions = pd.concat([feature_frame[['date', 'browser_id', 'user_id']],  predictions], axis=1)
+    predictions = pd.concat([feature_frame[['date', 'browser_id', 'user_ids']],  predictions], axis=1)
     predictions['predicted_outcome'] = label_encoder.inverse_transform(model.predict(X_all))
 
     return predictions

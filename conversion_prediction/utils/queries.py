@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 import sqlalchemy
-from sqlalchemy.types import TIMESTAMP, Float
+from sqlalchemy.types import TIMESTAMP, Float, DATE
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_
 from sqlalchemy import func, case
@@ -24,7 +24,7 @@ def get_feature_frame_via_sqlalchemy(
         moving_window_length
     )
 
-    feature_frame = pd.read_sql(full_query.statement,full_query.session.bind)
+    feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
     feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.date
 
@@ -54,7 +54,8 @@ def get_full_features_query(
         generated_time_series,
         unique_events,
         device_information,
-        moving_window_length
+        moving_window_length,
+        start_time
     )
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
@@ -94,13 +95,13 @@ def get_subqueries_for_non_gapped_time_series(
             start_time,
             end_time,
             timedelta(days=1)
-        ).label('date_gap_filler')
+        ).cast(DATE).label('date_gap_filler')
     ).subquery()
 
     browser_ids = session.query(
         filtered_data.c['browser_id'],
-        filtered_data.c['user_id']
-    ).distinct(filtered_data.c['browser_id'], filtered_data.c['user_id']).subquery()
+        func.array_agg(func.coalesce(filtered_data.c['user_id'], '')).label('user_ids')
+    ).group_by(filtered_data.c['browser_id']).subquery()
 
     return browser_ids, generated_time_series
 
@@ -175,7 +176,8 @@ def join_all_partial_queries(
         generated_time_series,
         unique_events,
         device_information,
-        moving_window_length: int
+        moving_window_length: int,
+        start_time: datetime
 ):
     # {name of the resulting column : source / calculation}
     column_source_to_name_mapping = {
@@ -213,28 +215,25 @@ def join_all_partial_queries(
 
     joined_partial_queries = session.query(
         browser_ids.c['browser_id'].label('browser_id'),
-        browser_ids.c['user_id'].label('user_id'),
+        browser_ids.c['user_ids'].label('user_ids'),
         generated_time_series.c['date_gap_filler'].label('date'),
         *rolling_agg_columns,
         (filtered_data.c['pageviews'] > 0.0).label('is_active_on_date'),
         extract('day',
-            # last day in the current window
-            create_rolling_agg_function(
-                moving_window_length,
-                False,
-                func.max,
-                generated_time_series.c['date_gap_filler'],
-                browser_ids.c['browser_id'],
-                generated_time_series.c['date_gap_filler'])
-            # last day active in current window
-            - create_rolling_agg_function(
-                moving_window_length,
-                False,
-                func.max,
-                filtered_data.c['date'],
-                browser_ids.c['browser_id'],
-                generated_time_series.c['date_gap_filler'])
-        ).label('days_since_last_active'),
+                # last day in the current window
+                generated_time_series.c['date_gap_filler']
+                # last day active in current window
+                - func.coalesce(
+                    create_rolling_agg_function(
+                        moving_window_length,
+                        False,
+                        func.max,
+                        filtered_data.c['date'],
+                        browser_ids.c['browser_id'],
+                        generated_time_series.c['date_gap_filler']),
+                    start_time - timedelta(days=2)
+                )
+               ).label('days_since_last_active'),
         unique_events.c['outcome_filled'],
         filtered_data.c['next_7_days_event'].label('outcome_original'),
         # unpack all device information columns except ones already present in other queries
@@ -346,7 +345,7 @@ queries['upsert_predictions'] = '''
                conversion_predictions_daily (
                    date,
                    browser_id,
-                   user_id,
+                   user_ids,
                    predicted_outcome, 
                    conversion_probability, 
                    no_conversion_probability,
@@ -357,7 +356,7 @@ queries['upsert_predictions'] = '''
            VALUES (
                :date,
                :browser_id,
-               :user_id,
+               :user_ids,
                :predicted_outcome, 
                :conversion_probability, 
                :no_conversion_probability,

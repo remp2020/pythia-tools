@@ -81,7 +81,7 @@ def create_predictions_table(connection: sqlalchemy.engine):
           id SERIAL PRIMARY KEY,
           date TIMESTAMPTZ,
           browser_id TEXT,
-          user_id TEXT NULL,
+          user_ids TEXT NULL,
           predicted_outcome conversion_prediction_outcomes,
           conversion_probability FLOAT,
           no_conversion_probability FLOAT,
@@ -169,3 +169,20 @@ def check_indices_existence(table_name: str, connection: sqlalchemy.engine) -> T
     indices = connection.execute(query, table_name=table_name).fetchall()
 
     return len(indices) != 0
+
+
+def migrate_user_id_to_user_ids(db_engine):
+    '''
+    Originally user_id column only hosted one user_id, but our prediction is on the level of browser which meants
+    this added unintented granularity to the data. This migration introduces an ARRAY column user_ids that handled the
+    1:N relationship between browser_ids and user_ids
+    :param db_engine:
+    :return:
+    '''
+    for table_name in ['aggregated_browser_days', 'conversion_predictions_daily']:
+        table = get_sqla_table(table_name=table_name, engine=db_engine)
+        table_columns = [column.name for column in table.columns]
+        if 'user_id' in table_columns and 'user_ids' not in table_columns:
+            db_engine.execute(f'ALTER TABLE {table_name} ADD column user_ids TEXT[]')
+            db_engine.execute(f"UPDATE {table_name} SET user_ids = STRING_TO_ARRAY(user_id, ',')")
+            db_engine.execute(f"ALTER TABLE {table_name} DROP column user_id")
