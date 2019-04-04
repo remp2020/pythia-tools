@@ -23,7 +23,7 @@ def migrate(cur):
 CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
     "date" date NOT NULL,
     "browser_id" character varying NOT NULL,
-    "user_id" text,
+    "user_ids" text[] NOT NULL DEFAULT '{}',
     "pageviews" integer NOT NULL,
     "timespent" integer,
     "sessions" integer NOT NULL,
@@ -40,16 +40,10 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
     "is_tablet" boolean,
     "next_7_days_event" character varying NOT NULL DEFAULT 'no_conversion',
     "next_event_time" timestamp,
+    "referer_medium_pageviews" json,
+    "article_category_pageviews" jsonb,
+    "hour_interval_pageviews" jsonb,
     PRIMARY KEY(date, browser_id)
 ) WITH (oids = false);
 '''
     cur.execute(sql)
-
-    sql2 = 'ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS referer_medium_pageviews jsonb;'
-    cur.execute(sql2)
-
-    sql3 = 'ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS article_category_pageviews jsonb;'
-    cur.execute(sql3)
-
-    sql4 = 'ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS hour_interval_pageviews jsonb;'
-    cur.execute(sql4)
