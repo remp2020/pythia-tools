@@ -34,7 +34,7 @@ class Parser:
                 'timespent': 0,
                 'sessions': set(),
                 'sessions_without_ref': set(),
-                'user_id': None,
+                'user_ids': set(),
 
                 # pageviews per:
                 "referer_medium_pageviews": {},
@@ -71,11 +71,11 @@ class Parser:
                 add_one(self.data[row['browser_id']]['hour_interval_pageviews'], hour + ":00-" + hour + ":59")
 
                 if row['user_id']:
-                    # There might be conflicts (multiple users on same browser)
-                    # but this error is acceptable for our use case
-                    self.data[row['browser_id']]['user_id'] = row['user_id']
+                    self.data[row['browser_id']]['user_ids'].add(row['user_id'])
+
                 if row['derived_referer_medium'] == 'direct':
                     self.data[row['browser_id']]['sessions_without_ref'].add(row['remp_session_id'])
+
                 self.parse_user_agent(row['browser_id'], row['user_agent'])
 
     def process_pageviews_timespent(self, f):
@@ -134,7 +134,7 @@ class Parser:
             'is_tablet': lambda d: d['ua'].is_tablet,
             'is_mobile': lambda d: d['ua'].is_mobile,
 
-            'user_id': lambda d: d['user_id'],
+            'user_ids': lambda d: list(d['user_ids']),
 
             'referer_medium_pageviews': lambda d: json.dumps(d['referer_medium_pageviews']),
             'article_category_pageviews': lambda d: json.dumps(d['article_category_pageviews']),
