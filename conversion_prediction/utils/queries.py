@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 import sqlalchemy
-from sqlalchemy.types import TIMESTAMP, Float, DATE, Text
+from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_
 from sqlalchemy import func, case
@@ -101,8 +101,13 @@ def get_subqueries_for_non_gapped_time_series(
     browser_ids = session.query(
         filtered_data.c['browser_id'],
         func.array_agg(
-                filtered_data.c['user_ids']
-            ).label('user_ids')
+            case(
+                [
+                    filtered_data.c['user_ids'] == None,
+                    literal(ARRAY(['empty_user_id']), ARRAY[TEXT])
+                ],
+                else_= filtered_data.c['user_ids']
+            )).label('user_ids')
     ).group_by(filtered_data.c['browser_id']).subquery()
 
     return browser_ids, generated_time_series
