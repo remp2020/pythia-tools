@@ -1,15 +1,14 @@
 import re
 import pandas as pd
-import sqlalchemy
 from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT
 from sqlalchemy.sql.expression import literal, extract
-from sqlalchemy import and_
-from sqlalchemy import func, case
+from sqlalchemy.sql import select
+from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_aggregated_browser_days_w_session
 from .config import DERIVED_METRICS_CONFIG
-from sqlalchemy.dialects.postgresql import array, ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY
 
 aggregated_browser_days, session = get_aggregated_browser_days_w_session()
 
@@ -39,7 +38,7 @@ def get_full_features_query(
 ):
     filtered_data = get_filtered_cte(start_time, end_time)
 
-    browser_ids, generated_time_series = get_subqueries_for_non_gapped_time_series(
+    all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
         filtered_data,
         start_time,
         end_time
@@ -51,8 +50,7 @@ def get_full_features_query(
 
     joined_partial_queries = join_all_partial_queries(
         filtered_data,
-        browser_ids,
-        generated_time_series,
+        all_date_browser_combinations
         unique_events,
         device_information,
         moving_window_length,
@@ -97,7 +95,7 @@ def get_subqueries_for_non_gapped_time_series(
             end_time,
             timedelta(days=1)
         ).cast(DATE).label('date_gap_filler')
-    ).subquery()
+    ).subquery(name='date_gap_filler')
 
     browser_ids = session.query(
         filtered_data.c['browser_id'],
@@ -112,9 +110,12 @@ def get_subqueries_for_non_gapped_time_series(
                 ],
                 else_= filtered_data.c['user_ids'].cast(TEXT)
             )).label('user_ids')
-    ).group_by(filtered_data.c['browser_id']).subquery()
+    ).group_by(filtered_data.c['browser_id']).subquery(name='browser_ids')
 
-    return browser_ids, generated_time_series
+    all_date_browser_combinations = session.query(
+        select([browser_ids, generated_time_series]).alias('all_date_browser_combinations')).subquery()
+
+    return all_date_browser_combinations
 
 
 def get_unique_events_subquery(
@@ -183,8 +184,7 @@ def create_rolling_agg_function(
 
 def join_all_partial_queries(
         filtered_data,
-        browser_ids,
-        generated_time_series,
+        all_date_browser_combinations,
         unique_events,
         device_information,
         moving_window_length: int,
@@ -217,22 +217,22 @@ def join_all_partial_queries(
             is_half_window,
             func.sum,
             column_source,
-            browser_ids.c['browser_id'],
-            generated_time_series.c['date_gap_filler']
+            all_date_browser_combinations.c['browser_id'],
+            all_date_browser_combinations.c['date_gap_filler']
         ).cast(Float).label(f'{column_name}_{suffix}')
-        for column_name, column_source  in column_source_to_name_mapping.items()
+        for column_name, column_source in column_source_to_name_mapping.items()
         for suffix, is_half_window in rolling_agg_variants.items()
     ]
 
     joined_partial_queries = session.query(
-        browser_ids.c['browser_id'].label('browser_id'),
-        browser_ids.c['user_ids'].label('user_ids'),
-        generated_time_series.c['date_gap_filler'].label('date'),
+        all_date_browser_combinations.c['browser_id'].label('browser_id'),
+        all_date_browser_combinations.c['user_ids'].label('user_ids'),
+        all_date_browser_combinations.c['date_gap_filler'].label('date'),
         *rolling_agg_columns,
         (filtered_data.c['pageviews'] > 0.0).label('is_active_on_date'),
         extract('day',
                 # last day in the current window
-                generated_time_series.c['date_gap_filler']
+                all_date_browser_combinations.c['date_gap_filler']
                 # last day active in current window
                 - func.coalesce(
                     create_rolling_agg_function(
@@ -240,8 +240,8 @@ def join_all_partial_queries(
                         False,
                         func.max,
                         filtered_data.c['date'],
-                        browser_ids.c['browser_id'],
-                        generated_time_series.c['date_gap_filler']),
+                        all_date_browser_combinations.c['browser_id'],
+                        all_date_browser_combinations.c['date_gap_filler']),
                     start_time - timedelta(days=2)
                 )
                ).label('days_since_last_active'),
@@ -252,29 +252,27 @@ def join_all_partial_queries(
         # row number in case deduplication is needed
         func.row_number().over(
             partition_by=[
-                browser_ids.c['browser_id'],
-                generated_time_series.c['date_gap_filler']],
+                all_date_browser_combinations.c['browser_id'],
+                all_date_browser_combinations.c['date_gap_filler']],
             order_by=[
-                browser_ids.c['browser_id'],
-                generated_time_series.c['date_gap_filler']]
+                all_date_browser_combinations.c['browser_id'],
+                all_date_browser_combinations.c['date_gap_filler']]
         ).label('row_number')
-    ).join(
-        generated_time_series, literal(True)
     ).outerjoin(
         filtered_data,
         and_(
-            browser_ids.c['browser_id'] == filtered_data.c['browser_id'],
-            generated_time_series.c['date_gap_filler'] == filtered_data.c['date'])
+            all_date_browser_combinations.c['browser_id'] == filtered_data.c['browser_id'],
+            all_date_browser_combinations.c['date_gap_filler'] == filtered_data.c['date'])
      ).outerjoin(
         unique_events,
         and_(
             unique_events.c['event_browser_id'] == filtered_data.c['browser_id'],
             unique_events.c['next_event_time_filled'] > filtered_data.c['date'] - timedelta(days=7),
             filtered_data.c['date'] <= unique_events.c['next_event_time_filled']
-        ),
+        )
     ).outerjoin(
         device_information,
-        device_information.c['browser_id'] == browser_ids.c['browser_id']
+        device_information.c['browser_id'] == all_date_browser_combinations.c['browser_id']
     ).subquery()
 
     return joined_partial_queries
