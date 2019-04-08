@@ -9,6 +9,7 @@ from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_aggregated_browser_days_w_session
 from .config import DERIVED_METRICS_CONFIG
+from sqlalchemy.dialects.postgresql import array, ARRAY
 
 aggregated_browser_days, session = get_aggregated_browser_days_w_session()
 
@@ -103,10 +104,13 @@ def get_subqueries_for_non_gapped_time_series(
         func.array_agg(
             case(
                 [
-                    filtered_data.c['user_ids'] == None,
-                    literal(ARRAY(['empty_user_id']), ARRAY[TEXT])
+                    (filtered_data.c['user_ids'] == None,
+                     ''),
+                    (filtered_data.c['user_ids'] == literal([], ARRAY(TEXT)),
+                     '')
+
                 ],
-                else_= filtered_data.c['user_ids']
+                else_= filtered_data.c['user_ids'].cast(TEXT)
             )).label('user_ids')
     ).group_by(filtered_data.c['browser_id']).subquery()
 
@@ -254,7 +258,7 @@ def join_all_partial_queries(
                 browser_ids.c['browser_id'],
                 generated_time_series.c['date_gap_filler']]
         ).label('row_number')
-    ).outerjoin(
+    ).join(
         generated_time_series, literal(True)
     ).outerjoin(
         filtered_data,
