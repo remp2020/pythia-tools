@@ -100,7 +100,7 @@ def get_subqueries_for_non_gapped_time_series(
 
     browser_ids = session.query(
         filtered_data.c['browser_id'],
-        func.array_agg(func.coalesce(filtered_data.c['user_ids'], '')).label('user_ids')
+        func.array_agg(func.unnest(func.coalesce(filtered_data.c['user_ids'], {''})).distinct()).label('user_ids')
     ).group_by(filtered_data.c['browser_id']).subquery()
 
     return browser_ids, generated_time_series
