@@ -50,7 +50,7 @@ def get_full_features_query(
 
     joined_partial_queries = join_all_partial_queries(
         filtered_data,
-        all_date_browser_combinations
+        all_date_browser_combinations,
         unique_events,
         device_information,
         moving_window_length,
