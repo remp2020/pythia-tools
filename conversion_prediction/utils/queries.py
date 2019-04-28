@@ -52,13 +52,17 @@ def get_full_features_query(
         filtered_data,
         all_date_browser_combinations,
         unique_events,
-        device_information,
+        device_information
+    )
+
+    data_with_rolling_windows = calculate_rolling_windows_features(
+        joined_partial_queries,
         moving_window_length,
         start_time
     )
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
-        joined_partial_queries,
+        data_with_rolling_windows,
         start_time
     )
 
@@ -186,24 +190,63 @@ def join_all_partial_queries(
         filtered_data,
         all_date_browser_combinations,
         unique_events,
+        device_information
+):
+    # {name of the resulting column : source / calculation}
+
+    joined_queries = session.query(
+        all_date_browser_combinations.c['browser_id'].label('browser_id'),
+        all_date_browser_combinations.c['user_ids'].label('user_ids'),
+        all_date_browser_combinations.c['date_gap_filler'].label('date'),
+        filtered_data.c['date'].label('date_w_gaps'),
+        (filtered_data.c['pageviews'] > 0.0).label('is_active_on_date'),
+        unique_events.c['outcome_filled'],
+        filtered_data.c['next_7_days_event'].label('outcome_original'),
+        # unpack all device information columns except ones already present in other queries
+        filtered_data.c['pageviews'],
+        filtered_data.c['timespent'],
+        filtered_data.c['sessions_without_ref'],
+        filtered_data.c['sessions'],
+        *[device_information.c[column.name] for column in device_information.columns if column.name != 'browser_id'],
+    ).outerjoin(
+        filtered_data,
+        and_(
+            all_date_browser_combinations.c['browser_id'] == filtered_data.c['browser_id'],
+            all_date_browser_combinations.c['date_gap_filler'] == filtered_data.c['date'])
+    ).outerjoin(
+        unique_events,
+        and_(
+            unique_events.c['event_browser_id'] == filtered_data.c['browser_id'],
+            unique_events.c['next_event_time_filled'] > filtered_data.c['date'] - timedelta(days=7),
+            filtered_data.c['date'] <= unique_events.c['next_event_time_filled']
+        )
+    ).outerjoin(
         device_information,
+        device_information.c['browser_id'] == all_date_browser_combinations.c['browser_id']
+    ).subquery()
+
+    return joined_queries
+
+
+def calculate_rolling_windows_features(
+        joined_queries,
         moving_window_length: int,
         start_time: datetime
 ):
     # {name of the resulting column : source / calculation}
     column_source_to_name_mapping = {
-        'pageview': filtered_data.c['pageviews'],
-        'timespent': filtered_data.c['timespent'],
-        'direct_visit': filtered_data.c['sessions_without_ref'],
-        'visit': filtered_data.c['sessions'],
+        'pageview': joined_queries.c['pageviews'],
+        'timespent': joined_queries.c['timespent'],
+        'direct_visit': joined_queries.c['sessions_without_ref'],
+        'visit': joined_queries.c['sessions'],
         'days_active': case(
             [
                 (
-                    filtered_data.c['date'] == None,
+                    joined_queries.c['date_w_gaps'] == None,
                     0
                 )
             ],
-            else_= 1)
+            else_=1)
     }
     # {naming suffix : related parameter for determining part of full window}
     rolling_agg_variants = {
@@ -217,65 +260,45 @@ def join_all_partial_queries(
             is_half_window,
             func.sum,
             column_source,
-            all_date_browser_combinations.c['browser_id'],
-            all_date_browser_combinations.c['date_gap_filler']
+            joined_queries.c['browser_id'],
+            joined_queries.c['date']
         ).cast(Float).label(f'{column_name}_{suffix}')
         for column_name, column_source in column_source_to_name_mapping.items()
         for suffix, is_half_window in rolling_agg_variants.items()
     ]
 
-    joined_partial_queries = session.query(
-        all_date_browser_combinations.c['browser_id'].label('browser_id'),
-        all_date_browser_combinations.c['user_ids'].label('user_ids'),
-        all_date_browser_combinations.c['date_gap_filler'].label('date'),
+    queries_with_basic_window_columns = session.query(
+        joined_queries,
         *rolling_agg_columns,
-        (filtered_data.c['pageviews'] > 0.0).label('is_active_on_date'),
         extract('day',
                 # last day in the current window
-                all_date_browser_combinations.c['date_gap_filler']
+                joined_queries.c['date']
                 # last day active in current window
                 - func.coalesce(
                     create_rolling_agg_function(
                         moving_window_length,
                         False,
                         func.max,
-                        filtered_data.c['date'],
-                        all_date_browser_combinations.c['browser_id'],
-                        all_date_browser_combinations.c['date_gap_filler']),
+                        joined_queries.c['date_w_gaps'],
+                        joined_queries.c['browser_id'],
+                        joined_queries.c['date']),
                     start_time - timedelta(days=2)
                 )
-               ).label('days_since_last_active'),
-        unique_events.c['outcome_filled'],
-        filtered_data.c['next_7_days_event'].label('outcome_original'),
-        # unpack all device information columns except ones already present in other queries
-        *[device_information.c[column.name] for column in device_information.columns if column.name != 'browser_id'],
+                ).label('days_since_last_active'),
         # row number in case deduplication is needed
         func.row_number().over(
             partition_by=[
-                all_date_browser_combinations.c['browser_id'],
-                all_date_browser_combinations.c['date_gap_filler']],
+                joined_queries.c['browser_id'],
+                joined_queries.c['date']],
             order_by=[
-                all_date_browser_combinations.c['browser_id'],
-                all_date_browser_combinations.c['date_gap_filler']]
+                joined_queries.c['browser_id'],
+                joined_queries.c['date']]
         ).label('row_number')
-    ).outerjoin(
-        filtered_data,
-        and_(
-            all_date_browser_combinations.c['browser_id'] == filtered_data.c['browser_id'],
-            all_date_browser_combinations.c['date_gap_filler'] == filtered_data.c['date'])
-     ).outerjoin(
-        unique_events,
-        and_(
-            unique_events.c['event_browser_id'] == filtered_data.c['browser_id'],
-            unique_events.c['next_event_time_filled'] > filtered_data.c['date'] - timedelta(days=7),
-            filtered_data.c['date'] <= unique_events.c['next_event_time_filled']
-        )
-    ).outerjoin(
-        device_information,
-        device_information.c['browser_id'] == all_date_browser_combinations.c['browser_id']
     ).subquery()
 
-    return joined_partial_queries
+    return queries_with_basic_window_columns
+
+
 
 
 def filter_joined_queries_adding_derived_metrics(
