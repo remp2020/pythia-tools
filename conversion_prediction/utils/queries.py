@@ -192,8 +192,6 @@ def join_all_partial_queries(
         unique_events,
         device_information
 ):
-    # {name of the resulting column : source / calculation}
-
     joined_queries = session.query(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
@@ -202,11 +200,11 @@ def join_all_partial_queries(
         (filtered_data.c['pageviews'] > 0.0).label('is_active_on_date'),
         unique_events.c['outcome_filled'],
         filtered_data.c['next_7_days_event'].label('outcome_original'),
-        # unpack all device information columns except ones already present in other queries
         filtered_data.c['pageviews'],
         filtered_data.c['timespent'],
         filtered_data.c['sessions_without_ref'],
         filtered_data.c['sessions'],
+        # unpack all device information columns except ones already present in other queries
         *[device_information.c[column.name] for column in device_information.columns if column.name != 'browser_id'],
     ).outerjoin(
         filtered_data,
@@ -297,8 +295,6 @@ def calculate_rolling_windows_features(
     ).subquery()
 
     return queries_with_basic_window_columns
-
-
 
 
 def filter_joined_queries_adding_derived_metrics(
