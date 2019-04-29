@@ -313,7 +313,7 @@ def create_feature_frame(
     user_profiles['outcome'] = test_outcome
     user_profiles = encode_uncommon_categories(user_profiles)
     user_profiles = transform_bool_columns_to_int(user_profiles)
-    user_profiles_for_prediction = user_profiles[user_profiles['days_active_count'] > 1].reset_index(drop=True)
+    user_profiles_for_prediction = user_profiles[user_profiles['days_active_count'] >= 1].reset_index(drop=True)
 
     return user_profiles_for_prediction
 
