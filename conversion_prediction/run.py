@@ -287,7 +287,7 @@ def train_model(
                              outcome_frame.columns[
                              len(label_range):(2*len(label_range))]]
     for i in label_range:
-        outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform(i), column)
+        outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform([i])[0], column)
                                  for column in outcome_frame.columns]
     outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
 
