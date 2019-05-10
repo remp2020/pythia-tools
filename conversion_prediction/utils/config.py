@@ -73,3 +73,5 @@ DERIVED_METRICS_CONFIG = {
         'denominator': 'pageview_count'
     },
 }
+
+JSON_COLUMNS = ['referer_medium_pageviews', 'referer_medium_pageviews', 'article_category_pageviews']
