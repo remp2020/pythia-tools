@@ -1,13 +1,14 @@
 import re
 import pandas as pd
-from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT
+# TODO: Look into unifying TEXT and Text
+from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy.sql import select
 from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_aggregated_browser_days_w_session
-from .config import DERIVED_METRICS_CONFIG
+from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS
 from sqlalchemy.dialects.postgresql import ARRAY
 
 aggregated_browser_days, session = get_aggregated_browser_days_w_session()
@@ -186,6 +187,17 @@ def create_rolling_agg_function(
     return result_function
 
 
+def get_unique_json_fields_query(filtered_data, column_name):
+    all_keys_query = session.query(
+        func.json_object_keys(filtered_data.c[column_name])
+    ).subquery()
+    column_keys = session.query(all_keys_query.c[column_name]).distinct(
+        all_keys_query.c[column_name]).all()
+    column_keys = [json_key[0] for json_key in column_keys]
+
+    return column_keys
+
+
 def join_all_partial_queries(
         filtered_data,
         all_date_browser_combinations,
@@ -193,6 +205,11 @@ def join_all_partial_queries(
         device_information
 ):
     joined_queries = session.query(
+        *[
+            filtered_data.c[json_column][json__key].cast(Text).cast(Float).label(f'{json_column}_{json__key}')
+            for json_column in JSON_COLUMNS
+            for json__key in get_unique_json_fields_query(filtered_data, json_column)
+        ],
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
@@ -244,8 +261,14 @@ def calculate_rolling_windows_features(
                     0
                 )
             ],
-            else_=1)
+            else_=1),
+        # All json key columns have their own rolling sums
+        **{
+            column: joined_queries.c[column.name] for column in joined_queries.columns
+            for json_column_name in JSON_COLUMNS if json_column_name in column.name
+        }
     }
+
     # {naming suffix : related parameter for determining part of full window}
     rolling_agg_variants = {
         'count': False,
