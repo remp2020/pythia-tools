@@ -10,6 +10,7 @@ from datetime import timedelta, datetime
 from .db_utils import get_aggregated_browser_days_w_session
 from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS
 from sqlalchemy.dialects.postgresql import ARRAY
+from typing import List
 
 aggregated_browser_days, session = get_aggregated_browser_days_w_session()
 
@@ -49,17 +50,21 @@ def get_full_features_query(
 
     device_information = get_device_information_subquery(filtered_data)
 
+    filtered_data_with_unpacked_json_fields, json_key_column_names = unpack_json_fields(filtered_data)
+
     joined_partial_queries = join_all_partial_queries(
-        filtered_data,
+        filtered_data_with_unpacked_json_fields,
         all_date_browser_combinations,
         unique_events,
-        device_information
+        device_information,
+        json_key_column_names
     )
 
     data_with_rolling_windows = calculate_rolling_windows_features(
         joined_partial_queries,
         moving_window_length,
-        start_time
+        start_time,
+        json_key_column_names
     )
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
@@ -198,42 +203,116 @@ def get_unique_json_fields_query(filtered_data, column_name):
     return column_keys
 
 
-def join_all_partial_queries(
+def unpack_json_fields(filtered_data):
+    json_key_based_columns = {}
+    json_column_keys = {}
+    for json_column in JSON_COLUMNS:
+        if json_column != 'hour_interval_pageviews':
+            json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
+            json_key_based_columns[json_column] = {
+                f'{json_column}_{json__key}': filtered_data.c[json_column][json__key].cast(Text).cast(Float)
+                for json__key in json_column_keys
+            }
+
+        else:
+            json_key_based_columns[json_column] = sum_hourly_intervals_into_4_hour_ranges(
+                filtered_data,
+                json_column_keys['hour_interval_pageviews']
+            )
+
+    unpacked_time_fields_query = session.query(
         filtered_data,
+        *[value.label(key)
+          for key, value in json_key_based_columns.items()
+          for json_key_based_columns in json_key_based_columns.values()
+          ]
+    ).subquery()
+
+    json_key_column_names = [
+        key for key in json_key_based_columns.keys()
+        for json_key_based_columns in json_key_based_columns.values()
+    ]
+
+    return unpacked_time_fields_query, json_key_column_names
+
+
+def sum_hourly_intervals_into_4_hour_ranges(
+        filtered_data,
+        json_column_keys
+):
+    '''
+    :param filtered_data:
+    :param json_column_keys:
+    :return:
+    Let's bundle the hourly data into 4 hour intervals (such as 00:00 - 03:59, ...) to avoid having too many columns.
+    The division works with the following hypothesis:
+    * 0-4: Night Owls
+    * 4-8: Morning commute
+    * 8-12: Working morning / coffee
+    * 12-16: Early afternoon, browsing during lunch
+    * 16-20: Evening commute
+    * 20-24: Before bed browsing
+
+    We need to use coalesce to avoid having almost all NULL columns
+    '''
+
+    range_sums = {}
+    for i in range(0, len(json_column_keys['hour_interval_pageviews']), step=4):
+        column = 'hour_interval_pageviews'
+        hours_in_interval = json_column_keys['hour_interval_pageviews'][i:i + 4]
+
+        current_sum_name = (
+            f"hours_{re.sub('-[0-9][0-9][0-9][0-9]$', '', hours_in_interval[i])}",
+            f"_{re.sub('^[0-9][0-9][0-9][0-9]-', '', hours_in_interval[i + 3])}")
+
+        range_sums[current_sum_name] = func.coalesce(
+            filtered_data.c[f'{column}_{hours_in_interval[0]}']
+            , 0.0
+        )
+
+        for hour in hours_in_interval[1:]:
+            range_sums[current_sum_name] = (
+                    range_sums[current_sum_name] +
+                    func.coalesce(filtered_data.c[f'{column}_{hour}'], 0.0))
+
+        return range_sums
+
+
+def join_all_partial_queries(
+        filtered_data_with_unpacked_json_fields,
         all_date_browser_combinations,
         unique_events,
-        device_information
+        device_information,
+        json_key_column_names
 ):
     joined_queries = session.query(
-        *[
-            filtered_data.c[json_column][json__key].cast(Text).cast(Float).label(f'{json_column}_{json__key}')
-            for json_column in JSON_COLUMNS
-            for json__key in get_unique_json_fields_query(filtered_data, json_column)
-        ],
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
-        filtered_data.c['date'].label('date_w_gaps'),
-        (filtered_data.c['pageviews'] > 0.0).label('is_active_on_date'),
+        func.extract('dow', all_date_browser_combinations.c['date_gap_filler']).label('day_of_week'),
+        filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
+        (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
         unique_events.c['outcome_filled'],
-        filtered_data.c['next_7_days_event'].label('outcome_original'),
-        filtered_data.c['pageviews'],
-        filtered_data.c['timespent'],
-        filtered_data.c['sessions_without_ref'],
-        filtered_data.c['sessions'],
-        # unpack all device information columns except ones already present in other queries
+        filtered_data_with_unpacked_json_fields.c['next_7_days_event'].label('outcome_original'),
+        filtered_data_with_unpacked_json_fields.c['pageviews'],
+        filtered_data_with_unpacked_json_fields.c['timespent'],
+        filtered_data_with_unpacked_json_fields.c['sessions_without_ref'],
+        filtered_data_with_unpacked_json_fields.c['sessions'],
+        # Add all columns created from json_fields
+        *[filtered_data_with_unpacked_json_fields.c[json_key_column] for json_key_column in json_key_column_names],
+        # Unpack all device information columns except ones already present in other queries
         *[device_information.c[column.name] for column in device_information.columns if column.name != 'browser_id'],
     ).outerjoin(
-        filtered_data,
+        filtered_data_with_unpacked_json_fields,
         and_(
-            all_date_browser_combinations.c['browser_id'] == filtered_data.c['browser_id'],
-            all_date_browser_combinations.c['date_gap_filler'] == filtered_data.c['date'])
+            all_date_browser_combinations.c['browser_id'] == filtered_data_with_unpacked_json_fields.c['browser_id'],
+            all_date_browser_combinations.c['date_gap_filler'] == filtered_data_with_unpacked_json_fields.c['date'])
     ).outerjoin(
         unique_events,
         and_(
-            unique_events.c['event_browser_id'] == filtered_data.c['browser_id'],
-            unique_events.c['next_event_time_filled'] > filtered_data.c['date'] - timedelta(days=7),
-            filtered_data.c['date'] <= unique_events.c['next_event_time_filled']
+            unique_events.c['event_browser_id'] == filtered_data_with_unpacked_json_fields.c['browser_id'],
+            unique_events.c['next_event_time_filled'] > filtered_data_with_unpacked_json_fields.c['date'] - timedelta(days=7),
+            filtered_data_with_unpacked_json_fields.c['date'] <= unique_events.c['next_event_time_filled']
         )
     ).outerjoin(
         device_information,
@@ -246,51 +325,18 @@ def join_all_partial_queries(
 def calculate_rolling_windows_features(
         joined_queries,
         moving_window_length: int,
-        start_time: datetime
+        start_time: datetime,
+        json_key_column_names: List[str]
 ):
-    # {name of the resulting column : source / calculation}
-    column_source_to_name_mapping = {
-        'pageview': joined_queries.c['pageviews'],
-        'timespent': joined_queries.c['timespent'],
-        'direct_visit': joined_queries.c['sessions_without_ref'],
-        'visit': joined_queries.c['sessions'],
-        'days_active': case(
-            [
-                (
-                    joined_queries.c['date_w_gaps'] == None,
-                    0
-                )
-            ],
-            else_=1),
-        # All json key columns have their own rolling sums
-        **{
-            column: joined_queries.c[column.name] for column in joined_queries.columns
-            for json_column_name in JSON_COLUMNS if json_column_name in column.name
-        }
-    }
-
-    # {naming suffix : related parameter for determining part of full window}
-    rolling_agg_variants = {
-        'count': False,
-        'count_last_window_half': True
-    }
-    # this generates all basic rolling sum columns for both full and second half of the window
-    rolling_agg_columns = [
-        create_rolling_agg_function(
-            moving_window_length,
-            is_half_window,
-            func.sum,
-            column_source,
-            joined_queries.c['browser_id'],
-            joined_queries.c['date']
-        ).cast(Float).label(f'{column_name}_{suffix}')
-        for column_name, column_source in column_source_to_name_mapping.items()
-        for suffix, is_half_window in rolling_agg_variants.items()
-    ]
+    rolling_agg_columns_base = create_rolling_window_columns_config(
+        joined_queries,
+        json_key_column_names,
+        moving_window_length
+    )
 
     queries_with_basic_window_columns = session.query(
         joined_queries,
-        *rolling_agg_columns,
+        *rolling_agg_columns_base,
         extract('day',
                 # last day in the current window
                 joined_queries.c['date']
@@ -318,6 +364,82 @@ def calculate_rolling_windows_features(
     ).subquery()
 
     return queries_with_basic_window_columns
+
+
+def create_time_window_vs_day_of_week_combinations(
+        joined_queries,
+        time_key_column_names
+):
+    combinations = {
+        f'dow_{i}_{time_key_column}': case(
+            [
+                (joined_queries.c['day_of_week'] == None,
+                 0),
+                (joined_queries.c['day_of_week'] != i,
+                 0)
+            ],
+            else_=joined_queries.c[time_key_column]
+        )
+        for i in range(0, 7)
+        for time_key_column in time_key_column_names
+    }
+
+    return combinations
+
+
+def create_rolling_window_columns_config(
+        joined_queries,
+        json_key_column_names,
+        moving_window_length
+):
+    # {name of the resulting column : source / calculation}
+    column_source_to_name_mapping = {
+        'pageview': joined_queries.c['pageviews'],
+        'timespent': joined_queries.c['timespent'],
+        'direct_visit': joined_queries.c['sessions_without_ref'],
+        'visit': joined_queries.c['sessions'],
+        'days_active': case(
+            [
+                (
+                    joined_queries.c['date_w_gaps'] == None,
+                    0
+                )
+            ],
+            else_=1),
+        # All json key columns have their own rolling sums
+        **{
+            column: joined_queries.c[column] for column in json_key_column_names
+            if 'hours_' not in column
+        }
+    }
+
+    time_column_config = create_time_window_vs_day_of_week_combinations(
+        joined_queries,
+        [column for column in json_key_column_names if 'hours_' in column]
+    )
+
+    column_source_to_name_mapping.update(time_column_config)
+
+    # {naming suffix : related parameter for determining part of full window}
+    rolling_agg_variants = {
+        'count': False,
+        'count_last_window_half': True
+    }
+    # this generates all basic rolling sum columns for both full and second half of the window
+    rolling_agg_columns = [
+        create_rolling_agg_function(
+            moving_window_length,
+            is_half_window,
+            func.sum,
+            column_source,
+            joined_queries.c['browser_id'],
+            joined_queries.c['date']
+        ).cast(Float).label(f'{column_name}_{suffix}')
+        for column_name, column_source in column_source_to_name_mapping.items()
+        for suffix, is_half_window in rolling_agg_variants.items()
+    ]
+
+    return rolling_agg_columns
 
 
 def filter_joined_queries_adding_derived_metrics(
