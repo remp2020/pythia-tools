@@ -74,4 +74,4 @@ DERIVED_METRICS_CONFIG = {
     },
 }
 
-JSON_COLUMNS = ['referer_medium_pageviews', 'referer_medium_pageviews', 'article_category_pageviews']
+JSON_COLUMNS = ['referer_medium_pageviews', 'hour_interval_pageviews', 'article_category_pageviews']

@@ -193,9 +193,15 @@ def create_rolling_agg_function(
 
 
 def get_unique_json_fields_query(filtered_data, column_name):
-    all_keys_query = session.query(
-        func.json_object_keys(filtered_data.c[column_name])
-    ).subquery()
+    # TODO: Once the column type is unified in DB, we can get rid of this branching
+    if column_name == 'referer_medium_pageviews':
+        all_keys_query = session.query(
+            func.json_object_keys(filtered_data.c[column_name]).label(column_name)
+        ).subquery()
+    else:
+        all_keys_query = session.query(
+            func.jsonb_object_keys(filtered_data.c[column_name]).label(column_name)
+        ).subquery()
     column_keys = session.query(all_keys_query.c[column_name]).distinct(
         all_keys_query.c[column_name]).all()
     column_keys = [json_key[0] for json_key in column_keys]
@@ -207,11 +213,11 @@ def unpack_json_fields(filtered_data):
     json_key_based_columns = {}
     json_column_keys = {}
     for json_column in JSON_COLUMNS:
+        json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
         if json_column != 'hour_interval_pageviews':
-            json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
             json_key_based_columns[json_column] = {
-                f'{json_column}_{json__key}': filtered_data.c[json_column][json__key].cast(Text).cast(Float)
-                for json__key in json_column_keys
+                f'{json_column}_{json_key}': filtered_data.c[json_column][json_key].cast(Text).cast(Float)
+                for json_key in json_column_keys[json_column]
             }
 
         else:
@@ -222,15 +228,15 @@ def unpack_json_fields(filtered_data):
 
     unpacked_time_fields_query = session.query(
         filtered_data,
-        *[value.label(key)
-          for key, value in json_key_based_columns.items()
-          for json_key_based_columns in json_key_based_columns.values()
+         *[value.label(key)
+          for json_keys in json_key_based_columns.values()
+          for key, value in json_keys.items()
           ]
     ).subquery()
 
     json_key_column_names = [
-        key for key in json_key_based_columns.keys()
-        for json_key_based_columns in json_key_based_columns.values()
+        key for json_keys in json_key_based_columns.values()
+        for key in json_keys.keys()
     ]
 
     return unpacked_time_fields_query, json_key_column_names
@@ -255,27 +261,26 @@ def sum_hourly_intervals_into_4_hour_ranges(
 
     We need to use coalesce to avoid having almost all NULL columns
     '''
-
     range_sums = {}
-    for i in range(0, len(json_column_keys['hour_interval_pageviews']), step=4):
+    for i in range(0, len(json_column_keys), 4):
         column = 'hour_interval_pageviews'
-        hours_in_interval = json_column_keys['hour_interval_pageviews'][i:i + 4]
-
+        hours_in_interval = json_column_keys[i:i + 4]
         current_sum_name = (
-            f"hours_{re.sub('-[0-9][0-9][0-9][0-9]$', '', hours_in_interval[i])}",
-            f"_{re.sub('^[0-9][0-9][0-9][0-9]-', '', hours_in_interval[i + 3])}")
+                            f"hours_{re.sub('-[0-9][0-9][0-9][0-9]$', '', hours_in_interval[0])}" +  
+                            f"_{re.sub('^[0-9][0-9][0-9][0-9]-', '', hours_in_interval[3])}"
+                           )
 
         range_sums[current_sum_name] = func.coalesce(
-            filtered_data.c[f'{column}_{hours_in_interval[0]}']
-            , 0.0
+            filtered_data.c[column][hours_in_interval[0]].cast(Text).cast(Float),
+            0.0
         )
 
         for hour in hours_in_interval[1:]:
             range_sums[current_sum_name] = (
                     range_sums[current_sum_name] +
-                    func.coalesce(filtered_data.c[f'{column}_{hour}'], 0.0))
+                    func.coalesce(filtered_data.c[column][hour].cast(Text).cast(Float), 0.0))
 
-        return range_sums
+    return range_sums
 
 
 def join_all_partial_queries(
@@ -419,7 +424,6 @@ def create_rolling_window_columns_config(
     )
 
     column_source_to_name_mapping.update(time_column_config)
-
     # {naming suffix : related parameter for determining part of full window}
     rolling_agg_variants = {
         'count': False,
