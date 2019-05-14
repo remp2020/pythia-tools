@@ -29,6 +29,7 @@ def get_feature_frame_via_sqlalchemy(
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
     feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.date
+    feature_frame.drop('date_w_gaps', axis=1, inplace=True)    
 
     return feature_frame
 
@@ -194,14 +195,9 @@ def create_rolling_agg_function(
 
 def get_unique_json_fields_query(filtered_data, column_name):
     # TODO: Once the column type is unified in DB, we can get rid of this branching
-    if column_name == 'referer_medium_pageviews':
-        all_keys_query = session.query(
-            func.json_object_keys(filtered_data.c[column_name]).label(column_name)
-        ).subquery()
-    else:
-        all_keys_query = session.query(
-            func.jsonb_object_keys(filtered_data.c[column_name]).label(column_name)
-        ).subquery()
+    all_keys_query = session.query(
+        func.jsonb_object_keys(filtered_data.c[column_name]).label(column_name)
+    ).subquery()
     column_keys = session.query(all_keys_query.c[column_name]).distinct(
         all_keys_query.c[column_name]).all()
     column_keys = [json_key[0] for json_key in column_keys]
