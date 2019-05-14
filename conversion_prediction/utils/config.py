@@ -59,7 +59,18 @@ NUMERIC_COLUMNS_FROM_JSON_FIELDS = [
     'article_category_pageviews_sport_count',
     'article_category_pageviews_svet_count',
     'article_category_pageviews_veda_count',
-    'article_category_pageviews_zdravie_count'
+    'article_category_pageviews_zdravie_count',
+    # Time based features combining day_of_week with hour interval
+    *[f'dow_{dow}_hours_{hours}_count'
+      for dow in range(0,7)
+          for hours in [
+         '00:00-00:59_03:00-03:59',
+         '04:00-04:59_07:00-07:59',
+         '08:00-08:59_11:00-11:59',
+         '12:00-12:59_15:00-15:59',
+         '16:00-16:59_19:00-19:59',
+         '20:00-20:59_23:00-23:59']
+      ]
 ]
 
 NUMERIC_COLUMNS = NUMERIC_COLUMNS_BASE + NUMERIC_COLUMNS_FROM_JSON_FIELDS
