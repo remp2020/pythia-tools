@@ -25,54 +25,47 @@ TIME_INTERVALS = [
          '16:00-16:59_19:00-19:59',
          '20:00-20:59_23:00-23:59']
 
+SUPPORTED_REFERRAL_CATEGORIES = [
+    'direct',
+    'email',
+    'external',
+    'internal',
+    'search',
+    'social'
+]
+
+SUPPORTED_ARTICLE_CATEGORIES = [
+    '',
+    'blog',
+    'ekonomika',
+    'hlavna',
+    'karikatury',
+    'komentare',
+    'kultura',
+    'nezaradene',
+    'pageview',
+    'rodina-a-vztahy',
+    'slovensko',
+    'sport',
+    'svet',
+    'veda',
+    'zdravie'
+]
+
 
 NUMERIC_COLUMNS_FROM_JSON_FIELDS = [
-    'referer_medium_pageviews_direct',
-    'referer_medium_pageviews_email',
-    'referer_medium_pageviews_external',
-    'referer_medium_pageviews_internal',
-    'referer_medium_pageviews_search',
-    'referer_medium_pageviews_social',
-    'article_category_pageviews_',
-    'article_category_pageviews_blog',
-    'article_category_pageviews_ekonomika',
-    'article_category_pageviews_hlavna',
-    'article_category_pageviews_karikatury',
-    'article_category_pageviews_komentare',
-    'article_category_pageviews_kultura',
-    'article_category_pageviews_nezaradene',
-    'article_category_pageviews_pageview',
-    'article_category_pageviews_rodina-a-vztahy',
-    'article_category_pageviews_slovensko',
-    'article_category_pageviews_sport',
-    'article_category_pageviews_svet',
-    'article_category_pageviews_veda',
-    'article_category_pageviews_zdravie',
-    'referer_medium_pageviews_direct_count',
-    'referer_medium_pageviews_email_count',
-    'referer_medium_pageviews_external_count',
-    'referer_medium_pageviews_internal_count',
-    'referer_medium_pageviews_search_count',
-    'referer_medium_pageviews_social_count',
-    'article_category_pageviews__count',
-    'article_category_pageviews_blog_count',
-    'article_category_pageviews_ekonomika_count',
-    'article_category_pageviews_hlavna_count',
-    'article_category_pageviews_karikatury_count',
-    'article_category_pageviews_komentare_count',
-    'article_category_pageviews_kultura_count',
-    'article_category_pageviews_nezaradene_count',
-    'article_category_pageviews_pageview_count',
-    'article_category_pageviews_rodina-a-vztahy_count',
-    'article_category_pageviews_slovensko_count',
-    'article_category_pageviews_sport_count',
-    'article_category_pageviews_svet_count',
-    'article_category_pageviews_veda_count',
-    'article_category_pageviews_zdravie_count',
+    # Referral features
+    *[f'referer_medium_pageviews_{referral_category}_count'
+      for referral_category in SUPPORTED_REFERRAL_CATEGORIES],
+    # Article category (section) features
+    *[f'article_category_pageviews_{article_category}_count'
+      for article_category in SUPPORTED_ARTICLE_CATEGORIES],
     # Time based features combining day_of_week with hour interval
     *[f'dow_{dow}_hours_{hours}_count'
       for dow in range(0,7)
-          for hours in TIME_INTERVALS]
+      for hours in TIME_INTERVALS],
+    *[f'dow_{dow}_count' for dow in range(0,7)],
+    *[f'hours_{hours}_count' for hours in TIME_INTERVALS]
 ]
 
 NUMERIC_COLUMNS = NUMERIC_COLUMNS_BASE + NUMERIC_COLUMNS_FROM_JSON_FIELDS
