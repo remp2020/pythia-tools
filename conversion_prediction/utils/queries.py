@@ -426,7 +426,7 @@ def aggregate_to_time_intervals(
         for column in interval_columns[1:]:
             time_interval_aggregations[resulting_column_name] = (
                     time_interval_aggregations[resulting_column_name] +
-                    joined_queries.c[column]
+                    joined_queries.c[column])
 
     return time_interval_aggregations
 
