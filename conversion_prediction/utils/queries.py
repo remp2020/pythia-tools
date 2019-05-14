@@ -224,9 +224,9 @@ def unpack_json_fields(filtered_data):
 
     unpacked_time_fields_query = session.query(
         filtered_data,
-         *[value.label(key)
-          for json_keys in json_key_based_columns.values()
-          for key, value in json_keys.items()
+        *[value.label(key)
+            for json_keys in json_key_based_columns.values()
+            for key, value in json_keys.items()
           ]
     ).subquery()
 
@@ -371,6 +371,7 @@ def create_time_window_vs_day_of_week_combinations(
         joined_queries,
         time_key_column_names
 ):
+    # Day of Week with 4-hour intervals
     combinations = {
         f'dow_{i}_{time_key_column}': case(
             [
@@ -384,8 +385,50 @@ def create_time_window_vs_day_of_week_combinations(
         for i in range(0, 7)
         for time_key_column in time_key_column_names
     }
+    # Day of Week only
+    combinations.update(
+        {
+            f'dow_{i}': case(
+                [
+                    (joined_queries.c['day_of_week'] == None,
+                     0),
+                    (joined_queries.c['day_of_week'] != str(i),
+                     0)
+                ],
+                else_=1
+            )
+            for i in range(0, 7)
+        }
+    )
+    # 4-hour intervals
+    combinations.update(
+        aggregate_to_time_intervals(
+            joined_queries,
+            time_key_column_names
+        )
+    )
 
     return combinations
+
+
+def aggregate_to_time_intervals(
+    joined_queries,
+    time_key_column_names
+):
+    time_interval_aggregations = {}
+
+    for time_interval in time_key_column_names:
+        resulting_column_name = f'hours_{time_interval}'
+        interval_columns = [column for column in joined_queries.columns if time_interval in joined_queries]
+
+        time_interval_aggregations[resulting_column_name] = joined_queries.c[interval_columns[0]],
+
+        for column in interval_columns[1:]:
+            time_interval_aggregations[resulting_column_name] = (
+                    time_interval_aggregations[resulting_column_name] +
+                    joined_queries.c[column]
+
+    return time_interval_aggregations
 
 
 def create_rolling_window_columns_config(
