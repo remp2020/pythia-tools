@@ -249,7 +249,8 @@ def delete_existing_model_file_for_same_date(filename: str, model_date) -> datet
 def train_model(
         data: pd.DataFrame,
         training_split_parameters: Dict={},
-        model_arguments: Dict = {'n_estimators': 100}
+        model_arguments: Dict = {'n_estimators': 100},
+        undersampling_factor=1
 ) -> (pd.DataFrame, RandomForestClassifier):
     '''
     Trains a new model given a full dataset
@@ -261,9 +262,14 @@ def train_model(
     label_encoder = instantiate_label_encoder(LABELS)
     label_range = list(range(0, len(LABELS)))
     data['outcome'] = label_encoder.transform(data['outcome'])
+
     X_train, X_test, Y_train, Y_test = create_train_test_transformations(
         data,
         **training_split_parameters)
+    X_train, Y_train = undersample_majority_class(X_train, Y_train, undersampling_factor)
+    X_train.fillna(0.0, inplace=True)
+    X_test.fillna(0.0, inplace=True)
+
     classifier_instance = RandomForestClassifier(**model_arguments)
     classifier_model = classifier_instance.fit(X_train, Y_train)
     outcome_frame = pd.concat([
@@ -281,7 +287,7 @@ def train_model(
                              outcome_frame.columns[
                              len(label_range):(2*len(label_range))]]
     for i in label_range:
-        outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform(i), column)
+        outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform([i])[0], column)
                                  for column in outcome_frame.columns]
     outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
 
@@ -324,7 +330,8 @@ def model_training_pipeline(
         moving_window_length: int=7,
         training_split_parameters: Dict={'split_type': 'random', 'split_ratio': 7/10},
         model_arguments: Dict = {'n_estimators': 100},
-        overwrite_files: bool=True
+        overwrite_files: bool=True,
+        undersampling_factor: int=1
 ) -> pd.DataFrame:
     '''
     Pipeline that outputs a trained model and it's accuracy measures
@@ -349,7 +356,8 @@ def model_training_pipeline(
 
     model, outcome_frame = train_model(feature_frame,
                                        training_split_parameters=training_split_parameters,
-                                       model_arguments=model_arguments)
+                                       model_arguments=model_arguments,
+                                       undersampling_factor=undersampling_factor)
     path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
     joblib.dump(
         model,
@@ -525,8 +533,9 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             training_split_parameters=args['training_split_parameters'],
             # model_arguments=args['model_arguments'],
-            model_arguments={'n_estimators': 500},
-            overwrite_files=args['overwrite_files']
+            model_arguments={'n_estimators': 250},
+            overwrite_files=args['overwrite_files'],
+            undersampling_factor=500
         )
 
         metrics = ['precision', 'recall', 'f1_score', 'suport']
@@ -539,3 +548,14 @@ if __name__ == "__main__":
         )
     else:
         raise ValueError('Unknown action specified')
+
+
+def undersample_majority_class(X_train, Y_train, undersampling_factor=1):
+    joined_df = pd.concat([X_train, Y_train], axis=1)
+    positive_outcomes = joined_df[joined_df['outcome'].isin([0, 2])]
+    negative_outcome = joined_df[joined_df['outcome'] == 1].sample(frac=1 / undersampling_factor, random_state=42)
+    sampled_df = pd.concat([positive_outcomes, negative_outcome], axis=0)
+    X_sample = sampled_df.drop('outcome', axis=1)
+    Y_sample = sampled_df['outcome']
+
+    return X_sample, Y_sample
