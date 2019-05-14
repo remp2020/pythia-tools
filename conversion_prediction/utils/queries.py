@@ -294,7 +294,7 @@ def join_all_partial_queries(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
-        func.extract('dow', all_date_browser_combinations.c['date_gap_filler']).label('day_of_week'),
+        func.extract('dow', all_date_browser_combinations.c['date_gap_filler']).cast(Text).label('day_of_week'),
         filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
         (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
         unique_events.c['outcome_filled'],
@@ -380,7 +380,7 @@ def create_time_window_vs_day_of_week_combinations(
             [
                 (joined_queries.c['day_of_week'] == None,
                  0),
-                (joined_queries.c['day_of_week'] != i,
+                (joined_queries.c['day_of_week'] != str(i),
                  0)
             ],
             else_=joined_queries.c[time_key_column]
