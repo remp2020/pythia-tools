@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_aggregated_browser_days_w_session
-from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS
+from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, TIME_INTERVALS
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List
 
@@ -402,33 +402,11 @@ def create_time_window_vs_day_of_week_combinations(
     )
     # 4-hour intervals
     combinations.update(
-        aggregate_to_time_intervals(
-            joined_queries,
-            time_key_column_names
-        )
+        {time_key_column_name: joined_queries.c[time_key_column_name]
+         for time_key_column_name in time_key_column_names}
     )
 
     return combinations
-
-
-def aggregate_to_time_intervals(
-    joined_queries,
-    time_key_column_names
-):
-    time_interval_aggregations = {}
-
-    for time_interval in time_key_column_names:
-        resulting_column_name = f'hours_{time_interval}'
-        interval_columns = [column for column in joined_queries.columns if time_interval in joined_queries]
-
-        time_interval_aggregations[resulting_column_name] = joined_queries.c[interval_columns[0]],
-
-        for column in interval_columns[1:]:
-            time_interval_aggregations[resulting_column_name] = (
-                    time_interval_aggregations[resulting_column_name] +
-                    joined_queries.c[column])
-
-    return time_interval_aggregations
 
 
 def create_rolling_window_columns_config(
