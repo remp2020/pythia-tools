@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
     "is_tablet" boolean,
     "next_7_days_event" character varying NOT NULL DEFAULT 'no_conversion',
     "next_event_time" timestamp,
-    "referer_medium_pageviews" json,
+    "referer_medium_pageviews" jsonb,
     "article_category_pageviews" jsonb,
     "hour_interval_pageviews" jsonb,
     PRIMARY KEY(date, browser_id)
