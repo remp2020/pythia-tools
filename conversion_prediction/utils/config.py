@@ -14,58 +14,71 @@ NUMERIC_COLUMNS_BASE = [
     'days_since_last_active'
 ]
 
-TIME_INTERVALS = [
+
+SUPPORTED_JSON_FIELDS_KEYS = {
+    'hour_interval_pageviews': [
          '00:00-00:59_03:00-03:59',
          '04:00-04:59_07:00-07:59',
          '08:00-08:59_11:00-11:59',
          '12:00-12:59_15:00-15:59',
          '16:00-16:59_19:00-19:59',
-         '20:00-20:59_23:00-23:59']
+         '20:00-20:59_23:00-23:59'],
+    'referer_medium_pageviews': [
+        'direct',
+        'email',
+        'external',
+        'internal',
+        'search',
+        'social'
+    ],
+    'article_category_pageviews': [
+        '',
+        'blog',
+        'ekonomika',
+        'hlavna',
+        'karikatury',
+        'komentare',
+        'kultura',
+        'nezaradene',
+        'pageview',
+        'rodina-a-vztahy',
+        'slovensko',
+        'sport',
+        'svet',
+        'veda',
+        'zdravie'
+    ]
+}
 
-SUPPORTED_REFERRAL_CATEGORIES = [
-    'direct',
-    'email',
-    'external',
-    'internal',
-    'search',
-    'social'
-]
 
-SUPPORTED_ARTICLE_CATEGORIES = [
-    '',
-    'blog',
-    'ekonomika',
-    'hlavna',
-    'karikatury',
-    'komentare',
-    'kultura',
-    'nezaradene',
-    'pageview',
-    'rodina-a-vztahy',
-    'slovensko',
-    'sport',
-    'svet',
-    'veda',
-    'zdravie'
-]
-
-
-NUMERIC_COLUMNS_FROM_JSON_FIELDS = [
+NUMERIC_COLUMNS_FROM_JSON_FIELDS = {
     # Referral features
-    *[f'referer_medium_pageviews_{referral_category}_count'
-      for referral_category in SUPPORTED_REFERRAL_CATEGORIES],
+    'referer_medium_pageviews': [
+        [f'referer_medium_pageviews_{referral_category}_count'
+         for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium_pageviews']]
+    ],
     # Article category (section) features
-    *[f'article_category_pageviews_{article_category}_count'
-      for article_category in SUPPORTED_ARTICLE_CATEGORIES],
+    'article_category_pageviews': [
+        [f'article_category_pageviews_{article_category}_count'
+         for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']]
+    ],
     # Time based features combining day_of_week with hour interval
-    *[f'dow_{dow}_hours_{hours}_count'
-      for dow in range(0,7)
-      for hours in TIME_INTERVALS],
-    *[f'dow_{dow}_count' for dow in range(0,7)],
-    *[f'hours_{hours}_count' for hours in TIME_INTERVALS]
-]
+    'hour_interval_pageviews': [
+        [f'dow_{dow}_hours_{hours}_count'
+         for dow in range(0,7)
+         for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']
+         ],\
+        [f'dow_{dow}_count' for dow in range(0, 7)
+         ],
+        [f'hours_{hours}_count' for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
+    ]
+}
 
-NUMERIC_COLUMNS = NUMERIC_COLUMNS_BASE + NUMERIC_COLUMNS_FROM_JSON_FIELDS
+NUMERIC_COLUMNS = NUMERIC_COLUMNS_BASE + \
+                  [column
+                   for column_set_list in NUMERIC_COLUMNS_FROM_JSON_FIELDS.values()
+                   for column_set in column_set_list
+                   for column in column_set]
 
 NUMERIC_COLUMN_WINDOW_NAME_SUFFIXES_AND_PREFIXES = [
     ['', '_first_window_half'],
