@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_aggregated_browser_days_w_session
-from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, TIME_INTERVALS
+from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List
 
