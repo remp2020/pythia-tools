@@ -88,6 +88,10 @@ def introduce_row_wise_normalized_features(
 
             if normalization_handling is NormalizedFeatureHandling.REPLACE_WITH:
                 data.drop(column_set, axis=1, inplace=True)
+            elif normalization_handling is NormalizedFeatureHandling.ADD:
+                feature_columns.add_normalized_profile_features_version()
+            else:
+                raise ValueError('Unknown normalization handling parameter')
             data = data.merge(
                 right=normalized_data,
                 how='left',
@@ -338,7 +342,6 @@ def create_feature_frame(
         moving_window_length: int = 7,
         normalization_handling: NormalizedFeatureHandling = NormalizedFeatureHandling.REPLACE_WITH
 ) -> pd.DataFrame:
-    normalization_handling = NormalizedFeatureHandling.ADD
     '''
     Feature frame applies basic sanitization (Unknown / bool columns transformation) and keeps only users
     that were active a day ago
@@ -378,7 +381,8 @@ def model_training_pipeline(
         training_split_parameters: Dict={'split': 'random', 'split_ratio': 7/10},
         model_arguments: Dict = {'n_estimators': 100},
         overwrite_files: bool=True,
-        undersampling_factor: int=1
+        undersampling_factor: int=1,
+        normalization_handling: NormalizedFeatureHandling = NormalizedFeatureHandling.REPLACE_WITH
 ) -> pd.DataFrame:
     '''
     Pipeline that outputs a trained model and it's accuracy measures
@@ -388,12 +392,15 @@ def model_training_pipeline(
     :param training_split_parameters:
     :param model_arguments:
     :param overwrite_files:
+    :param undersampling_factor:
+    :param normalization_handling
     :return:
     '''
     feature_frame = create_feature_frame(
         max_date=max_date,
         min_date=min_date,
-        moving_window_length=moving_window_length
+        moving_window_length=moving_window_length,
+        normalization_handling=normalization_handling
     )
     model_date = feature_frame['date'].max() + timedelta(days=1)
 
@@ -455,18 +462,21 @@ def batch_predict(
         min_date: datetime = datetime.utcnow() - timedelta(days=2),
         max_date: datetime = datetime.utcnow() - timedelta(days=1),
         moving_window_length: int=7,
+        normalization_handling: NormalizedFeatureHandling = NormalizedFeatureHandling.REPLACE_WITH
 ) -> pd.DataFrame:
     '''
     Outputs predictions for a given time period
     :param min_date:
     :param max_date:
     :param moving_window_length:
+    :param normalization_handling:
     :return:
     '''
     feature_frame = create_feature_frame(
         max_date=max_date,
         min_date=min_date,
-        moving_window_length=moving_window_length
+        moving_window_length=moving_window_length,
+        normalization_handling=normalization_handling
     )
 
     category_lists_dict, scaler, model = load_model_related_constructs()
@@ -495,9 +505,9 @@ def batch_predict(
 
 
 def generate_and_upload_prediction(
-        min_date: datetime=datetime.utcnow() - timedelta(days=2),
-        max_date: datetime=datetime.utcnow() - timedelta(days=1),
-        moving_window_length: int=7,
+        min_date: datetime = datetime.utcnow() - timedelta(days=2),
+        max_date: datetime = datetime.utcnow() - timedelta(days=1),
+        moving_window_length: int = 7,
 ):
     '''
     Generates outcome prediction for conversion and uploads them to the DB
