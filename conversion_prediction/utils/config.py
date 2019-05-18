@@ -67,7 +67,7 @@ NUMERIC_COLUMNS_FROM_JSON_FIELDS = {
         [f'dow_{dow}_hours_{hours}_count'
          for dow in range(0,7)
          for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']
-         ],\
+         ],
         [f'dow_{dow}_count' for dow in range(0, 7)
          ],
         [f'hours_{hours}_count' for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]

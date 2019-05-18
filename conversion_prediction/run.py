@@ -3,6 +3,7 @@ import json
 import os
 import re
 import pandas as pd
+import numpy as np
 import sqlalchemy
 
 from datetime import datetime, timedelta
@@ -18,11 +19,12 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
 from .utils.db_utils import create_predictions_table, create_predictions_job_log
 from .utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
-    split_type, LABELS, CURRENT_MODEL_VERSION
-from .utils.db_utils import create_connection, retrieve_data_for_query_key
+    LABELS, CURRENT_MODEL_VERSION, SUPPORTED_JSON_FIELDS_KEYS
+from cmd.conversion_prediction.utils.enums import split_type, normalized_feature_handling
+from .utils.db_utils import create_connection
 from .utils.queries import queries
 from .utils.queries import get_feature_frame_via_sqlalchemy
-from .utils.data_transformations import unique_list
+from .utils.data_transformations import unique_list, row_wise_normalization
 
 load_dotenv()
 
@@ -37,6 +39,7 @@ def get_user_profiles_by_date(
     :param min_date:
     :param max_date:
     :param moving_window_length:
+    using row-wise normalized features
     :return:
     '''
     min_date = min_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -60,6 +63,39 @@ def get_user_profiles_by_date(
         only data up until {user_profiles_by_date['date'].max()} were retrieved''')
 
     return user_profiles_by_date
+
+
+def introduce_row_wise_normalized_features(
+        data: pd.DataFrame,
+        normalization_handling
+) -> pd.DataFrame:
+    '''
+    Adds normalized profile based features (normalized always within group_, either replacing the original profile based
+    features in group, or adding them onto the original dataframe
+    :param data:
+    :param normalization_handling:
+    :return:
+    '''
+    merge_columns = ['date', 'browser_id']
+    for column_set_list in SUPPORTED_JSON_FIELDS_KEYS.values():
+        for column_set in column_set_list:
+            normalized_data = pd.DataFrame(row_wise_normalization(np.array(data[column_set])))
+            normalized_data.fillna(0.0, inplace=True)
+            normalized_data.columns = column_set
+            normalized_data = pd.concat(
+                [data[merge_columns], normalized_data],
+                axis=1)
+
+            if normalization_handling is normalized_feature_handling.REPLACE_WITH:
+                data.drop(column_set, axis=1, inplace=True)
+            data = data.merge(
+                right=normalized_data,
+                how='left',
+                on=merge_columns,
+                suffixes=['', '_normalized']
+            )
+
+    return data
 
 
 def transform_bool_columns_to_int(data: pd.DataFrame) -> pd.DataFrame:
@@ -168,19 +204,19 @@ def instantiate_label_encoder(labels: List['str']):
 
 def create_train_test_transformations(
         data: pd.DataFrame,
-        split_type: split_type = 'random',
+        split: split_type.RANDOM,
         split_ratio: float = 7 / 10,
         ):
     '''
     Splits train / test applying dummification and scaling to their variables
     :param data:
-    :param split_type:
+    :param split:
     :param split_ratio:
     :return:
     '''
     model_date = data['date'].max() + timedelta(days=1)
-
-    if split_type == 'random':
+    split = split_type(split)
+    if split is split_type.RANDOM:
         train, test = train_test_split(data, test_size=(1 - split_ratio), random_state=42)
         train_indices = train.index
         test_indices = test.index
@@ -297,7 +333,8 @@ def train_model(
 def create_feature_frame(
         min_date: datetime = datetime.utcnow() - timedelta(days=31),
         max_date: datetime = datetime.utcnow() - timedelta(days=1),
-        moving_window_length: int=7
+        moving_window_length: int=7,
+        normalization_handling: normalized_feature_handling=normalized_feature_handling.REPLACE_WITH
 ) -> pd.DataFrame:
     '''
     Feature frame applies basic sanitization (Unknown / bool columns transformation) and keeps only users
@@ -305,6 +342,7 @@ def create_feature_frame(
     :param min_date:
     :param max_date:
     :param moving_window_length:
+    :param normalization_handling describes whether we skip, add or replace original profile feature versions
     :return:
     '''
     user_profiles = get_user_profiles_by_date(max_date=max_date,
@@ -321,6 +359,12 @@ def create_feature_frame(
     user_profiles = transform_bool_columns_to_int(user_profiles)
     user_profiles_for_prediction = user_profiles[user_profiles['days_active_count'] >= 1].reset_index(drop=True)
 
+    if normalization_handling is not normalized_feature_handling.IGNORE:
+        normalized_feature_handling(
+            user_profiles_for_prediction,
+            normalization_handling
+        )
+
     return user_profiles_for_prediction
 
 
@@ -328,7 +372,7 @@ def model_training_pipeline(
         min_date: datetime = datetime.utcnow() - timedelta(days=31),
         max_date: datetime = datetime.utcnow() - timedelta(days=1),
         moving_window_length: int=7,
-        training_split_parameters: Dict={'split_type': 'random', 'split_ratio': 7/10},
+        training_split_parameters: Dict={'split': 'random', 'split_ratio': 7/10},
         model_arguments: Dict = {'n_estimators': 100},
         overwrite_files: bool=True,
         undersampling_factor: int=1
@@ -509,7 +553,7 @@ if __name__ == "__main__":
     parser.add_argument('--training-split-parameters',
                         help='Speficies split_type (random vs time_based) and split_ratio for train/test split',
                         type=json.loads,
-                        default={'split_type': 'time_based', 'split_ratio': 6 / 10},
+                        default={'split': 'time_based', 'split_ratio': 6 / 10},
                         required=False)
     parser.add_argument('--model-arguments',
                         help='Parameters for scikit model training',
