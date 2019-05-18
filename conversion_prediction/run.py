@@ -20,7 +20,7 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from .utils.db_utils import create_predictions_table, create_predictions_job_log
 from .utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
     LABELS, CURRENT_MODEL_VERSION, SUPPORTED_JSON_FIELDS_KEYS
-from cmd.conversion_prediction.utils.enums import split_type, normalized_feature_handling
+from .utils.enums import split_type, normalized_feature_handling
 from .utils.db_utils import create_connection
 from .utils.queries import queries
 from .utils.queries import get_feature_frame_via_sqlalchemy
@@ -333,8 +333,8 @@ def train_model(
 def create_feature_frame(
         min_date: datetime = datetime.utcnow() - timedelta(days=31),
         max_date: datetime = datetime.utcnow() - timedelta(days=1),
-        moving_window_length: int=7,
-        normalization_handling: normalized_feature_handling=normalized_feature_handling.REPLACE_WITH
+        moving_window_length: int = 7,
+        normalization_handling: normalized_feature_handling = normalized_feature_handling.REPLACE_WITH
 ) -> pd.DataFrame:
     '''
     Feature frame applies basic sanitization (Unknown / bool columns transformation) and keeps only users
