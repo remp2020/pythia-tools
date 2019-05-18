@@ -360,7 +360,7 @@ def create_feature_frame(
     user_profiles_for_prediction = user_profiles[user_profiles['days_active_count'] >= 1].reset_index(drop=True)
 
     if normalization_handling is not NormalizedFeatureHandling.IGNORE:
-        NormalizedFeatureHandling(
+        introduce_row_wise_normalized_features(
             user_profiles_for_prediction,
             normalization_handling
         )
