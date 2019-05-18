@@ -1,6 +1,3 @@
-from enum import Enum
-
-
 CATEGORICAL_COLUMNS = ['device', 'browser', 'os', 'day_of_week']
 
 NUMERIC_COLUMNS_BASE = [
@@ -94,11 +91,6 @@ CONFIG_COLUMNS = [
     'browser_id',
     'user_id'
 ]
-
-split_type = Enum(
-    'random',
-    'time_based'
-)
 
 LABELS = ['no_conversion', 'shared_account_login', 'conversion']
 
