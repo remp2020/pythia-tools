@@ -18,8 +18,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
 from .utils.db_utils import create_predictions_table, create_predictions_job_log
-from .utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
-    LABELS, CURRENT_MODEL_VERSION, NUMERIC_COLUMNS_FROM_JSON_FIELDS
+from .utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION
 from .utils.enums import SplitType, NormalizedFeatureHandling
 from .utils.db_utils import create_connection
 from .utils.queries import queries
@@ -27,6 +26,7 @@ from .utils.queries import get_feature_frame_via_sqlalchemy
 from .utils.data_transformations import unique_list, row_wise_normalization
 
 load_dotenv()
+feature_columns = FeatureColumns()
 
 
 def get_user_profiles_by_date(
@@ -51,7 +51,7 @@ def get_user_profiles_by_date(
         moving_window_length
     )
 
-    user_profiles_by_date[NUMERIC_COLUMNS].fillna(0, inplace=True)
+    user_profiles_by_date[feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
     user_profiles_by_date['user_ids'] = user_profiles_by_date['user_ids'].apply(unique_list)
 
     if user_profiles_by_date['date'].min()  > min_date.date():
@@ -77,7 +77,7 @@ def introduce_row_wise_normalized_features(
     :return:
     '''
     merge_columns = ['date', 'browser_id']
-    for column_set_list in NUMERIC_COLUMNS_FROM_JSON_FIELDS.values():
+    for column_set_list in feature_columns.profile_numeric_columns_from_json_fields.values():
         for column_set in column_set_list:
             normalized_data = pd.DataFrame(row_wise_normalization(np.array(data[column_set])))
             normalized_data.fillna(0.0, inplace=True)
@@ -117,7 +117,7 @@ def encode_uncommon_categories(data: pd.DataFrame) -> pd.DataFrame:
     :return:
     '''
     data.loc[data['device'] == 0, 'device'] = 'Desktop'
-    for column in CATEGORICAL_COLUMNS:
+    for column in feature_columns.categorical_columns:
         column_values_to_recode = list(
             data[column].value_counts(normalize=True)[data[column].value_counts(normalize=True) < 0.05].index)
         data.loc[data[column].isin(column_values_to_recode), column] = 'Other'
@@ -177,7 +177,7 @@ def replace_dummy_columns_with_dummies(data: pd.DataFrame, category_lists_dict: 
     :param category_lists_dict:
     :return:
     '''
-    for column in CATEGORICAL_COLUMNS:
+    for column in feature_columns.categorical_columns:
         data = pd.concat(
             [
                 data,
@@ -185,7 +185,7 @@ def replace_dummy_columns_with_dummies(data: pd.DataFrame, category_lists_dict: 
                     data[column],
                     category_lists_dict)],
             axis=1)
-    data.drop(columns=CATEGORICAL_COLUMNS, axis=1, inplace=True)
+    data.drop(columns=feature_columns.categorical_columns, axis=1, inplace=True)
 
     return data
 
@@ -242,20 +242,22 @@ def create_train_test_transformations(
 
     Y_train = data.loc[train_indices, 'outcome'].sort_index()
     Y_test = data.loc[test_indices, 'outcome'].sort_index()
-    X_train_numeric = data.loc[train_indices, NUMERIC_COLUMNS].fillna(0)
-    X_test_numeric = data.loc[test_indices, NUMERIC_COLUMNS].fillna(0)
+    X_train_numeric = data.loc[train_indices, feature_columns.numeric_columns_with_window_variants].fillna(0)
+    X_test_numeric = data.loc[test_indices, feature_columns.numeric_columns_with_window_variants].fillna(0)
     scaler = MinMaxScaler()
     X_train_numeric = pd.DataFrame(scaler.fit_transform(X_train_numeric), index=train_indices,
-                                   columns=NUMERIC_COLUMNS).sort_index()
+                                   columns=feature_columns.numeric_columns_with_window_variants).sort_index()
 
     X_test_numeric = pd.DataFrame(scaler.transform(X_test_numeric), index=test_indices,
-                                  columns=NUMERIC_COLUMNS).sort_index()
+                                  columns=feature_columns.numeric_columns_with_window_variants).sort_index()
     X_train = pd.concat([X_train_numeric.sort_index(), X_train[
         [column for column in X_train.columns
-         if column not in NUMERIC_COLUMNS + CONFIG_COLUMNS + BOOL_COLUMNS]].sort_index()], axis=1)
+         if column not in feature_columns.numeric_columns_with_window_variants + feature_columns.config_columns +
+         feature_columns.bool_columns]].sort_index()], axis=1)
     X_test = pd.concat([X_test_numeric.sort_index(), X_test[
         [column for column in X_train.columns
-         if column not in NUMERIC_COLUMNS + CONFIG_COLUMNS + BOOL_COLUMNS]].sort_index()], axis=1)
+         if column not in feature_columns.numeric_columns_with_window_variants + feature_columns.config_columns +
+         feature_columns.bool_columns]].sort_index()], axis=1)
 
     joblib.dump(
         scaler,
@@ -336,6 +338,7 @@ def create_feature_frame(
         moving_window_length: int = 7,
         normalization_handling: NormalizedFeatureHandling = NormalizedFeatureHandling.REPLACE_WITH
 ) -> pd.DataFrame:
+    normalization_handling = NormalizedFeatureHandling.ADD
     '''
     Feature frame applies basic sanitization (Unknown / bool columns transformation) and keeps only users
     that were active a day ago
@@ -468,11 +471,15 @@ def batch_predict(
 
     category_lists_dict, scaler, model = load_model_related_constructs()
     feature_frame = replace_dummy_columns_with_dummies(feature_frame, category_lists_dict)
-    feature_frame_numeric = pd.DataFrame(scaler.transform(feature_frame[NUMERIC_COLUMNS]), index=feature_frame.index,
-                                         columns=NUMERIC_COLUMNS).sort_index()
+    feature_frame_numeric = pd.DataFrame(
+        scaler.transform(feature_frame[
+                             feature_columns.numeric_columns_with_window_variants]),
+        index=feature_frame.index,
+        columns=feature_columns.numeric_columns_with_window_variants).sort_index()
     X_all = pd.concat([feature_frame_numeric, feature_frame[
         [column for column in feature_frame.columns
-         if column not in NUMERIC_COLUMNS + CONFIG_COLUMNS + BOOL_COLUMNS]].sort_index()], axis=1)
+         if column not in feature_columns.numeric_columns_with_window_variants + feature_columns.config_columns +
+         feature_columns.bool_columns]].sort_index()], axis=1)
     X_all = X_all.drop(['outcome', 'user_ids'], axis=1)
     predictions = pd.DataFrame(model.predict_proba(X_all))
     label_range = range(len(LABELS))

@@ -1,3 +1,6 @@
+from typing import List, Dict
+
+
 CATEGORICAL_COLUMNS = ['device', 'browser', 'os', 'day_of_week']
 
 NUMERIC_COLUMNS_BASE = [
@@ -50,47 +53,11 @@ SUPPORTED_JSON_FIELDS_KEYS = {
     ]
 }
 
-
-NUMERIC_COLUMNS_FROM_JSON_FIELDS = {
-    # Referral features
-    'referer_medium_pageviews': [
-        [f'referer_medium_pageviews_{referral_category}_count'
-         for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium_pageviews']]
-    ],
-    # Article category (section) features
-    'article_category_pageviews': [
-        [f'article_category_pageviews_{article_category}_count'
-         for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']]
-    ],
-    # Time based features combining day_of_week with hour interval
-    'hour_interval_pageviews': [
-        [f'dow_{dow}_hours_{hours}_count'
-         for dow in range(0,7)
-         for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']
-         ],
-        [f'dow_{dow}_count' for dow in range(0, 7)
-         ],
-        [f'hours_{hours}_count' for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
-    ]
-}
-
-NUMERIC_COLUMNS = NUMERIC_COLUMNS_BASE + \
-                  [column
-                   for column_set_list in NUMERIC_COLUMNS_FROM_JSON_FIELDS.values()
-                   for column_set in column_set_list
-                   for column in column_set]
-
 NUMERIC_COLUMN_WINDOW_NAME_SUFFIXES_AND_PREFIXES = [
     ['', '_first_window_half'],
     ['', '_last_window_half'],
     ['relative_', '_change_first_and_second_half']
 ]
-
-NUMERIC_COLUMNS = [
-    prefix_suffix_values[0] +  original_column + prefix_suffix_values[1] for original_column in NUMERIC_COLUMNS_BASE
-    for prefix_suffix_values in NUMERIC_COLUMN_WINDOW_NAME_SUFFIXES_AND_PREFIXES
-    if original_column != 'days_since_last_active'
-] + NUMERIC_COLUMNS_BASE
 
 BOOL_COLUMNS = [
     'is_desktop',
@@ -133,3 +100,83 @@ DERIVED_METRICS_CONFIG = {
 }
 
 JSON_COLUMNS = ['referer_medium_pageviews', 'hour_interval_pageviews', 'article_category_pageviews']
+
+
+def build_out_profile_based_column_names(
+        normalized: bool = False
+):
+    if normalized is True:
+        suffix = '_normalized'
+    else:
+        suffix = ''
+    profile_numeric_columns_from_json_fields = {
+        # Referral features
+        'referer_medium_pageviews': [
+            [f'referer_medium_pageviews_{referral_category}_count_{suffix}'
+             for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium_pageviews']]
+        ],
+        # Article category (section) features
+        'article_category_pageviews': [
+            [f'article_category_pageviews_{article_category}_count_{suffix}'
+             for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']]
+        ],
+        # Time based features combining day_of_week with hour interval
+        'hour_interval_pageviews': [
+            [f'dow_{dow}_hours_{hours}_count_{suffix}'
+             for dow in range(0, 7)
+             for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']
+             ],
+            [f'dow_{dow}_count' for dow in range(0, 7)
+             ],
+            [f'hours_{hours}_count' for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
+        ]
+    }
+
+    return profile_numeric_columns_from_json_fields
+
+
+def create_window_variant_permuations(
+        column_list: List[str]
+) -> List[str]:
+
+    return [
+            prefix_suffix_values[0] + original_column + prefix_suffix_values[1] for original_column in
+            column_list
+            for prefix_suffix_values in NUMERIC_COLUMN_WINDOW_NAME_SUFFIXES_AND_PREFIXES
+            if original_column != 'days_since_last_active'
+    ]
+
+
+def unpack_profile_based_fields(
+        config_dict: Dict[str, List[List[str]]]
+) -> List[str]:
+
+    return [
+        column for column_set_list in config_dict.values()
+        for column_set in column_set_list
+        for column in column_set
+    ]
+
+
+class FeatureColumns(object):
+    def __init__(self):
+        self.categorical_columns = CATEGORICAL_COLUMNS
+        self.base_numeric_columns = NUMERIC_COLUMNS_BASE
+        self.profile_numeric_columns_from_json_fields = build_out_profile_based_column_names(False)
+
+        self.numeric_columns = NUMERIC_COLUMNS_BASE + \
+            unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields)
+
+        self.numeric_columns_with_window_variants = create_window_variant_permuations(self.base_numeric_columns) + \
+            self.base_numeric_columns
+
+        self.bool_columns = BOOL_COLUMNS
+        self.config_columns = CONFIG_COLUMNS
+
+    def add_normalized_profile_features_version(self):
+        normalized_column_names = build_out_profile_based_column_names(True)
+        normalized_column_names = create_window_variant_permuations(
+            unpack_profile_based_fields(normalized_column_names)
+        )
+
+        self.numeric_columns_with_window_variants = self.numeric_columns_with_window_variants + normalized_column_names
