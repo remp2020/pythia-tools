@@ -112,23 +112,23 @@ def build_out_profile_based_column_names(
     profile_numeric_columns_from_json_fields = {
         # Referral features
         'referer_medium_pageviews': [
-            [f'referer_medium_pageviews_{referral_category}_count_{suffix}'
+            [f'referer_medium_pageviews_{referral_category}_count{suffix}'
              for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium_pageviews']]
         ],
         # Article category (section) features
         'article_category_pageviews': [
-            [f'article_category_pageviews_{article_category}_count_{suffix}'
+            [f'article_category_pageviews_{article_category}count{suffix}'
              for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']]
         ],
         # Time based features combining day_of_week with hour interval
         'hour_interval_pageviews': [
-            [f'dow_{dow}_hours_{hours}_count_{suffix}'
+            [f'dow_{dow}_hours_{hours}_count{suffix}'
              for dow in range(0, 7)
              for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']
              ],
-            [f'dow_{dow}_count' for dow in range(0, 7)
+            [f'dow_{dow}_count{suffix}' for dow in range(0, 7)
              ],
-            [f'hours_{hours}_count' for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
+            [f'hours_{hours}_count{suffix}' for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
         ]
     }
 
