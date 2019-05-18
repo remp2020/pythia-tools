@@ -117,7 +117,7 @@ def build_out_profile_based_column_names(
         ],
         # Article category (section) features
         'article_category_pageviews': [
-            [f'article_category_pageviews_{article_category}count{suffix}'
+            [f'article_category_pageviews_{article_category}_count{suffix}'
              for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']]
         ],
         # Time based features combining day_of_week with hour interval

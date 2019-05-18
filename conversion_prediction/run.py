@@ -234,7 +234,7 @@ def create_train_test_transformations(
 
     X_train = data.iloc[train_indices].drop(columns=['outcome', 'user_ids'])
     X_test = data.iloc[test_indices].drop(columns=['outcome', 'user_ids'])
-    category_lists_dict = generate_category_lists_dict(X_train, CATEGORICAL_COLUMNS)
+    category_lists_dict = generate_category_lists_dict(X_train, feature_columns.categorical_columns)
 
     path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
     with open(
