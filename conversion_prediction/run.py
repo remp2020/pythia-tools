@@ -19,7 +19,7 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
 from .utils.db_utils import create_predictions_table, create_predictions_job_log
 from .utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
-    LABELS, CURRENT_MODEL_VERSION, SUPPORTED_JSON_FIELDS_KEYS
+    LABELS, CURRENT_MODEL_VERSION, NUMERIC_COLUMNS_FROM_JSON_FIELDS
 from .utils.enums import SplitType, NormalizedFeatureHandling
 from .utils.db_utils import create_connection
 from .utils.queries import queries
@@ -77,7 +77,7 @@ def introduce_row_wise_normalized_features(
     :return:
     '''
     merge_columns = ['date', 'browser_id']
-    for column_set_list in SUPPORTED_JSON_FIELDS_KEYS.values():
+    for column_set_list in NUMERIC_COLUMNS_FROM_JSON_FIELDS.values():
         for column_set in column_set_list:
             normalized_data = pd.DataFrame(row_wise_normalization(np.array(data[column_set])))
             normalized_data.fillna(0.0, inplace=True)
@@ -524,6 +524,17 @@ def generate_and_upload_prediction(
     )
 
 
+def undersample_majority_class(X_train, Y_train, undersampling_factor=1):
+    joined_df = pd.concat([X_train, Y_train], axis=1)
+    positive_outcomes = joined_df[joined_df['outcome'].isin([0, 2])]
+    negative_outcome = joined_df[joined_df['outcome'] == 1].sample(frac=1 / undersampling_factor, random_state=42)
+    sampled_df = pd.concat([positive_outcomes, negative_outcome], axis=0)
+    X_sample = sampled_df.drop('outcome', axis=1)
+    Y_sample = sampled_df['outcome']
+
+    return X_sample, Y_sample
+
+
 def mkdatetime(datestr: str) -> datetime:
     try:
         return parse(datestr)
@@ -592,14 +603,3 @@ if __name__ == "__main__":
         )
     else:
         raise ValueError('Unknown action specified')
-
-
-def undersample_majority_class(X_train, Y_train, undersampling_factor=1):
-    joined_df = pd.concat([X_train, Y_train], axis=1)
-    positive_outcomes = joined_df[joined_df['outcome'].isin([0, 2])]
-    negative_outcome = joined_df[joined_df['outcome'] == 1].sample(frac=1 / undersampling_factor, random_state=42)
-    sampled_df = pd.concat([positive_outcomes, negative_outcome], axis=0)
-    X_sample = sampled_df.drop('outcome', axis=1)
-    Y_sample = sampled_df['outcome']
-
-    return X_sample, Y_sample
