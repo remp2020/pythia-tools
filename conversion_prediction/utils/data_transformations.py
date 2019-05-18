@@ -12,7 +12,7 @@ def unique_list(list_to_simplify):
 
 
 @njit(parallel=True)
-def normalize_columns(data):
+def row_wise_normalization(data):
     '''
     Performs a row-wise normalization, meant to be used with profile level features such as count of pageviews in
     individual section where we want to have the number of pagevieews on a given section and / or share of pageviews
