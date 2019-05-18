@@ -1,13 +1,12 @@
 import enum
-from enum import Enum
 
-normalized_feature_handling = enum(
+
+class NormalizedFeatureHandling(enum):
     IGNORE='ignore',
     ADD='add',
     REPLACE_WITH='replace'
-)
 
-split_type = enum(
+
+class SplitType(enum):
     RANDOM = 'random',
     TIME_BASED = 'time_based'
-)

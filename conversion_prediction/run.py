@@ -20,7 +20,7 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from .utils.db_utils import create_predictions_table, create_predictions_job_log
 from .utils.config import NUMERIC_COLUMNS, BOOL_COLUMNS, CATEGORICAL_COLUMNS, CONFIG_COLUMNS, \
     LABELS, CURRENT_MODEL_VERSION, SUPPORTED_JSON_FIELDS_KEYS
-from .utils.enums import split_type, normalized_feature_handling
+from .utils.enums import SplitType, NormalizedFeatureHandling
 from .utils.db_utils import create_connection
 from .utils.queries import queries
 from .utils.queries import get_feature_frame_via_sqlalchemy
@@ -86,7 +86,7 @@ def introduce_row_wise_normalized_features(
                 [data[merge_columns], normalized_data],
                 axis=1)
 
-            if normalization_handling is normalized_feature_handling.REPLACE_WITH:
+            if normalization_handling is NormalizedFeatureHandling.REPLACE_WITH:
                 data.drop(column_set, axis=1, inplace=True)
             data = data.merge(
                 right=normalized_data,
@@ -204,7 +204,7 @@ def instantiate_label_encoder(labels: List['str']):
 
 def create_train_test_transformations(
         data: pd.DataFrame,
-        split: split_type.RANDOM,
+        split: SplitType.RANDOM,
         split_ratio: float = 7 / 10,
         ):
     '''
@@ -215,8 +215,8 @@ def create_train_test_transformations(
     :return:
     '''
     model_date = data['date'].max() + timedelta(days=1)
-    split = split_type(split)
-    if split is split_type.RANDOM:
+    split = SplitType(split)
+    if split is SplitType.RANDOM:
         train, test = train_test_split(data, test_size=(1 - split_ratio), random_state=42)
         train_indices = train.index
         test_indices = test.index
@@ -334,7 +334,7 @@ def create_feature_frame(
         min_date: datetime = datetime.utcnow() - timedelta(days=31),
         max_date: datetime = datetime.utcnow() - timedelta(days=1),
         moving_window_length: int = 7,
-        normalization_handling: normalized_feature_handling = normalized_feature_handling.REPLACE_WITH
+        normalization_handling: NormalizedFeatureHandling = NormalizedFeatureHandling.REPLACE_WITH
 ) -> pd.DataFrame:
     '''
     Feature frame applies basic sanitization (Unknown / bool columns transformation) and keeps only users
@@ -359,8 +359,8 @@ def create_feature_frame(
     user_profiles = transform_bool_columns_to_int(user_profiles)
     user_profiles_for_prediction = user_profiles[user_profiles['days_active_count'] >= 1].reset_index(drop=True)
 
-    if normalization_handling is not normalized_feature_handling.IGNORE:
-        normalized_feature_handling(
+    if normalization_handling is not NormalizedFeatureHandling.IGNORE:
+        NormalizedFeatureHandling(
             user_profiles_for_prediction,
             normalization_handling
         )
