@@ -17,15 +17,18 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
-from .utils.db_utils import create_predictions_table, create_predictions_job_log
-from .utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION
-from .utils.enums import SplitType, NormalizedFeatureHandling
-from .utils.db_utils import create_connection
-from .utils.queries import queries
-from .utils.queries import get_feature_frame_via_sqlalchemy
-from .utils.data_transformations import unique_list, row_wise_normalization
+path_to_current_file = os.path.realpath(__file__)
+current_directory = os.path.dirname(path_to_current_file)
+load_dotenv(f'{current_directory}/../../.env')
 
-load_dotenv()
+from utils.db_utils import create_predictions_table, create_predictions_job_log
+from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION
+from utils.enums import SplitType, NormalizedFeatureHandling
+from utils.db_utils import create_connection
+from utils.queries import queries
+from utils.queries import get_feature_frame_via_sqlalchemy
+from utils.data_transformations import unique_list, row_wise_normalization
+
 feature_columns = FeatureColumns()
 
 
@@ -561,7 +564,7 @@ def mkdatetime(datestr: str) -> datetime:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('action',
+    parser.add_argument('--action',
                         help='Should either be "train" for model training or "predict for prediction"',
                         type=str)
     parser.add_argument('--min-date',
