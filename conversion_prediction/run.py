@@ -5,6 +5,7 @@ import re
 import pandas as pd
 import numpy as np
 import sqlalchemy
+import joblib
 
 from datetime import datetime, timedelta
 from os.path import isfile
@@ -12,7 +13,6 @@ from typing import List, Dict
 from dateutil.parser import parse
 from dotenv import load_dotenv
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.externals import joblib
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
