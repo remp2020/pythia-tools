@@ -19,7 +19,7 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
 path_to_current_file = os.path.realpath(__file__)
 current_directory = os.path.dirname(path_to_current_file)
-load_dotenv(f'{current_directory}/../../.env')
+load_dotenv()
 
 from utils.db_utils import create_predictions_table, create_predictions_job_log
 from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION
