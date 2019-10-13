@@ -180,3 +180,24 @@ class FeatureColumns(object):
         )
 
         self.numeric_columns_with_window_variants = self.numeric_columns_with_window_variants + normalized_column_names
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'default'
+        }
+    },
+    'formatters': {
+        'default': {
+            'format': '%(asctime)s [%(levelname)s] %(name)s - %(message)s'
+        }
+    },
+    'root': {
+        'level': 'INFO',
+        'handlers': ['console']
+    }
+}

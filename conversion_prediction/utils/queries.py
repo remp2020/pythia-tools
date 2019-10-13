@@ -160,6 +160,7 @@ def get_device_information_subquery(
         filtered_data.c['browser_family'].label('browser'),
         filtered_data.c['is_desktop'],
         filtered_data.c['is_mobile'],
+        filtered_data.c['is_tablet'],
         filtered_data.c['os_family'].label('os'),
         filtered_data.c['is_mobile'],
         filtered_data.c['browser_id']
