@@ -135,7 +135,7 @@ def get_data_for_windows_before_conversion(
             aggregated_browser_days.c['browser_id'] == conversion_events.c['browser_id'],
             aggregated_browser_days.c['date'] <= conversion_events.c['next_event_time'],
             aggregated_browser_days.c['date'] >=
-        conversion_events.c['next_event_time'] - timedelta(days=moving_window_length))
+            conversion_events.c['next_event_time'] - timedelta(days=moving_window_length))
     ).cte()
 
     return positives_data
@@ -546,7 +546,7 @@ def filter_joined_queries_adding_derived_metrics(
             for key in DERIVED_METRICS_CONFIG.keys()
             for suffix in ['', '_last_window_half']
         ]
-    ).filter(and_(finalizing_filter)).subquery()
+    ).filter(and_(*finalizing_filter)).subquery()
 
     return filtered_w_derived_metrics
 
