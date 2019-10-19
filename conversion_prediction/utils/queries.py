@@ -522,7 +522,7 @@ def filter_joined_queries_adding_derived_metrics(
     ]
 
     if not retrieving_past_positives:
-        finalizing_filter = finalizing_filter.append(joined_partial_queries.c['date'] >= start_time)
+        finalizing_filter.append(joined_partial_queries.c['date'] >= start_time)
 
     filtered_w_derived_metrics = session.query(
         *[column.label(re.sub('timespent_count', 'timespent_sum', column.name))
