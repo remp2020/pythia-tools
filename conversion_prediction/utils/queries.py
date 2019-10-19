@@ -20,11 +20,21 @@ def get_feature_frame_via_sqlalchemy(
     end_time: datetime,
     moving_window_length: int=7
 ):
-    full_query = get_full_features_query(
+    full_query_current_data = get_full_features_query(
         start_time,
         end_time,
-        moving_window_length
+        moving_window_length,
+        False
     )
+
+    full_query_past_positives = get_full_features_query(
+        start_time,
+        end_time,
+        moving_window_length,
+        True
+    )
+
+    full_query = full_query_current_data.union(full_query_past_positives)
 
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
@@ -37,9 +47,13 @@ def get_feature_frame_via_sqlalchemy(
 def get_full_features_query(
         start_time: datetime,
         end_time: datetime,
-        moving_window_length: int=7
+        moving_window_length: int=7,
+        retrieving_past_positives: bool=False
 ):
-    filtered_data = get_filtered_cte(start_time, end_time)
+    if not retrieving_past_positives:
+        filtered_data = get_filtered_cte(start_time, end_time)
+    else:
+        filtered_data = get_data_for_windows_before_conversion(start_time, moving_window_length)
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
         filtered_data,
@@ -70,7 +84,8 @@ def get_full_features_query(
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
         data_with_rolling_windows,
-        start_time
+        start_time,
+        retrieving_past_positives
     )
 
     all_time_delta_columns = add_all_time_delta_columns(
@@ -93,6 +108,37 @@ def get_filtered_cte(
     )
 
     return filtered_data
+
+
+def get_data_for_windows_before_conversion(
+        start_time: datetime,
+        moving_window_length: int=7
+):
+    conversion_events = session.query(
+        aggregated_browser_days.c['browser_id'],
+        aggregated_browser_days.c['next_7_days_event'],
+        aggregated_browser_days.c['next_event_time'],
+    ).filter(
+        aggregated_browser_days.c['next_7_days_event'].in_(['conversion', 'shared_account_login']),
+        aggregated_browser_days.c['date'] < start_time
+    ).group_by(
+        aggregated_browser_days.c['browser_id'],
+        aggregated_browser_days.c['next_7_days_event'],
+        aggregated_browser_days.c['next_event_time'],
+    ).subquery()
+
+    positives_data = session.query(
+        aggregated_browser_days,
+    ).join(
+        conversion_events,
+        and_(
+            aggregated_browser_days.c['browser_id'] == conversion_events.c['browser_id'],
+            aggregated_browser_days.c['date'] <= conversion_events.c['next_event_time'],
+            aggregated_browser_days.c['date'] >=
+        conversion_events.c['next_event_time'] - timedelta(days=moving_window_length))
+    ).cte()
+
+    return positives_data
 
 
 def get_subqueries_for_non_gapped_time_series(
@@ -466,8 +512,18 @@ def create_rolling_window_columns_config(
 
 def filter_joined_queries_adding_derived_metrics(
     joined_partial_queries,
-    start_time: datetime
+    start_time: datetime,
+    retrieving_past_positives
 ):
+
+    finalizing_filter = [
+        joined_partial_queries.c['pageview_count'] > 0,
+        joined_partial_queries.c['row_number'] == 1
+    ]
+
+    if not retrieving_past_positives:
+        finalizing_filter = finalizing_filter.append(joined_partial_queries.c['date'] >= start_time)
+
     filtered_w_derived_metrics = session.query(
         *[column.label(re.sub('timespent_count', 'timespent_sum', column.name))
           for column in joined_partial_queries.columns
@@ -490,12 +546,7 @@ def filter_joined_queries_adding_derived_metrics(
             for key in DERIVED_METRICS_CONFIG.keys()
             for suffix in ['', '_last_window_half']
         ]
-    ).filter(
-        and_(
-            joined_partial_queries.c['pageview_count'] > 0,
-            joined_partial_queries.c['date'] >= start_time,
-            joined_partial_queries.c['row_number'] == 1)
-    ).subquery()
+    ).filter(and_(finalizing_filter)).subquery()
 
     return filtered_w_derived_metrics
 
@@ -529,7 +580,7 @@ def add_all_time_delta_columns(
             for column in filtered_w_derived_metrics.columns
             if re.search('_last_window_half', column.name)
          ]
-    )
+    ).subquery()
 
     return all_time_delta_columns
 
