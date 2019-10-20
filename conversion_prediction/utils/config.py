@@ -184,6 +184,9 @@ class FeatureColumns(object):
     def add_commerce_csv_features(self):
         self.numeric_columns = self.numeric_columns + ['checkout', 'payment']
 
+    def add_payment_history_features(self):
+        self.numeric_columns = self.numeric_columns + ['clv', 'days_since_last_subscription']
+
 
 LOGGING = {
     'version': 1,

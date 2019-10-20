@@ -54,7 +54,7 @@ def get_feature_frame_via_sqlalchemy(
     feature_frame = pd.read_sql(full_query.statement, full_query.postgres_session.bind)
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
     feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.date
-    feature_frame.drop('date_w_gaps', axis=1, inplace=True)    
+    feature_frame.drop('date_w_gaps', axis=1, inplace=True)
 
     return feature_frame
 
@@ -602,7 +602,46 @@ def add_all_time_delta_columns(
     return all_time_delta_columns
 
 
-def get_payment_data_features():
+def get_payment_history_features(end_time: datetime):
+    clv = mysql_session.query(
+        func.sum(payments.c['amount']).label('clv'),
+        payments.c['user_id']
+    ).filter(
+        and_(
+            payments.c['created_at'] <= end_time,
+            payments.c['status'] == 'paid'
+        )
+    ).group_by(
+        payments.c['user_id']
+    )
+
+    days_since_last_subscription = mysql_session.query(
+        func.datediff(end_time, func.max(subscriptions.c['end_time'])).label('days_since_last_subscription'),
+        subscriptions.c['user_id']
+    ).filter(
+        subscriptions.c['end_time'] <= end_time
+    ).group_by(
+        subscriptions.c['user_id']
+    )
+
+    user_payment_history_query = mysql_session.query(
+        clv.c['clv'],
+        days_since_last_subscription.c['days_since_last_subscription']
+    ).outerjoin(
+        clv.c['user_id'] == days_since_last_subscription.c['user_id']
+    )
+
+    user_payment_history = pd.read_sql(
+        user_payment_history_query.statement,
+        user_payment_history_query.postgres_session.bind
+    )
+
+    user_payment_history['clv'] = user_payment_history['clv'].astype(float)
+    user_payment_history['days_since_last_subscription'] = user_payment_history[
+        'days_since_last_subscription'
+    ].astype(float)
+
+    return user_payment_history
 
 
 
