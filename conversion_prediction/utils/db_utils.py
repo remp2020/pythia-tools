@@ -65,7 +65,6 @@ def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str,
     return table_mapping
 
 
-
 def create_predictions_table(connection: sqlalchemy.engine):
     existing_user_defined_types = retrieve_user_defined_type_existence(connection)
 
