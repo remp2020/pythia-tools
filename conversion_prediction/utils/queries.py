@@ -7,12 +7,27 @@ from sqlalchemy.sql import select
 from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
-from .db_utils import get_aggregated_browser_days_w_session
+from .db_utils import get_sqlalchemy_tables_w_session
 from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List
 
-aggregated_browser_days, session = get_aggregated_browser_days_w_session()
+postgres_mappings = get_sqlalchemy_tables_w_session(
+    'POSTGRES_CONNECTION_STRING',
+    'public',
+    ['aggregated_browser_days']
+)
+postgres_session = postgres_mappings['session']
+aggregated_browser_days = postgres_mappings['aggregated_browser_days']
+
+predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
+    'MYSQL_CONNECTION_STRING',
+    'predplatne',
+    ['payments', 'subscriptions']
+)
+mysql_session = predplatne_mysql_mappings['session']
+payments = predplatne_mysql_mappings['payments']
+subscriptions = predplatne_mysql_mappings['payments']
 
 
 def get_feature_frame_via_sqlalchemy(
@@ -36,7 +51,7 @@ def get_feature_frame_via_sqlalchemy(
     
     full_query = full_query_current_data.union(full_query_past_positives)
 
-    feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
+    feature_frame = pd.read_sql(full_query.statement, full_query.postgres_session.bind)
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
     feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.date
     feature_frame.drop('date_w_gaps', axis=1, inplace=True)    
@@ -99,7 +114,7 @@ def get_filtered_cte(
     start_time: datetime,
     end_time: datetime,
 ):
-    filtered_data = session.query(
+    filtered_data = postgres_session.query(
         aggregated_browser_days).filter(
         aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
         aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP)
@@ -114,7 +129,7 @@ def get_data_for_windows_before_conversion(
         start_time: datetime,
         moving_window_length: int=7
 ):
-    conversion_events = session.query(
+    conversion_events = postgres_session.query(
         aggregated_browser_days.c['browser_id'],
         aggregated_browser_days.c['next_7_days_event'],
         aggregated_browser_days.c['next_event_time'],
@@ -129,7 +144,7 @@ def get_data_for_windows_before_conversion(
         aggregated_browser_days.c['next_event_time'],
     ).subquery()
 
-    positives_data = session.query(
+    positives_data = postgres_session.query(
         aggregated_browser_days,
     ).join(
         conversion_events,
@@ -148,7 +163,7 @@ def get_subqueries_for_non_gapped_time_series(
         start_time: datetime,
         end_time: datetime,
 ):
-    generated_time_series = session.query(
+    generated_time_series = postgres_session.query(
         func.generate_series(
             start_time,
             end_time,
@@ -156,7 +171,7 @@ def get_subqueries_for_non_gapped_time_series(
         ).cast(DATE).label('date_gap_filler')
     ).subquery(name='date_gap_filler')
 
-    browser_ids = session.query(
+    browser_ids = postgres_session.query(
         filtered_data.c['browser_id'],
         func.array_agg(
             case(
@@ -171,7 +186,7 @@ def get_subqueries_for_non_gapped_time_series(
             )).label('user_ids')
     ).group_by(filtered_data.c['browser_id']).subquery(name='browser_ids')
 
-    all_date_browser_combinations = session.query(
+    all_date_browser_combinations = postgres_session.query(
         select([browser_ids, generated_time_series]).alias('all_date_browser_combinations')).subquery()
 
     return all_date_browser_combinations
@@ -180,7 +195,7 @@ def get_subqueries_for_non_gapped_time_series(
 def get_unique_events_subquery(
         filtered_data
 ):
-    unique_events = session.query(
+    unique_events = postgres_session.query(
             filtered_data.c['browser_id'].label('event_browser_id'),
             filtered_data.c['next_event_time'].label('next_event_time_filled'),
             filtered_data.c['next_7_days_event'].label('outcome_filled')
@@ -197,7 +212,7 @@ def get_unique_events_subquery(
 def get_device_information_subquery(
         filtered_data
 ):
-    device_information = session.query(
+    device_information = postgres_session.query(
         case(
             [
                 (filtered_data.c['device_brand'] == None,
@@ -244,10 +259,10 @@ def create_rolling_agg_function(
 
 def get_unique_json_fields_query(filtered_data, column_name):
     # TODO: Once the column type is unified in DB, we can get rid of this branching
-    all_keys_query = session.query(
+    all_keys_query = postgres_session.query(
         func.jsonb_object_keys(filtered_data.c[column_name]).label(column_name)
     ).subquery()
-    column_keys = session.query(all_keys_query.c[column_name]).distinct(
+    column_keys = postgres_session.query(all_keys_query.c[column_name]).distinct(
         all_keys_query.c[column_name]).all()
     column_keys = [json_key[0] for json_key in column_keys]
 
@@ -271,7 +286,7 @@ def unpack_json_fields(filtered_data):
                 json_column_keys['hour_interval_pageviews']
             )
 
-    unpacked_time_fields_query = session.query(
+    unpacked_time_fields_query = postgres_session.query(
         filtered_data,
         *[value.label(key)
             for json_keys in json_key_based_columns.values()
@@ -335,7 +350,7 @@ def join_all_partial_queries(
         device_information,
         json_key_column_names
 ):
-    joined_queries = session.query(
+    joined_queries = postgres_session.query(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
@@ -384,7 +399,7 @@ def calculate_rolling_windows_features(
         moving_window_length
     )
 
-    queries_with_basic_window_columns = session.query(
+    queries_with_basic_window_columns = postgres_session.query(
         joined_queries,
         *rolling_agg_columns_base,
         extract('day',
@@ -526,7 +541,7 @@ def filter_joined_queries_adding_derived_metrics(
     if not retrieving_past_positives:
         finalizing_filter.append(joined_partial_queries.c['date'] >= start_time)
 
-    filtered_w_derived_metrics = session.query(
+    filtered_w_derived_metrics = postgres_session.query(
         *[column.label(re.sub('timespent_count', 'timespent_sum', column.name))
           for column in joined_partial_queries.columns
           if not re.search('outcome', column.name)
@@ -556,7 +571,7 @@ def filter_joined_queries_adding_derived_metrics(
 def add_all_time_delta_columns(
         filtered_w_derived_metrics
 ):
-    all_time_delta_columns = session.query(
+    all_time_delta_columns = postgres_session.query(
         filtered_w_derived_metrics,
         *[
             (
@@ -585,6 +600,10 @@ def add_all_time_delta_columns(
     )
 
     return all_time_delta_columns
+
+
+def get_payment_data_features():
+
 
 
 queries = dict()
