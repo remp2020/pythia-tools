@@ -154,10 +154,11 @@ class ConversionPredictionModel(object):
             - user_profiles
             - normalization_handling
             - feature_columns
-        Adds normalized profile based features (normalized always within group_, either replacing the original profile based
+        Adds normalized profile based features (normalized always within group, either replacing the original profile based
         features in group, or adding them onto the original dataframe
         '''
         merge_columns = ['date', 'browser_id']
+
         for column_set_list in self.feature_columns.profile_numeric_columns_from_json_fields.values():
             for column_set in column_set_list:
                 normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
@@ -180,6 +181,25 @@ class ConversionPredictionModel(object):
                     suffixes=['', '_normalized']
                 )
         logger.info('  * Feature normalization success')
+
+    def add_missing_json_columns(self):
+        '''
+        Requires:
+            - user_profiles
+            - feature_columns
+        In case some of the columns created from json columns are not available i.e. a section hasn't occured
+        in the past few days, we fill it with 0.0 to avoid mismatch between datasets. The only way to add / remove
+        a section should be via the config file in utils
+        '''
+        potential_columns = [
+            column for column_list_set in
+            self.feature_columns.profile_numeric_columns_from_json_fields.values()
+            for column_list in column_list_set
+            for column in column_list
+        ]
+
+        for missing_json_column in set(potential_columns) - set(self.user_profiles.columns):
+            self.user_profiles[missing_json_column] = 0.0
 
     def create_feature_frame(self):
         '''
