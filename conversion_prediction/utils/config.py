@@ -181,6 +181,9 @@ class FeatureColumns(object):
 
         self.numeric_columns_with_window_variants = self.numeric_columns_with_window_variants + normalized_column_names
 
+    def add_commerce_csv_features(self):
+        self.numeric_columns = self.numeric_columns + ['checkout', 'payment']
+
 
 LOGGING = {
     'version': 1,

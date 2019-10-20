@@ -84,6 +84,9 @@ class ConversionPredictionModel(object):
         self.artifact_retention_mode = artifact_retention_mode
         self.artifacts_to_retain = artifacts_to_retain
         self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
+        self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
+        print(self.path_to_csvs)
+        print(os.listdir(self.path_to_csvs))
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -134,6 +137,16 @@ class ConversionPredictionModel(object):
             self.moving_window
         )
 
+        try:
+            self.get_payment_window_features_from_csvs()
+            self.feature_columns.add_commerce_csv_features()
+            logger.info('Successfully added commerce flow features from csvs')
+        except Exception as e:
+            logger.info(
+                f'''Failed adding commerce flow features from csvs with exception: 
+                {e};
+                proceeding with remaining features''')
+
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
@@ -147,6 +160,65 @@ class ConversionPredictionModel(object):
             raise ValueError(f'''While the specified max_date is {self.max_date.date()},
             only data up until {self.user_profiles['date'].max()} were retrieved''')
         logger.info('  * Initial data validation success')
+
+    def get_payment_window_features_from_csvs(self):
+        commerce = pd.DataFrame()
+        dates = [date.date() for date in pd.date_range(self.min_date - timedelta(days=7), self.max_date)]
+        dates = [re.sub('-', '', str(date)) for date in dates]
+        for date in dates:
+            commerce_daily = pd.read_csv(f'{self.path_to_model_files}/commerce_{date}.csv.gz')
+            commerce = commerce.append(commerce_daily)
+
+        commerce = commerce[commerce['browser_id'].isin(conversion_prediction.user_profiles['browser_id'].unique())]
+        commerce['date'] = pd.to_datetime(commerce['time']).dt.date
+
+        commerce['dummy_column'] = 1.0
+        commerce_features = commerce[['date', 'step', 'dummy_column', 'browser_id']].groupby(
+            ['date', 'step', 'browser_id']).sum().reset_index()
+        commerce_features.head()
+
+        commerce_pivoted = pd.DataFrame()
+
+        # We are using all the commerce steps based on the assumption that all of our postgres data is filtered for only
+        # days before conversion, we will do a left join on the postgres data assuming this removes look-ahead
+        for step in commerce['step'].unique():
+            if commerce_pivoted.empty:
+                commerce_pivoted = commerce_features[commerce_features['step'] == step].rename(
+                    columns={'dummy_column': step})
+            else:
+                commerce_pivoted = commerce_pivoted.merge(
+                    right=commerce_features[commerce_features['step'] == step].rename(columns={'dummy_column': step}),
+                    on=['browser_id', 'date'],
+                    how='outer'
+                )
+            commerce_pivoted.drop('step', axis=1, inplace=True)
+
+        commerce_pivoted.index = commerce_pivoted['date']
+        commerce_pivoted.drop('date', axis=1, inplace=True)
+        commerce_pivoted.index = pd.to_datetime(commerce_pivoted.index)
+
+        commerce_pivoted.fillna(0.0, inplace=True)
+        dates = conversion_prediction.user_profiles['date'].unique()
+        dates = [date.date() for date in pd.date_range(dates.min() - timedelta(days=7), dates.max())]
+        rolling_commerce_pivotted = (commerce_pivoted.groupby(['browser_id'])
+                                     .apply(lambda x: x.reindex(dates)  # fill in the missing dates for each group)
+                                            .fillna(0.0)  # fill each missing group with 0
+                                            .rolling(7, min_periods=1)
+                                            .sum()))  # do a rolling sum
+
+        rolling_commerce_pivotted.reset_index(inplace=True)
+
+        rolling_commerce_pivotted = rolling_commerce_pivotted[
+            (rolling_commerce_pivotted['date'] >= self.min_date) &
+            (rolling_commerce_pivotted['date'] <= self.max_date)
+            ]
+        rolling_commerce_pivotted['date'] = pd.to_datetime(rolling_commerce_pivotted['date']).dt.date
+
+        self.user_profiles = self.user_profiles.merge(
+            right=rolling_commerce_pivotted,
+            on=['browser_id', 'date'],
+            how='left'
+        )
 
     def introduce_row_wise_normalized_features(self):
         '''
