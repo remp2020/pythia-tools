@@ -158,7 +158,7 @@ class ConversionPredictionModel(object):
         features in group, or adding them onto the original dataframe
         '''
         merge_columns = ['date', 'browser_id']
-
+        self.add_missing_json_columns()
         for column_set_list in self.feature_columns.profile_numeric_columns_from_json_fields.values():
             for column_set in column_set_list:
                 normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
