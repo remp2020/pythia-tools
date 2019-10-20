@@ -33,7 +33,7 @@ def get_feature_frame_via_sqlalchemy(
         moving_window_length,
         True
     )
-
+    
     full_query = full_query_current_data.union(full_query_past_positives)
 
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
@@ -120,7 +120,9 @@ def get_data_for_windows_before_conversion(
         aggregated_browser_days.c['next_event_time'],
     ).filter(
         aggregated_browser_days.c['next_7_days_event'].in_(['conversion', 'shared_account_login']),
-        aggregated_browser_days.c['date'] < start_time
+        aggregated_browser_days.c['date'] < start_time,
+        # This restriction is here because of lack of resources on bonne, we can lift it on Hetzner (possibly)
+        aggregated_browser_days.c['date'] >= start_time - timedelta(days=180)
     ).group_by(
         aggregated_browser_days.c['browser_id'],
         aggregated_browser_days.c['next_7_days_event'],
@@ -580,7 +582,7 @@ def add_all_time_delta_columns(
             for column in filtered_w_derived_metrics.columns
             if re.search('_last_window_half', column.name)
          ]
-    ).subquery()
+    )
 
     return all_time_delta_columns
 
