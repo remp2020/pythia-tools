@@ -207,8 +207,8 @@ class ConversionPredictionModel(object):
         rolling_commerce_pivotted.reset_index(inplace=True)
 
         rolling_commerce_pivotted = rolling_commerce_pivotted[
-            (rolling_commerce_pivotted['date'] >= self.min_date) &
-            (rolling_commerce_pivotted['date'] <= self.max_date)
+            (rolling_commerce_pivotted['date'] >= self.min_date.date()) &
+            (rolling_commerce_pivotted['date'] <= self.max_date.date())
             ]
         rolling_commerce_pivotted['date'] = pd.to_datetime(rolling_commerce_pivotted['date']).dt.date
 
