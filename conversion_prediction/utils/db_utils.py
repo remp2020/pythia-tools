@@ -1,7 +1,7 @@
 import pandas as pd
 import sqlalchemy
 import os
-from typing import List
+from typing import List, Dict
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData, Table
 
@@ -53,12 +53,16 @@ def get_sqla_table(table_name, engine, schema='public'):
     return table
 
 
-def get_aggregated_browser_days_w_session():
-    _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
-    aggregated_browser_days = get_sqla_table(table_name='aggregated_browser_days', engine=postgres)
-    session = sessionmaker(bind=postgres)()
+def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str, table_names: List[str]) -> Dict:
+    table_mapping = {}
+    _, db_connection = create_connection(os.getenv(db_connection_string_name))
 
-    return aggregated_browser_days, session
+    for table in table_names:
+        table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=schema)
+
+    table_mapping['session'] = sessionmaker(bind=db_connection)
+
+    return table_mapping
 
 
 def create_predictions_table(connection: sqlalchemy.engine):

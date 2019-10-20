@@ -32,7 +32,7 @@ from utils.enums import SplitType, NormalizedFeatureHandling
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
 from utils.queries import queries
-from utils.queries import get_feature_frame_via_sqlalchemy
+from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features
 from utils.data_transformations import unique_list, row_wise_normalization
 
 
@@ -135,6 +135,8 @@ class ConversionPredictionModel(object):
             self.moving_window
         )
 
+        logger.info(f'  * Retrieved initial user profiles frame from DB')
+
         try:
             self.get_payment_window_features_from_csvs()
             self.feature_columns.add_commerce_csv_features()
@@ -145,7 +147,14 @@ class ConversionPredictionModel(object):
                 {e};
                 proceeding with remaining features''')
 
-        logger.info(f'  * Retrieved initial user profiles frame from DB')
+        try:
+            self.get_user_history_features_from_mysql()
+            self.feature_columns.add_payment_history_features()
+        except Exception as e:
+            logger.info(
+                f'''Failed adding payment history features from mysql with exception: 
+                {e};
+                proceeding with remaining features''')
 
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
@@ -160,6 +169,13 @@ class ConversionPredictionModel(object):
         logger.info('  * Initial data validation success')
 
     def get_payment_window_features_from_csvs(self):
+        '''
+        Requires:
+            - min_date
+            - max_date
+        Loads in csvs (location needs to be in .env), counts the number of events per browser_id and joins these counts
+        to the main feature frame
+        '''
         commerce = pd.DataFrame()
         dates = [date.date() for date in pd.date_range(self.min_date - timedelta(days=7), self.max_date)]
         dates = [re.sub('-', '', str(date)) for date in dates]
@@ -217,6 +233,36 @@ class ConversionPredictionModel(object):
             on=['browser_id', 'date'],
             how='left'
         )
+
+    def get_user_history_features_from_mysql(self):
+        '''
+        Requires:
+            - max_date
+        Retrieves clv and days since last subscription from the predplatne database data is then written to the main
+        feature frame iterating over rows of payment history features, since each feature frame row might contain
+        multiple user ids. Currently there is no logic for when there are multiple user ids, we simply use data
+        from the last relevant payment history row.
+        '''
+        payment_history_features = get_payment_history_features(self.max_date)
+
+        self.user_profiles['days_since_last_subscription'] = np.NaN
+        self.user_profiles['clv'] = 0.0
+
+        for index, row in payment_history_features.iterrows():
+            self.user_profiles.loc[
+                self.user_profiles['user_ids'].astype(str).fillna('').str.contains(
+                    str(row['user_id'])),
+                'days_since_last_subscription'
+            ] = row['days_since_last_subscription']
+            self.user_profiles.loc[
+                self.user_profiles['user_ids'].astype(str).fillna('').str.contains(
+                    str(row['user_id'])),
+                'clv'
+            ] = row['clv']
+
+        self.user_profiles['clv'] = self.user_profiles['clv'].astype(float)
+
+        return payment_history_features
 
     def introduce_row_wise_normalized_features(self):
         '''
