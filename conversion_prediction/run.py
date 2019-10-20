@@ -35,6 +35,7 @@ from utils.queries import queries
 from utils.queries import get_feature_frame_via_sqlalchemy
 from utils.data_transformations import unique_list, row_wise_normalization
 
+
 class ConversionPredictionModel(object):
     def __init__(
             self,
@@ -138,7 +139,7 @@ class ConversionPredictionModel(object):
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
 
-        if self.user_profiles['date'].min()  > self.min_date.date():
+        if self.user_profiles['date'].min() > self.min_date.date():
             raise ValueError(f'''While the specified min_date is {self.min_date.date()},
             only data going back to {self.user_profiles['date'].min()} were retrieved''')
 
