@@ -167,7 +167,7 @@ class ConversionPredictionModel(object):
             commerce_daily = pd.read_csv(f'{self.path_to_csvs}/commerce_{date}.csv.gz')
             commerce = commerce.append(commerce_daily)
 
-        commerce = commerce[commerce['browser_id'].isin(conversion_prediction.user_profiles['browser_id'].unique())]
+        commerce = commerce[commerce['browser_id'].isin(self.user_profiles['browser_id'].unique())]
         commerce['date'] = pd.to_datetime(commerce['time']).dt.date
 
         commerce['dummy_column'] = 1.0
@@ -196,7 +196,7 @@ class ConversionPredictionModel(object):
         commerce_pivoted.index = pd.to_datetime(commerce_pivoted.index)
 
         commerce_pivoted.fillna(0.0, inplace=True)
-        dates = conversion_prediction.user_profiles['date'].unique()
+        dates = self.user_profiles['date'].unique()
         dates = [date.date() for date in pd.date_range(dates.min() - timedelta(days=7), dates.max())]
         rolling_commerce_pivotted = (commerce_pivoted.groupby(['browser_id'])
                                      .apply(lambda x: x.reindex(dates)  # fill in the missing dates for each group)
