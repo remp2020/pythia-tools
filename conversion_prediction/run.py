@@ -85,8 +85,6 @@ class ConversionPredictionModel(object):
         self.artifacts_to_retain = artifacts_to_retain
         self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
         self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
-        print(self.path_to_csvs)
-        print(os.listdir(self.path_to_csvs))
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
