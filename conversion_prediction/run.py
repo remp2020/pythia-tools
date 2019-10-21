@@ -148,7 +148,7 @@ class ConversionPredictionModel(object):
                 proceeding with remaining features''')
 
         # try:
-        self.get_user_history_features_from_mysql(self.max_date)
+        self.get_user_history_features_from_mysql()
         # self.feature_columns.add_payment_history_features()
         # except Exception as e:
         #    logger.info(

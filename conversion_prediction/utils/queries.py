@@ -27,7 +27,7 @@ predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
 )
 mysql_session = predplatne_mysql_mappings['session']
 payments = predplatne_mysql_mappings['payments']
-subscriptions = predplatne_mysql_mappings['payments']
+subscriptions = predplatne_mysql_mappings['subscriptions']
 
 
 def get_feature_frame_via_sqlalchemy(
@@ -614,7 +614,7 @@ def get_payment_history_features(end_time: datetime):
         )
     ).group_by(
         payments.c['user_id']
-    )
+    ).subquery()
 
     days_since_last_subscription = mysql_session.query(
         func.datediff(end_time, func.max(subscriptions.c['end_time'])).label('days_since_last_subscription'),
@@ -623,14 +623,17 @@ def get_payment_history_features(end_time: datetime):
         subscriptions.c['end_time'] <= end_time
     ).group_by(
         subscriptions.c['user_id']
-    )
+    ).subquery()
 
     user_payment_history_query = mysql_session.query(
         clv.c['clv'],
+        clv.c['user_id'],
         days_since_last_subscription.c['days_since_last_subscription']
     ).outerjoin(
+        days_since_last_subscription,
         clv.c['user_id'] == days_since_last_subscription.c['user_id']
     )
+   
 
     user_payment_history = pd.read_sql(
         user_payment_history_query.statement,
