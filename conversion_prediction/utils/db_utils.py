@@ -60,7 +60,7 @@ def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str,
     for table in table_names:
         table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=schema)
 
-    table_mapping['session'] = sessionmaker(bind=db_connection)
+    table_mapping['session'] = sessionmaker(bind=db_connection)()
 
     return table_mapping
 

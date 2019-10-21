@@ -51,7 +51,7 @@ def get_feature_frame_via_sqlalchemy(
     
     full_query = full_query_current_data.union(full_query_past_positives)
 
-    feature_frame = pd.read_sql(full_query.statement, full_query.postgres_session.bind)
+    feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
     feature_frame.columns = [re.sub('anon_1_', '', column) for column in feature_frame.columns]
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
     feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.date
@@ -634,7 +634,7 @@ def get_payment_history_features(end_time: datetime):
 
     user_payment_history = pd.read_sql(
         user_payment_history_query.statement,
-        user_payment_history_query.postgres_session.bind
+        user_payment_history_query.session.bind
     )
 
     user_payment_history['clv'] = user_payment_history['clv'].astype(float)

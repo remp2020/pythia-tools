@@ -147,14 +147,14 @@ class ConversionPredictionModel(object):
                 {e};
                 proceeding with remaining features''')
 
-        try:
-            self.get_user_history_features_from_mysql()
-            self.feature_columns.add_payment_history_features()
-        except Exception as e:
-            logger.info(
-                f'''Failed adding payment history features from mysql with exception: 
-                {e};
-                proceeding with remaining features''')
+        # try:
+        self.get_user_history_features_from_mysql(self.max_date)
+        # self.feature_columns.add_payment_history_features()
+        # except Exception as e:
+        #    logger.info(
+        #        f'''Failed adding payment history features from mysql with exception: 
+        #        {e};
+        #        proceeding with remaining features''')
 
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
