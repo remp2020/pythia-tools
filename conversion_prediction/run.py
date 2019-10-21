@@ -137,6 +137,15 @@ class ConversionPredictionModel(object):
 
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
+        # try:
+        self.get_contextual_features_from_mysql()
+        self.feature_columns.add_global_context_features()
+        # except Exception as e:
+        #     logger.info(
+        #        f'''Failed adding global context features from mysql with exception:
+        #       {e};
+        #       proceeding with remaining features''')
+
         try:
             self.get_payment_window_features_from_csvs()
             self.feature_columns.add_commerce_csv_features()
@@ -155,15 +164,6 @@ class ConversionPredictionModel(object):
                 f'''Failed adding payment history features from mysql with exception: 
                 {e};
                 proceeding with remaining features''')
-
-        try:
-            self.get_contextual_features_from_mysql()
-            self.feature_columns.add_global_context_features()
-        except Exception as e:
-            logger.info(
-               f'''Failed adding global context features from mysql with exception: 
-              {e};
-              proceeding with remaining features''')
 
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
