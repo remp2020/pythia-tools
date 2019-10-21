@@ -187,6 +187,12 @@ class FeatureColumns(object):
     def add_payment_history_features(self):
         self.numeric_columns = self.numeric_columns + ['clv', 'days_since_last_subscription']
 
+    def add_global_context_features(self):
+        self.numeric_columns = self.numeric_columns + [
+            'article_pageviews_count', 'sum_paid',
+            'pageviews_count', 'avg_price'
+        ]
+
 
 LOGGING = {
     'version': 1,

@@ -32,7 +32,7 @@ from utils.enums import SplitType, NormalizedFeatureHandling
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
 from utils.queries import queries
-from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features
+from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context
 from utils.data_transformations import unique_list, row_wise_normalization
 
 
@@ -147,14 +147,23 @@ class ConversionPredictionModel(object):
                 {e};
                 proceeding with remaining features''')
 
-        # try:
-        self.get_user_history_features_from_mysql()
-        # self.feature_columns.add_payment_history_features()
-        # except Exception as e:
-        #    logger.info(
-        #        f'''Failed adding payment history features from mysql with exception: 
-        #        {e};
-        #        proceeding with remaining features''')
+        try:
+            self.get_user_history_features_from_mysql()
+            self.feature_columns.add_payment_history_features()
+        except Exception as e:
+            logger.info(
+                f'''Failed adding payment history features from mysql with exception: 
+                {e};
+                proceeding with remaining features''')
+
+        try:
+            self.get_contextual_features_from_mysql()
+            self.feature_columns.add_global_context_features()
+        except Exception as e:
+            logger.info(
+               f'''Failed adding global context features from mysql with exception: 
+              {e};
+              proceeding with remaining features''')
 
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
@@ -233,6 +242,7 @@ class ConversionPredictionModel(object):
             on=['browser_id', 'date'],
             how='left'
         )
+        # TODO: Come up with a better handling for these features for past positives (currently no handling)
 
     def get_user_history_features_from_mysql(self):
         '''
@@ -248,21 +258,57 @@ class ConversionPredictionModel(object):
         self.user_profiles['days_since_last_subscription'] = np.NaN
         self.user_profiles['clv'] = 0.0
 
+        # TODO: Come up with a better handling for these features for past positives (currently no handling)
         for index, row in payment_history_features.iterrows():
             self.user_profiles.loc[
-                self.user_profiles['user_ids'].astype(str).fillna('').str.contains(
-                    str(row['user_id'])),
+                # user_id contained in the list of user_ids for a browser
+                (self.user_profiles['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
+                # user is not a past positive, since the payment history would be a look ahead
+                (self.user_profiles['date'] >= self.min_date),
                 'days_since_last_subscription'
             ] = row['days_since_last_subscription']
             self.user_profiles.loc[
-                self.user_profiles['user_ids'].astype(str).fillna('').str.contains(
-                    str(row['user_id'])),
+                # user_id contained in the list of user_ids for a browser
+                (self.user_profiles['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
+                # user is not a past positive, since the payment history would be a look ahead
+                (self.user_profiles['date'] >= self.min_date),
                 'clv'
             ] = row['clv']
 
         self.user_profiles['clv'] = self.user_profiles['clv'].astype(float)
 
         return payment_history_features
+
+    def get_contextual_features_from_mysql(self):
+        '''
+        Requires:
+            - user_profiles
+        Retrieves & joins daily rolling article pageviews, sum paid, payment count and average price
+        '''
+        # We extract these, since we also want global context for the past positives data
+        context = get_global_context(
+            self.user_profiles['date'].min(),
+            self.user_profiles['date'].max()
+        )
+        rolling_context = (context.groupby(['date'])
+                           .fillna(0.0)  # fill each missing group with 0
+                           .rolling(7, min_periods=1)
+                           .sum())  # do a rolling sum
+
+        rolling_context.reset_index(inplace=True)
+        rolling_context['avg_price'] = rolling_context['sum_paid'] / rolling_context['payment_count']
+        rolling_context['date'] = pd.to_datetime(rolling_context['date']).dt.date
+        # create str variant of the date columns since we can't join on date in pandas
+        rolling_context['date_str'] = rolling_context['date'].astype(str)
+        self.user_profiles['date_str'] = self.user_profiles['date'].astype(str)
+
+        self.user_profiles = self.user_profiles.merge(
+            left=rolling_context,
+            on='date_str',
+            how='left'
+        )
+
+        self.user_profiles.drop('date_str', axis=1, inplace=True)
 
     def introduce_row_wise_normalized_features(self):
         '''
