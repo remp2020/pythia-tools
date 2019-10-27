@@ -137,14 +137,14 @@ class ConversionPredictionModel(object):
 
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
-        # try:
-        self.get_contextual_features_from_mysql()
-        self.feature_columns.add_global_context_features()
-        # except Exception as e:
-        #     logger.info(
-        #        f'''Failed adding global context features from mysql with exception:
-        #       {e};
-        #       proceeding with remaining features''')
+        try:
+            self.get_contextual_features_from_mysql()
+            self.feature_columns.add_global_context_features()
+        except Exception as e:
+             logger.info(
+                f'''Failed adding global context features from mysql with exception:
+               {e};
+               proceeding with remaining features''')
 
         try:
             self.get_payment_window_features_from_csvs()
@@ -290,11 +290,15 @@ class ConversionPredictionModel(object):
             self.user_profiles['date'].min(),
             self.user_profiles['date'].max()
         )
-        rolling_context = (context.groupby(['date'])
-                           .fillna(0.0)  # fill each missing group with 0
-                           .rolling(7, min_periods=1)
-                           .sum())  # do a rolling sum
-
+        
+        context.index = context['date']
+        context.drop('date', axis=1, inplace=True)
+        context.index = pd.to_datetime(context.index)
+        dates = [date.date() for date in pd.date_range(context.index.min(), context.index.max())]
+        rolling_context = (context.groupby('date')
+                                             .fillna(0)  # fill each missing group with 0
+                                             .rolling(7, min_periods=1)
+                                             .sum())  # do a rolling sum
         rolling_context.reset_index(inplace=True)
         rolling_context['avg_price'] = rolling_context['sum_paid'] / rolling_context['payment_count']
         rolling_context['date'] = pd.to_datetime(rolling_context['date']).dt.date
@@ -303,12 +307,13 @@ class ConversionPredictionModel(object):
         self.user_profiles['date_str'] = self.user_profiles['date'].astype(str)
 
         self.user_profiles = self.user_profiles.merge(
-            left=rolling_context,
+            right=rolling_context,
             on='date_str',
             how='left'
         )
 
-        self.user_profiles.drop('date_str', axis=1, inplace=True)
+        self.user_profiles.drop(['date_str', 'date_y'], axis=1, inplace=True)
+        self.user_profiles.rename(columns={'date_x': 'date'}, inplace=True)
 
     def introduce_row_wise_normalized_features(self):
         '''

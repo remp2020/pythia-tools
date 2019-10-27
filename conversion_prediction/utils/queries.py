@@ -703,7 +703,7 @@ def get_global_context(start_time, end_time):
 
     article_pageviews_context = mysql_beam_session.query(
         article_pageviews_filtered_1.c['date'].label('date'),
-        func.sum(article_pageviews_filtered_2.c['article_pageviews_count']).label('article_pageviews_count'),
+        func.sum(article_pageviews_filtered_2.c['article_pageviews']).label('article_pageviews_count'),
     ).join(
         article_pageviews_filtered_2,
         func.datediff(article_pageviews_filtered_1.c['date'], article_pageviews_filtered_2.c['date']).between(0, 7)
@@ -714,8 +714,10 @@ def get_global_context(start_time, end_time):
     ).subquery()
 
     context_query = mysql_predplatne_session.query(
-        payments_context,
-        article_pageviews_context
+        payments_context.c['date'],
+        payments_context.c['payment_count'],
+	payments_context.c['sum_paid'],
+        article_pageviews_context.c['article_pageviews_count']
     ).join(
         article_pageviews_context,
         article_pageviews_context.c['date'] == payments_context.c['date']
