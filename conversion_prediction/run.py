@@ -240,7 +240,8 @@ class ConversionPredictionModel(object):
         self.user_profiles = self.user_profiles.merge(
             right=rolling_commerce_pivotted,
             on=['browser_id', 'date'],
-            how='left'
+            how='left',
+            copy=False
         )
         # TODO: Come up with a better handling for these features for past positives (currently no handling)
 
@@ -309,7 +310,8 @@ class ConversionPredictionModel(object):
         self.user_profiles = self.user_profiles.merge(
             right=rolling_context,
             on='date_str',
-            how='left'
+            how='left',
+            copy=False
         )
 
         self.user_profiles.drop(['date_str', 'date_y'], axis=1, inplace=True)
@@ -345,7 +347,8 @@ class ConversionPredictionModel(object):
                     right=normalized_data,
                     how='left',
                     on=merge_columns,
-                    suffixes=['', '_normalized']
+                    suffixes=['', '_normalized'],
+                    copy=False
                 )
         logger.info('  * Feature normalization success')
 
