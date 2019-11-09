@@ -638,7 +638,8 @@ def get_payment_history_features(end_time: datetime):
     user_payment_history_query = mysql_predplatne_session.query(
         clv.c['clv'],
         clv.c['user_id'],
-        days_since_last_subscription.c['days_since_last_subscription']
+        days_since_last_subscription.c['days_since_last_subscription'],
+        days_since_last_subscription.c['last_subscription_end']
     ).outerjoin(
         days_since_last_subscription,
         clv.c['user_id'] == days_since_last_subscription.c['user_id']
