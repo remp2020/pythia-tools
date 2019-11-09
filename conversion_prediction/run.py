@@ -265,20 +265,18 @@ class ConversionPredictionModel(object):
         for index, row in payment_history_features.iterrows():
             if index % int(len(payment_history_features) / 10) == 0:
                 print(f'{index / len(payment_history_features)} % done')
-            self.user_profiles.loc[
+            import time
+            start_time = time.time()
+            matching_index = self.user_profiles[
                 # user_id contained in the list of user_ids for a browser
                 (self.user_profiles['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
                 # user is not a past positive, since the payment history would be a look ahead
-                (self.user_profiles['date'] >= self.min_date.date()),
-                'days_since_last_subscription'
-            ] = row['days_since_last_subscription']
-            self.user_profiles.loc[
-                # user_id contained in the list of user_ids for a browser
-                (self.user_profiles['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
-                # user is not a past positive, since the payment history would be a look ahead
-                (self.user_profiles['date'] >= self.min_date.date()),
-                'clv'
-            ] = row['clv']
+                (self.user_profiles['date'] >= row['last_subscription_end'].date())
+                ].index
+            print(f'matching took: {(start_time - time.time()) / 60}')
+            raise ValueError('Testing done')
+            self.user_profiles.loc[matching_index, 'days_since_last_subscription'] = row['days_since_last_subscription']
+            self.user_profiles.loc[matching_index, 'clv'] = row['clv']
 
         self.user_profiles['clv'] = self.user_profiles['clv'].astype(float)
 

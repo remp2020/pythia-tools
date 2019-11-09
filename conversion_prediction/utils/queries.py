@@ -627,6 +627,7 @@ def get_payment_history_features(end_time: datetime):
 
     days_since_last_subscription = mysql_predplatne_session.query(
         func.datediff(end_time, func.max(subscriptions.c['end_time'])).label('days_since_last_subscription'),
+        func.max(subscriptions.c['end_time']).label('last_subscription_end'),
         subscriptions.c['user_id']
     ).filter(
         subscriptions.c['end_time'] <= end_time
