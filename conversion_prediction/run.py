@@ -267,13 +267,21 @@ class ConversionPredictionModel(object):
                 print(f'{index / len(payment_history_features)} % done')
             import time
             start_time = time.time()
-            matching_index = self.user_profiles[
+            print(self.user_profiles['user_ids'].head())
+            print(self.user_profiles['user_ids'].dtype)
+            possible_matches = self.user_profiles[
+                (self.user_profiles['user_ids'] != '') &
+                (self.user_profiles['user_ids'] != []) &
+                (self.user_profiles['user_ids'] != '[]') &
+                (~self.user_profiles['user_ids'].isna())
+            ]
+            matching_index = possible_matches[
                 # user_id contained in the list of user_ids for a browser
-                (self.user_profiles['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
+                (possible_matches['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
                 # user is not a past positive, since the payment history would be a look ahead
-                (self.user_profiles['date'] >= row['last_subscription_end'].date())
+                (possible_matches['date'] >= row['last_subscription_end'].date())
                 ].index
-            print(f'matching took: {(start_time - time.time()) / 60}')
+            print(f'alternate matching took: {(start_time - time.time()) / 60}')
             raise ValueError('Testing done')
             self.user_profiles.loc[matching_index, 'days_since_last_subscription'] = row['days_since_last_subscription']
             self.user_profiles.loc[matching_index, 'clv'] = row['clv']
