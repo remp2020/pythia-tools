@@ -258,26 +258,48 @@ class ConversionPredictionModel(object):
         '''
         payment_history_features = get_payment_history_features(self.max_date)
 
-        self.user_profiles['days_since_last_subscription'] = np.NaN
-        self.user_profiles['clv'] = 0.0
-        self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
+        # We'll only be matching the first user_id in the list for speed reasons
+        self.user_profiles['first_user_id'] = self.user_profiles['user_ids'].apply(
+            lambda x: x[0]
+        ).str.extract('([0-9]+)')
         # TODO: Come up with a better handling for these features for past positives (currently no handling)
-        for index, row in payment_history_features.iterrows():
-            if index % int(len(payment_history_features) / 10) == 0:
-                print(f'{index / len(payment_history_features)} % done')
-            possible_matches = self.user_profiles[
-                self.user_profiles['user_ids'] != pd.Series([[''] for i in range(len(self.user_profiles))])
-            ]
-            matching_index = possible_matches[
-                # user_id contained in the list of user_ids for a browser
-                (possible_matches['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
-                # user is not a past positive, since the payment history would be a look ahead
-                (possible_matches['date'] >= row['last_subscription_end'].date())
-                ].index
-            self.user_profiles.loc[matching_index, 'days_since_last_subscription'] = row['days_since_last_subscription']
-            self.user_profiles.loc[matching_index, 'clv'] = row['clv']
+        # for index, row in payment_history_features.iterrows():
+        #     if index % int(len(payment_history_features) / 10) == 0:
+        #         print(f'{index / len(payment_history_features)} % done')
+        #     possible_matches = self.user_profiles[
+        #         self.user_profiles['user_ids'] != pd.Series([[''] for i in range(len(self.user_profiles))])
+        #     ]
+        #     matching_index = possible_matches[
+        #         # user_id contained in the list of user_ids for a browser
+        #         (possible_matches['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
+        #         # user is not a past positive, since the payment history would be a look ahead
+        #         (possible_matches['date'] >= row['last_subscription_end'].date())
+        #         ].index
+        #     self.user_profiles.loc[matching_index, 'days_since_last_subscription'] = row['days_since_last_subscription']
+        #     self.user_profiles.loc[matching_index, 'clv'] = row['clv']
+
+        self.user_profiles = self.user_profiles.merge(
+            right=payment_history_features,
+            left_on='first_user_id',
+            right_on='user_id',
+            how='left'
+        )
 
         self.user_profiles['clv'] = self.user_profiles['clv'].astype(float)
+        self.user_profiles['clv'].fillna(0.0, inplace=True)
+        # In case the user had additional subscriptions that have an end date after the date of the user profile,
+        # we treat it as a missing value.
+        # TODO: Add better treatment for look-ahead removal
+        self.user_profiles.loc[
+            self.user_profiles['last_subscription_end'] >= self.user_profiles['date'],
+            'clv'
+        ] = 0.0
+        # The 1000 days is an arbitrary choice here
+        self.user_profiles['days_since_last_subscription'].fillna(1000.0, inplace=True)
+        self.user_profiles.loc[
+            self.user_profiles['last_subscription_end'] >= self.user_profiles['date'],
+            'days_since_last_subscription'
+        ] = 1000.0
 
         return payment_history_features
 
