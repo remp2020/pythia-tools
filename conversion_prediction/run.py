@@ -333,9 +333,6 @@ class ConversionPredictionModel(object):
                 normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
                 normalized_data.fillna(0.0, inplace=True)
                 normalized_data.columns = column_set
-                normalized_data = pd.concat(
-                    [self.user_profiles[merge_columns], normalized_data],
-                    axis=1)
 
                 if self.normalization_handling is NormalizedFeatureHandling.REPLACE_WITH:
                     self.user_profiles.drop(column_set, axis=1, inplace=True)
@@ -343,12 +340,13 @@ class ConversionPredictionModel(object):
                     self.feature_columns.add_normalized_profile_features_version()
                 else:
                     raise ValueError('Unknown normalization handling parameter')
-                self.user_profiles = self.user_profiles.merge(
-                    right=normalized_data,
-                    how='left',
-                    on=merge_columns,
-                    suffixes=['', '_normalized'],
-                    copy=False
+
+                self.user_profiles = pd.concat(
+                    [
+                        self.user_profiles,
+                        normalized_data
+                    ],
+                    axis=1
                 )
         logger.info('  * Feature normalization success')
 
