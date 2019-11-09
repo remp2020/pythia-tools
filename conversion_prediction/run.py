@@ -277,7 +277,8 @@ class ConversionPredictionModel(object):
         #         ].index
         #     self.user_profiles.loc[matching_index, 'days_since_last_subscription'] = row['days_since_last_subscription']
         #     self.user_profiles.loc[matching_index, 'clv'] = row['clv']
-
+        
+        payment_history_features['user_id'] = payment_history_features['user_id'].astype(int).astype(str)
         self.user_profiles = self.user_profiles.merge(
             right=payment_history_features,
             left_on='first_user_id',
@@ -290,6 +291,7 @@ class ConversionPredictionModel(object):
         # In case the user had additional subscriptions that have an end date after the date of the user profile,
         # we treat it as a missing value.
         # TODO: Add better treatment for look-ahead removal
+        self.user_profiles['last_subscription_end'] = pd.to_datetime(self.user_profiles['last_subscription_end']).dt.date 
         self.user_profiles.loc[
             self.user_profiles['last_subscription_end'] >= self.user_profiles['date'],
             'clv'
@@ -300,6 +302,8 @@ class ConversionPredictionModel(object):
             self.user_profiles['last_subscription_end'] >= self.user_profiles['date'],
             'days_since_last_subscription'
         ] = 1000.0
+
+        self.user_profiles.drop(['last_subscription_end', 'first_user_id'], axis=1, inplace=True)
 
         return payment_history_features
 
