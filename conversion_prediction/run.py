@@ -262,9 +262,8 @@ class ConversionPredictionModel(object):
         self.user_profiles['clv'] = 0.0
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
         # TODO: Come up with a better handling for these features for past positives (currently no handling)
-        print(len(payment_history_features.iterrows))
         for index, row in payment_history_features.iterrows():
-            if index % int(payment_history_features / 10) == 0:
+            if index % int(len(payment_history_features) / 10) == 0:
                 print(f'{index / len(payment_history_features)} % done')
             self.user_profiles.loc[
                 # user_id contained in the list of user_ids for a browser
@@ -321,8 +320,6 @@ class ConversionPredictionModel(object):
 
         self.user_profiles.drop(['date_str', 'date_y'], axis=1, inplace=True)
         self.user_profiles.rename(columns={'date_x': 'date'}, inplace=True)
-
-    def introduce_row_wise_normalized_features(self):
 
     def introduce_row_wise_normalized_features(self):
         self.user_profiles.drop(['date_str', 'date_y'], axis=1, inplace=True)
