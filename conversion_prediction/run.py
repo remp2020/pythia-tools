@@ -140,6 +140,7 @@ class ConversionPredictionModel(object):
         try:
             self.get_contextual_features_from_mysql()
             self.feature_columns.add_global_context_features()
+            logger.info('Successfully added global context features from csvs')
         except Exception as e:
              logger.info(
                 f'''Failed adding global context features from mysql with exception:
@@ -155,15 +156,16 @@ class ConversionPredictionModel(object):
                 f'''Failed adding commerce flow features from csvs with exception: 
                 {e};
                 proceeding with remaining features''')
-
-        try:
-            self.get_user_history_features_from_mysql()
-            self.feature_columns.add_payment_history_features()
-        except Exception as e:
-            logger.info(
-                f'''Failed adding payment history features from mysql with exception: 
-                {e};
-                proceeding with remaining features''')
+        
+        self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
+        #try:
+        self.get_user_history_features_from_mysql()
+        self.feature_columns.add_payment_history_features()
+        #except Exception as e:
+        #    logger.info(
+        #        f'''Failed adding payment history features from mysql with exception: 
+        #        {e};
+        #        proceeding with remaining features''')
 
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
@@ -258,21 +260,24 @@ class ConversionPredictionModel(object):
 
         self.user_profiles['days_since_last_subscription'] = np.NaN
         self.user_profiles['clv'] = 0.0
-
+        self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
         # TODO: Come up with a better handling for these features for past positives (currently no handling)
+        print(len(payment_history_features.iterrows))
         for index, row in payment_history_features.iterrows():
+            if index % int(payment_history_features / 10) == 0:
+                print(f'{index / len(payment_history_features)} % done')
             self.user_profiles.loc[
                 # user_id contained in the list of user_ids for a browser
                 (self.user_profiles['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
                 # user is not a past positive, since the payment history would be a look ahead
-                (self.user_profiles['date'] >= self.min_date),
+                (self.user_profiles['date'] >= self.min_date.date()),
                 'days_since_last_subscription'
             ] = row['days_since_last_subscription']
             self.user_profiles.loc[
                 # user_id contained in the list of user_ids for a browser
                 (self.user_profiles['user_ids'].astype(str).fillna('').str.contains(str(row['user_id']))) &
                 # user is not a past positive, since the payment history would be a look ahead
-                (self.user_profiles['date'] >= self.min_date),
+                (self.user_profiles['date'] >= self.min_date.date()),
                 'clv'
             ] = row['clv']
 
@@ -314,6 +319,12 @@ class ConversionPredictionModel(object):
             copy=False
         )
 
+        self.user_profiles.drop(['date_str', 'date_y'], axis=1, inplace=True)
+        self.user_profiles.rename(columns={'date_x': 'date'}, inplace=True)
+
+    def introduce_row_wise_normalized_features(self):
+
+    def introduce_row_wise_normalized_features(self):
         self.user_profiles.drop(['date_str', 'date_y'], axis=1, inplace=True)
         self.user_profiles.rename(columns={'date_x': 'date'}, inplace=True)
 
@@ -906,9 +917,3 @@ if __name__ == "__main__":
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.PREDICTION
         )
-
-        conversion_prediction.generate_and_upload_prediction()
-    else:
-        raise ValueError('Unknown action specified')
-
-    logger.info(f'All done, bye bye')
