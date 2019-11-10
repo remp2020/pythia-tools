@@ -68,11 +68,11 @@ def get_feature_frame_via_sqlalchemy(
     # We're removing the misaligned columns, due to the fact that their absence / presence might be an indication
     # for the past positives, in which case it would create a lookahead
     full_query_current_data = postgres_session.query(
-            *[full_query_current_data.c[column] for column in column_names_current_data if column not in column_check]
+            *[full_query_current_data.c[column].label(column) for column in column_names_current_data if column not in column_check]
             )
     
     full_query_past_positives = postgres_session.query(
-            *[full_query_past_positives.c[column] for column in column_names_past_positives if column not in column_check]
+            *[full_query_past_positives.c[column].label(column) for column in column_names_past_positives if column not in column_check]
             )
     
     full_query = full_query_current_data.union(full_query_past_positives)
