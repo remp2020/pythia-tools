@@ -58,6 +58,23 @@ def get_feature_frame_via_sqlalchemy(
         True
     )
     
+    column_names_current_data = [column.name for column in full_query_current_data.columns]
+    column_names_past_positives = [column.name for column in full_query_past_positives.columns]
+    column_check = (
+        [column for column in column_names_current_data if column not in column_names_past_positives] +
+        [column for column in column_names_past_positives if column not in column_names_current_data]
+    )
+
+    # We're removing the misaligned columns, due to the fact that their absence / presence might be an indication
+    # for the past positives, in which case it woukd create a lookahwad
+    full_query_current_data = postgres_session.query(
+            [full_query_current_data.c[column] for column in column_names_current_data if column not in column_check]
+            )
+    
+    full_query_past_positives = postgres_session.query(
+            [full_query_past_positives.c[column] for column in column_names_past_positives if column not in column_check]
+            )
+    
     full_query = full_query_current_data.union(full_query_past_positives)
 
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
@@ -115,7 +132,7 @@ def get_full_features_query(
 
     all_time_delta_columns = add_all_time_delta_columns(
         filtered_w_derived_metrics
-    )
+    ).subquery()
 
     return all_time_delta_columns
 
