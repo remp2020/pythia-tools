@@ -10,6 +10,7 @@ from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session
 from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
+from typing import List
 
 postgres_mappings = get_sqlalchemy_tables_w_session(
     'POSTGRES_CONNECTION_STRING',
@@ -156,14 +157,14 @@ def get_filtered_cte(
         aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP)
     ).filter(
         aggregated_browser_days.c['next_7_days_event'].in_(
-            [label for label, label_type in LABELS if (label_type == 'positive') is retrieving_positives]
+            [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
         )
     ).session.query()
 
     if not retrieving_positives:
         filtered_data = postgres_session.query(filtered_data, tablesample(1/undersampling_factor)).subquery()
 
-    filtered_data = filtered_data.cte(name="time_filtered_aggregations")
+    filtered_data = postgres_session.query(filtered_data).cte(name="time_filtered_aggregations")
 
     return filtered_data
 
