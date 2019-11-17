@@ -44,11 +44,11 @@ class ConversionPredictionModel(object):
             max_date: datetime = datetime.utcnow() - timedelta(days=1),
             moving_window_length: int = 7,
             normalization_handling: NormalizedFeatureHandling = NormalizedFeatureHandling.REPLACE_WITH,
-            outcome_labels: List[str] = LABELS,
+            outcome_labels: List[str] = list(LABELS.keys()),
             overwrite_files: bool = True,
             training_split_parameters=None,
             model_arguments = None,
-            undersampling_factor=500,
+            undersampling_factor=300,
             # This applies to all model artifacts that are not part of the flow output
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
@@ -75,8 +75,6 @@ class ConversionPredictionModel(object):
         self.training_split_parameters = training_split_parameters
         self.model_arguments = model_arguments
         self.undersampling_factor = undersampling_factor
-        self.X_train_undersampled = pd.DataFrame()
-        self.Y_train_undersampled = pd.Series()
         self.model = None
         self.outcome_frame = None
         self.scoring_date = datetime.utcnow()
@@ -126,6 +124,7 @@ class ConversionPredictionModel(object):
             - min_date
             - max_date
             - moving_window
+            - undersampling factor
         Retrieves rolling window user profiles from the db
         using row-wise normalized features
         '''
@@ -136,7 +135,8 @@ class ConversionPredictionModel(object):
             self.min_date,
             self.max_date,
             self.moving_window,
-            self.feature_aggregation_function
+            self.feature_aggregation_function,
+            self.undersampling_factor
         )
 
         logger.info(f'  * Retrieved initial user profiles frame from DB')
@@ -656,16 +656,16 @@ class ConversionPredictionModel(object):
             self.user_profiles['outcome'] = self.le.transform(self.user_profiles['outcome'])
 
         self.create_train_test_transformations()
-        self.undersample_majority_class()
+        # self.undersample_majority_class()
         self.X_train.fillna(0.0, inplace=True)
         self.X_test.fillna(0.0, inplace=True)
-        self.X_train_undersampled.fillna(0.0, inplace=True)
-        self.Y_train_undersampled.fillna(0.0, inplace=True)
+        # self.X_train_undersampled.fillna(0.0, inplace=True)
+        # self.Y_train_undersampled.fillna(0.0, inplace=True)
 
         logger.info('  * Commencing model training')
 
         classifier_instance = RandomForestClassifier(**self.model_arguments)
-        self.model = classifier_instance.fit(self.X_train_undersampled, self.Y_train_undersampled)
+        self.model = classifier_instance.fit(self.X_train, self.Y_train)
 
         logger.info('  * Model training complete, generating outcome frame')
 

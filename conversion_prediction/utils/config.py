@@ -72,7 +72,7 @@ CONFIG_COLUMNS = [
     'user_id'
 ]
 
-LABELS = ['no_conversion', 'shared_account_login', 'conversion']
+LABELS = {'no_conversion': 'negative', 'shared_account_login': 'positive', 'conversion': 'positive'}
 
 CURRENT_MODEL_VERSION = '1.0'
 

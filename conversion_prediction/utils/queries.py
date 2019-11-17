@@ -4,13 +4,12 @@ import pandas as pd
 from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy.sql import select
-from sqlalchemy import and_, func, case
+from sqlalchemy import and_, func, case, tablesample
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session
-from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS
+from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
-from typing import List
 
 postgres_mappings = get_sqlalchemy_tables_w_session(
     'POSTGRES_CONNECTION_STRING',
@@ -42,26 +41,29 @@ article_pageviews = beam_mysql_mappings['article_pageviews']
 def get_feature_frame_via_sqlalchemy(
     start_time: datetime,
     end_time: datetime,
-    moving_window_length: int=7,
-    feature_aggregation_function: func=func.sum
+    moving_window_length: int = 7,
+    feature_aggregation_function: func = func.sum,
+    undersampling_factor: int = 1
 ):
-    full_query_current_data = get_full_features_query(
-        start_time,
-        end_time,
-        moving_window_length,
-        False,
-        feature_aggregation_function
-    )
-
-    full_query_past_positives = get_full_features_query(
+    full_query_positives = get_full_features_query(
         start_time,
         end_time,
         moving_window_length,
         True,
         feature_aggregation_function
     )
-    column_names_current_data = [column.name for column in full_query_current_data.columns]
-    column_names_past_positives = [column.name for column in full_query_past_positives.columns]
+
+    full_query_negatives = get_full_features_query(
+        start_time,
+        end_time,
+        moving_window_length,
+        False,
+        feature_aggregation_function,
+        undersampling_factor
+    )
+
+    column_names_current_data = [column.name for column in full_query_negatives.columns]
+    column_names_past_positives = [column.name for column in full_query_positives.columns]
     column_check = (
         [column for column in column_names_current_data if column not in column_names_past_positives] +
         [column for column in column_names_past_positives if column not in column_names_current_data]
@@ -69,15 +71,15 @@ def get_feature_frame_via_sqlalchemy(
 
     # We're removing the misaligned columns, due to the fact that their absence / presence might be an indication
     # for the past positives, in which case it would create a lookahead
-    full_query_current_data = postgres_session.query(
-            *[full_query_current_data.c[column].label(column) for column in column_names_current_data if column not in column_check]
+    full_query_negatives = postgres_session.query(
+            *[full_query_negatives.c[column].label(column) for column in column_names_current_data if column not in column_check]
             )
     
-    full_query_past_positives = postgres_session.query(
-            *[full_query_past_positives.c[column].label(column) for column in column_names_past_positives if column not in column_check]
+    full_query_positives = postgres_session.query(
+            *[full_query_positives.c[column].label(column) for column in column_names_past_positives if column not in column_check]
             )
     
-    full_query = full_query_current_data.union(full_query_past_positives)
+    full_query = full_query_negatives.union(full_query_positives)
 
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
     feature_frame.columns = [re.sub('anon_1_', '', column) for column in feature_frame.columns]
@@ -92,13 +94,14 @@ def get_full_features_query(
         start_time: datetime,
         end_time: datetime,
         moving_window_length: int = 7,
-        retrieving_past_positives: bool = False,
-        feature_aggregation_function: func = func.sum
+        retrieving_positives: bool = False,
+        feature_aggregation_function: func = func.sum,
+        undersampling_factor: int = 1
 ):
-    if not retrieving_past_positives:
-        filtered_data = get_filtered_cte(start_time, end_time)
+    if not retrieving_positives:
+        filtered_data = get_filtered_cte(start_time, end_time, False, undersampling_factor)
     else:
-        filtered_data = get_data_for_windows_before_conversion(start_time, moving_window_length)
+        filtered_data = get_filtered_cte(start_time, end_time - timedelta(days=180), True)
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
         filtered_data,
@@ -131,7 +134,7 @@ def get_full_features_query(
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
         data_with_rolling_windows,
         start_time,
-        retrieving_past_positives
+        retrieving_positives
     )
 
     all_time_delta_columns = add_all_time_delta_columns(
@@ -144,49 +147,25 @@ def get_full_features_query(
 def get_filtered_cte(
     start_time: datetime,
     end_time: datetime,
+    retrieving_positives,
+    undersampling_factor: int = 1
 ):
     filtered_data = postgres_session.query(
         aggregated_browser_days).filter(
         aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
         aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP)
-    ).cte(
-        name="time_filtered_aggregations"
-    )
+    ).filter(
+        aggregated_browser_days.c['next_7_days_event'].in_(
+            [label for label, label_type in LABELS if (label_type == 'positive') is retrieving_positives]
+        )
+    ).session.query()
+
+    if not retrieving_positives:
+        filtered_data = postgres_session.query(filtered_data, tablesample(1/undersampling_factor)).subquery()
+
+    filtered_data = filtered_data.cte(name="time_filtered_aggregations")
 
     return filtered_data
-
-
-def get_data_for_windows_before_conversion(
-        start_time: datetime,
-        moving_window_length: int=7
-):
-    conversion_events = postgres_session.query(
-        aggregated_browser_days.c['browser_id'],
-        aggregated_browser_days.c['next_7_days_event'],
-        aggregated_browser_days.c['next_event_time'],
-    ).filter(
-        aggregated_browser_days.c['next_7_days_event'].in_(['conversion', 'shared_account_login']),
-        aggregated_browser_days.c['date'] < start_time,
-        # This restriction is here because of lack of resources on bonne, we can lift it on Hetzner (possibly)
-        aggregated_browser_days.c['date'] >= start_time - timedelta(days=180)
-    ).group_by(
-        aggregated_browser_days.c['browser_id'],
-        aggregated_browser_days.c['next_7_days_event'],
-        aggregated_browser_days.c['next_event_time'],
-    ).subquery()
-
-    positives_data = postgres_session.query(
-        aggregated_browser_days,
-    ).join(
-        conversion_events,
-        and_(
-            aggregated_browser_days.c['browser_id'] == conversion_events.c['browser_id'],
-            aggregated_browser_days.c['date'] <= conversion_events.c['next_event_time'],
-            aggregated_browser_days.c['date'] >=
-            conversion_events.c['next_event_time'] - timedelta(days=moving_window_length))
-    ).cte()
-
-    return positives_data
 
 
 def get_subqueries_for_non_gapped_time_series(
