@@ -533,23 +533,30 @@ def create_rolling_window_columns_config(
 
     column_source_to_name_mapping.update(time_column_config)
     # {naming suffix : related parameter for determining part of full window}
-    rolling_agg_variants = {
-        'count': False,
-        'count_last_window_half': True
-    }
-    # this generates all basic rolling sum columns for both full and second half of the window
-    rolling_agg_columns = [
-        create_rolling_agg_function(
-            moving_window_length,
-            is_half_window,
-            func.sum,
-            column_source,
-            joined_queries.c['browser_id'],
-            joined_queries.c['date']
-        ).cast(Float).label(f'{column_name}_{suffix}')
-        for column_name, column_source in column_source_to_name_mapping.items()
-        for suffix, is_half_window in rolling_agg_variants.items()
-    ]
+    rolling_agg_columns = []
+    for agg_function, agg_function_name in {
+        func.sum: 'count',
+        func.avg: 'avg',
+        func.min: 'min',
+        func.max: 'max'
+    }:
+        rolling_agg_variants = {
+            agg_function_name: False,
+            f'{agg_function_name}_last_window_half': True
+        }
+        # this generates all basic rolling sum columns for both full and second half of the window
+        rolling_agg_columns = rolling_agg_columns + [
+            create_rolling_agg_function(
+                moving_window_length,
+                is_half_window,
+                agg_function,
+                column_source,
+                joined_queries.c['browser_id'],
+                joined_queries.c['date']
+            ).cast(Float).label(f'{column_name}_{suffix}')
+            for column_name, column_source in column_source_to_name_mapping.items()
+            for suffix, is_half_window in rolling_agg_variants.items()
+        ]
 
     return rolling_agg_columns
 
