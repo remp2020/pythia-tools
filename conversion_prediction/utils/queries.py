@@ -49,7 +49,6 @@ def get_feature_frame_via_sqlalchemy(
         start_time,
         end_time,
         moving_window_length,
-        feature_aggregation_function
         False,
         feature_aggregation_function
     )
@@ -58,11 +57,9 @@ def get_feature_frame_via_sqlalchemy(
         start_time,
         end_time,
         moving_window_length,
-        feature_aggregation_function
         True,
         feature_aggregation_function
     )
-    
     column_names_current_data = [column.name for column in full_query_current_data.columns]
     column_names_past_positives = [column.name for column in full_query_past_positives.columns]
     column_check = (
@@ -94,9 +91,9 @@ def get_feature_frame_via_sqlalchemy(
 def get_full_features_query(
         start_time: datetime,
         end_time: datetime,
-        moving_window_length: int=7,
-        retrieving_past_positives: bool=False,
-        feature_aggregation_function: func=func.sum
+        moving_window_length: int = 7,
+        retrieving_past_positives: bool = False,
+        feature_aggregation_function: func = func.sum
 ):
     if not retrieving_past_positives:
         filtered_data = get_filtered_cte(start_time, end_time)
@@ -128,7 +125,7 @@ def get_full_features_query(
         moving_window_length,
         start_time,
         json_key_column_names,
-        calculate_rolling_windows_features
+        feature_aggregation_function
     )
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
@@ -426,13 +423,13 @@ def calculate_rolling_windows_features(
         moving_window_length: int,
         start_time: datetime,
         json_key_column_names: List[str],
-        calculate_rolling_windows_features
+        feature_aggregation_function
 ):
     rolling_agg_columns_base = create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
         moving_window_length,
-        calculate_rolling_windows_features
+        feature_aggregation_function
     )
 
     queries_with_basic_window_columns = postgres_session.query(
