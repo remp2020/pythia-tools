@@ -42,20 +42,25 @@ article_pageviews = beam_mysql_mappings['article_pageviews']
 def get_feature_frame_via_sqlalchemy(
     start_time: datetime,
     end_time: datetime,
-    moving_window_length: int=7
+    moving_window_length: int=7,
+    feature_aggregation_function: func=func.sum
 ):
     full_query_current_data = get_full_features_query(
         start_time,
         end_time,
         moving_window_length,
-        False
+        feature_aggregation_function
+        False,
+        feature_aggregation_function
     )
 
     full_query_past_positives = get_full_features_query(
         start_time,
         end_time,
         moving_window_length,
-        True
+        feature_aggregation_function
+        True,
+        feature_aggregation_function
     )
     
     column_names_current_data = [column.name for column in full_query_current_data.columns]
@@ -90,7 +95,8 @@ def get_full_features_query(
         start_time: datetime,
         end_time: datetime,
         moving_window_length: int=7,
-        retrieving_past_positives: bool=False
+        retrieving_past_positives: bool=False,
+        feature_aggregation_function: func=func.sum
 ):
     if not retrieving_past_positives:
         filtered_data = get_filtered_cte(start_time, end_time)
@@ -121,7 +127,8 @@ def get_full_features_query(
         joined_partial_queries,
         moving_window_length,
         start_time,
-        json_key_column_names
+        json_key_column_names,
+        calculate_rolling_windows_features
     )
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
@@ -418,12 +425,14 @@ def calculate_rolling_windows_features(
         joined_queries,
         moving_window_length: int,
         start_time: datetime,
-        json_key_column_names: List[str]
+        json_key_column_names: List[str],
+        calculate_rolling_windows_features
 ):
     rolling_agg_columns_base = create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
-        moving_window_length
+        moving_window_length,
+        calculate_rolling_windows_features
     )
 
     queries_with_basic_window_columns = postgres_session.query(
@@ -503,7 +512,8 @@ def create_time_window_vs_day_of_week_combinations(
 def create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
-        moving_window_length
+        moving_window_length,
+        aggregation_function
 ):
     # {name of the resulting column : source / calculation}
     column_source_to_name_mapping = {
@@ -534,29 +544,32 @@ def create_rolling_window_columns_config(
     column_source_to_name_mapping.update(time_column_config)
     # {naming suffix : related parameter for determining part of full window}
     rolling_agg_columns = []
-    for agg_function, agg_function_name in {
-        func.sum: 'count'#,
-       #  func.avg: 'avg',
-       #  func.min: 'min',
-       # func.max: 'max'
-    }.items():
-        rolling_agg_variants = {
-            agg_function_name: False,
-            f'{agg_function_name}_last_window_half': True
-        }
-        # this generates all basic rolling sum columns for both full and second half of the window
-        rolling_agg_columns = rolling_agg_columns + [
-            create_rolling_agg_function(
-                moving_window_length,
-                is_half_window,
-                agg_function,
-                column_source,
-                joined_queries.c['browser_id'],
-                joined_queries.c['date']
-            ).cast(Float).label(f'{column_name}_{suffix}')
-            for column_name, column_source in column_source_to_name_mapping.items()
-            for suffix, is_half_window in rolling_agg_variants.items()
-        ]
+
+    aggregation_function_aliases = {
+        func.sum: 'count',
+        func.avg: 'avg',
+        func.min: 'min',
+        func.max: 'max'
+    }
+
+    # This will need to change if we implement multiple aggregation functions
+    rolling_agg_variants = {
+        'count': False,
+        'count_last_window_half': True
+    }
+    # this generates all basic rolling sum columns for both full and second half of the window
+    rolling_agg_columns = rolling_agg_columns + [
+        create_rolling_agg_function(
+            moving_window_length,
+            is_half_window,
+            aggregation_function,
+            column_source,
+            joined_queries.c['browser_id'],
+            joined_queries.c['date']
+        ).cast(Float).label(f'{column_name}_{suffix}')
+        for column_name, column_source in column_source_to_name_mapping.items()
+        for suffix, is_half_window in rolling_agg_variants.items()
+    ]
 
     return rolling_agg_columns
 

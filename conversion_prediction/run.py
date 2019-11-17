@@ -25,6 +25,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from sqlalchemy import func
 
 from utils.db_utils import create_predictions_table, create_predictions_job_log
 from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION
@@ -51,7 +52,8 @@ class ConversionPredictionModel(object):
             # This applies to all model artifacts that are not part of the flow output
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
-            artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING
+            artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
+            feature_aggregation_function: sqlalchemy.func=func.sum
     ):
         self.min_date = min_date
         self.max_date = max_date
@@ -85,6 +87,7 @@ class ConversionPredictionModel(object):
         self.artifacts_to_retain = artifacts_to_retain
         self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
         self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
+        self.feature_aggregation_function = feature_aggregation_function
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -132,7 +135,8 @@ class ConversionPredictionModel(object):
         self.user_profiles = get_feature_frame_via_sqlalchemy(
             self.min_date,
             self.max_date,
-            self.moving_window
+            self.moving_window,
+            self.feature_aggregation_function
         )
 
         logger.info(f'  * Retrieved initial user profiles frame from DB')
