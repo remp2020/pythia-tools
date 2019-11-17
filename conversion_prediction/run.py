@@ -534,9 +534,10 @@ class ConversionPredictionModel(object):
         else:
             dates = pd.to_datetime(
                 pd.Series([date.date() for date in pd.date_range(
-                    self.user_profiles['date'].min(),
-                    self.user_profiles['date'].max())])
-            )
+                    self.min_date,
+                    self.max_date)]
+                    )
+                )
 
             train_date = dates[0:int(round(len(dates) * split_ratio, 0))].max()
             train_indices = self.user_profiles[self.user_profiles['date'] <= train_date.date()].index
