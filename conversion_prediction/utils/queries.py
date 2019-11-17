@@ -535,11 +535,11 @@ def create_rolling_window_columns_config(
     # {naming suffix : related parameter for determining part of full window}
     rolling_agg_columns = []
     for agg_function, agg_function_name in {
-        func.sum: 'count',
-        func.avg: 'avg',
-        func.min: 'min',
-        func.max: 'max'
-    }:
+        func.sum: 'count'#,
+       #  func.avg: 'avg',
+       #  func.min: 'min',
+       # func.max: 'max'
+    }.items():
         rolling_agg_variants = {
             agg_function_name: False,
             f'{agg_function_name}_last_window_half': True
