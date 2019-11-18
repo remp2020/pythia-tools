@@ -2,8 +2,10 @@ import pandas as pd
 import sqlalchemy
 import os
 from typing import List, Dict
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, aliased
 from sqlalchemy import MetaData, Table
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql import Alias, FromClause
 
 
 CUSTOM_USER_DEFINED_TYPES = ['conversion_prediction_outcomes', 'conversion_prediction_model_versions']
@@ -190,3 +192,35 @@ def migrate_user_id_to_user_ids(db_engine):
             db_engine.execute(f'ALTER TABLE {table_name} ADD column user_ids TEXT[]')
             db_engine.execute(f"UPDATE {table_name} SET user_ids = STRING_TO_ARRAY(user_id, ',')")
             db_engine.execute(f"ALTER TABLE {table_name} DROP column user_id")
+
+
+class TableSample(Alias):
+    __visit_name__ = 'tablesample'
+
+    def __init__(self, selectable, argument=None, method=None,
+                 seed=None):
+        super(TableSample, self).__init__(selectable)
+        self.method = method
+        self.argument = argument
+        self.seed = seed
+
+
+def tablesample(element, argument=None, method=None, seed=None):
+    if isinstance(element, FromClause):
+        return TableSample(element, argument=argument, method=method, seed=seed)
+    else:
+        return aliased(element, TableSample(element.__table__,
+            argument=argument, method=method, seed=seed))
+
+
+@compiles(TableSample)
+def compile_tablesample(element, compiler, **kwargs):
+    s = "%s TABLESAMPLE %s(%s)" % (
+        compiler.visit_alias(element, **kwargs),
+        element.method or 'SYSTEM',
+        element.argument)
+
+    if element.seed:
+        s += " REPEATABLE (%s)" % compiler.process(element.seed, **kwargs)
+
+    return s

@@ -3,13 +3,13 @@ import pandas as pd
 # TODO: Look into unifying TEXT and Text
 from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
 from sqlalchemy.sql.expression import literal, extract
-from sqlalchemy.sql import select
 from sqlalchemy import and_, func, case, tablesample
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
-from .db_utils import get_sqlalchemy_tables_w_session
+from .db_utils import get_sqlalchemy_tables_w_session, tablesample
 from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
+from typing import List
 
 postgres_mappings = get_sqlalchemy_tables_w_session(
     'POSTGRES_CONNECTION_STRING',
@@ -150,18 +150,26 @@ def get_filtered_cte(
     retrieving_positives,
     undersampling_factor: int = 1
 ):
-    filtered_data = postgres_session.query(
-        aggregated_browser_days).filter(
-        aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
-        aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP)
-    ).filter(
-        aggregated_browser_days.c['next_7_days_event'].in_(
-            [label for label, label_type in LABELS if (label_type == 'positive') is retrieving_positives]
-        )
-    ).session.query()
+    label_filter = aggregated_browser_days.c['next_7_days_event'].in_(
+                [label for label, label_type in LABELS if (label_type == 'positive') is retrieving_positives]
+    )
+    if retrieving_positives:
+        filtered_data = postgres_session.query(
+            aggregated_browser_days
+        ).filter(
+            aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
+            aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP),
+            label_filter)
 
-    if not retrieving_positives:
-        filtered_data = postgres_session.query(filtered_data, tablesample(1/undersampling_factor)).subquery()
+    else:
+        aggregated_browser_days_sample = tablesample(aggregated_browser_days, undersampling_factor)
+        filtered_data = postgres_session.query(
+            aggregated_browser_days_sample
+        ).filter(
+            aggregated_browser_days_sample.c['date'] >= cast(start_time, TIMESTAMP),
+            aggregated_browser_days_sample.c['date'] <= cast(end_time, TIMESTAMP),
+            label_filter
+        ).subquery()
 
     filtered_data = filtered_data.cte(name="time_filtered_aggregations")
 
