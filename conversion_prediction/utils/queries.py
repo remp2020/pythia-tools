@@ -154,7 +154,7 @@ def get_filtered_cte(
     undersampling_factor: int = 1
 ):
     label_filter = aggregated_browser_days.c['next_7_days_event'].in_(
-                [label for label, label_type in LABELS if (label_type == 'positive') is retrieving_positives]
+                [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
     )
     filtered_data = postgres_session.query(
         aggregated_browser_days
