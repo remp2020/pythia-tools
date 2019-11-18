@@ -10,7 +10,7 @@ from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session
 from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
-from typing import List
+from typing import List, Tuple
 
 postgres_mappings = get_sqlalchemy_tables_w_session(
     'POSTGRES_CONNECTION_STRING',
@@ -44,7 +44,8 @@ def get_feature_frame_via_sqlalchemy(
     end_time: datetime,
     moving_window_length: int = 7,
     feature_aggregation_function: func = func.sum,
-    undersampling_factor: int = 1
+    undersampling_factor: int = 1,
+    offset_limit_tuple: Tuple=None
 ):
     seed = postgres_session.query(func.setseed(0))
     postgres_session.execute(seed)
@@ -54,7 +55,8 @@ def get_feature_frame_via_sqlalchemy(
         end_time,
         moving_window_length,
         True,
-        feature_aggregation_function
+        feature_aggregation_function,
+        offset_limit_tuple
     )
 
     full_query_negatives = get_full_features_query(
@@ -63,7 +65,8 @@ def get_feature_frame_via_sqlalchemy(
         moving_window_length,
         False,
         feature_aggregation_function,
-        undersampling_factor
+        undersampling_factor,
+        offset_limit_tuple
     )
 
     column_names_current_data = [column.name for column in full_query_negatives.columns]
@@ -100,12 +103,13 @@ def get_full_features_query(
         moving_window_length: int = 7,
         retrieving_positives: bool = False,
         feature_aggregation_function: func = func.sum,
-        undersampling_factor: int = 1
+        undersampling_factor: int = 1,
+        offset_limit_tuple: Tuple = None
 ):
     if not retrieving_positives:
-        filtered_data = get_filtered_cte(start_time, end_time, False, undersampling_factor)
+        filtered_data = get_filtered_cte(start_time, end_time, False, undersampling_factor, offset_limit_tuple)
     else:
-        filtered_data = get_filtered_cte(start_time - timedelta(days=180), end_time, True)
+        filtered_data = get_filtered_cte(start_time - timedelta(days=180), end_time, True, None)
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
         filtered_data,
@@ -152,7 +156,8 @@ def get_filtered_cte(
     start_time: datetime,
     end_time: datetime,
     retrieving_positives,
-    undersampling_factor: int = 1
+    undersampling_factor: int = 1,
+    offset_limit_tuple: Tuple = None
 ):
     label_filter = aggregated_browser_days.c['next_7_days_event'].in_(
                 [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
@@ -163,7 +168,11 @@ def get_filtered_cte(
     ).filter(
         aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
         aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP),
-        label_filter).subquery()
+        label_filter
+    ).subquery()
+
+    if offset_limit_tuple is not None:
+        filtered_data = filtered_data.offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).subquery()
 
     if retrieving_positives is not True:
         filtered_data = postgres_session.query(filtered_data).filter(

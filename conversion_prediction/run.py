@@ -86,6 +86,7 @@ class ConversionPredictionModel(object):
         self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
         self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
         self.feature_aggregation_function = feature_aggregation_function
+        self.negative_outcome_frame = pd.DataFrame()
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -684,6 +685,8 @@ class ConversionPredictionModel(object):
         ],
             axis=1)
 
+        self.collect_outcomes_for_all_negatives()
+
         for artifact in [
             ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
             ModelArtifacts.UNDERSAMPLED_TRAIN_DATA_FEATURES, ModelArtifacts.UNDERSAMPLED_TRAIN_DATA_OUTCOME,
@@ -693,17 +696,62 @@ class ConversionPredictionModel(object):
                 ConversionPredictionModel.artifact_handler(self, artifact)
 
         self.outcome_frame.columns = [str(label) + '_train'
-                                 for label in self.outcome_frame.columns[0:len(label_range)]] + \
-                                [str(label) + '_test'
-                                 for label in
-                                 self.outcome_frame.columns[
-                                 len(label_range):(2*len(label_range))]]
+                                      for label in self.outcome_frame.columns[0:len(label_range)]] + \
+                                     [str(label) + '_test'
+                                      for label in
+                                      self.outcome_frame.columns[len(label_range):(2*len(label_range))]]
+
+        self.outcome_frame['1_test'] = self.negative_outcome_frame['1']
+
         for i in label_range:
             self.outcome_frame.columns = [re.sub(str(i), self.le.inverse_transform([i])[0], column)
                                      for column in self.outcome_frame.columns]
+
         self.outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
 
         logger.info('  * Outcome frame generated')
+
+    def collect_outcomes_for_all_negatives(self):
+        '''
+        In order to
+        :return:
+        '''
+        full_data_size = self.user_profiles['outcome'].value_counts()
+        full_data_size[self.le.inverse_transform(full_data_size.index) == 'no_conversion'] = (
+            full_data_size[self.le.inverse_transform(full_data_size.index) == 'no_conversion'] *
+            self.undersampling_factor
+        )
+
+        data_row_range = range(
+            0,
+            full_data_size.sum(),
+            int(full_data_size.sum() / 10)
+        )
+        print(data_row_range)
+        for i in data_row_range:
+            data_chunk = get_feature_frame_via_sqlalchemy(
+                self.min_date,
+                self.max_date,
+                self.moving_window,
+                self.feature_aggregation_function,
+                self.undersampling_factor,
+                (i, i + int(full_data_size.sum() / 10),)
+            )
+
+            self.prediction_data = data_chunk
+            self.batch_predict()
+            if i == 0:
+                negative_outcome_frame = precision_recall_fscore_support(
+                    self.prediction_data['outcome'],
+                    self.prediction_data['outcome_predicted']
+                )
+            else:
+                negative_outcome_frame = negative_outcome_frame + precision_recall_fscore_support(
+                    self.prediction_data['outcome'],
+                    self.prediction_data['outcome_predicted']
+                )
+        self.negative_outcome_frame = negative_outcome_frame / 10
+        print(negative_outcome_frame)
 
     def model_training_pipeline(self):
         '''
@@ -820,8 +868,13 @@ class ConversionPredictionModel(object):
         for i in label_range:
             predictions.columns = [re.sub(str(i), self.le.inverse_transform(i) + '_probability', str(column))
                                    for column in predictions.columns]
-
-        self.predictions = pd.concat([self.user_profiles[['date', 'browser_id', 'user_ids']],  predictions], axis=1)
+        # We are adding outcome only for the sake of the batch test approach, we'll be dropping it in the actual
+        # prediciton pipeline
+        self.predictions = pd.concat(
+            [self.user_profiles[['date', 'browser_id', 'user_ids', 'outcome']],
+             predictions],
+            axis=1
+        )
         self.predictions['predicted_outcome'] = self.le.inverse_transform(self.model.predict(self.prediction_data))
 
         for artifact in [ModelArtifacts.MODEL, ModelArtifacts.PREDICTION_DATA, ModelArtifacts.USER_PROFILES]:
@@ -847,6 +900,7 @@ class ConversionPredictionModel(object):
         self.predictions['model_version'] = CURRENT_MODEL_VERSION
         self.predictions['created_at'] = datetime.utcnow()
         self.predictions['updated_at'] = datetime.utcnow()
+        self.predictions.drop('outcome', axis=1, inplace=True)
 
         logger.info(f'Storing predicted data')
         _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
