@@ -726,7 +726,7 @@ class ConversionPredictionModel(object):
         data_row_range = range(
             0,
             records_expected,
-            int(records_expected. / 10)
+            int(records_expected / 10)
         )
         print(data_row_range)
         for i in data_row_range:
