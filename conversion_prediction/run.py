@@ -751,6 +751,7 @@ class ConversionPredictionModel(object):
                     self.prediction_data['outcome_predicted']
                 )
         self.negative_outcome_frame = negative_outcome_frame / 10
+        self.negative_outcome_frame.loc[3, '1'] = self.negative_outcome_frame.loc[3, '1'] * 10
         print(negative_outcome_frame)
 
     def model_training_pipeline(self):
