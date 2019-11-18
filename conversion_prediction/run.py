@@ -716,16 +716,17 @@ class ConversionPredictionModel(object):
         In order to
         :return:
         '''
-        full_data_size = self.user_profiles['outcome'].value_counts()
-        full_data_size[self.le.inverse_transform(full_data_size.index) == 'no_conversion'] = (
-            full_data_size[self.le.inverse_transform(full_data_size.index) == 'no_conversion'] *
-            self.undersampling_factor
-        )
+
+        records_expected = 0
+        for i in list(range(0, len(self.outcome_labels))):
+            records_expected += self.outcome_frame.loc[3, i].sum()
+            if i == 1:
+                records_expected = records_expected * self.undersampling_factor
 
         data_row_range = range(
             0,
-            full_data_size.sum(),
-            int(full_data_size.sum() / 10)
+            records_expected.sum(),
+            int(records_expected.sum() / 10)
         )
         print(data_row_range)
         for i in data_row_range:
@@ -735,7 +736,7 @@ class ConversionPredictionModel(object):
                 self.moving_window,
                 self.feature_aggregation_function,
                 self.undersampling_factor,
-                (i, i + int(full_data_size.sum() / 10),)
+                (i, i + int(records_expected.sum() / 10),)
             )
 
             self.prediction_data = data_chunk
