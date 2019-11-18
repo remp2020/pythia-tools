@@ -1,6 +1,7 @@
 import re
 import pandas as pd
 # TODO: Look into unifying TEXT and Text
+from sqlalchemy import select
 from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_, func, case
@@ -45,8 +46,8 @@ def get_feature_frame_via_sqlalchemy(
     feature_aggregation_function: func = func.sum,
     undersampling_factor: int = 1
 ):
-    seed = postgres_session.query(func.setseet(0))
-    postgres_session.exexute(seed)
+    seed = postgres_session.query(func.setseed(0))
+    postgres_session.execute(seed)
 
     full_query_positives = get_full_features_query(
         start_time,
@@ -161,14 +162,14 @@ def get_filtered_cte(
     ).filter(
         aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
         aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP),
-        label_filter)
+        label_filter).subquery()
 
     if retrieving_positives is not True:
         filtered_data = postgres_session.query(filtered_data).filter(
-            1/undersampling_factor >= func.rand()
+            1/undersampling_factor >= func.random()
         ).subquery()
 
-    filtered_data = filtered_data.cte(name="time_filtered_aggregations")
+    filtered_data = postgres_session.query(filtered_data).cte(name="time_filtered_aggregations")
 
     return filtered_data
 
