@@ -725,8 +725,8 @@ class ConversionPredictionModel(object):
 
         data_row_range = range(
             0,
-            records_expected.sum(),
-            int(records_expected.sum() / 10)
+            records_expected,
+            int(records_expected. / 10)
         )
         print(data_row_range)
         for i in data_row_range:
@@ -736,7 +736,7 @@ class ConversionPredictionModel(object):
                 self.moving_window,
                 self.feature_aggregation_function,
                 self.undersampling_factor,
-                (i, i + int(records_expected.sum() / 10),)
+                (i, i + int(records_expected / 10),)
             )
 
             self.prediction_data = data_chunk
