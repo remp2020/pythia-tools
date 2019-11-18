@@ -105,7 +105,7 @@ def get_full_features_query(
     if not retrieving_positives:
         filtered_data = get_filtered_cte(start_time, end_time, False, undersampling_factor)
     else:
-        filtered_data = get_filtered_cte(start_time, end_time - timedelta(days=180), True)
+        filtered_data = get_filtered_cte(start_time - timedelta(days=180), end_time, True)
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
         filtered_data,
@@ -157,6 +157,7 @@ def get_filtered_cte(
     label_filter = aggregated_browser_days.c['next_7_days_event'].in_(
                 [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
     )
+
     filtered_data = postgres_session.query(
         aggregated_browser_days
     ).filter(
@@ -167,9 +168,9 @@ def get_filtered_cte(
     if retrieving_positives is not True:
         filtered_data = postgres_session.query(filtered_data).filter(
             1/undersampling_factor >= func.random()
-        ).subquery()
-
-    filtered_data = postgres_session.query(filtered_data).cte(name="time_filtered_aggregations")
+            ).cte('negatives_sampled')
+    else:
+        filtered_data = postgres_session.query(filtered_data).cte(name='positives')
 
     return filtered_data
 
