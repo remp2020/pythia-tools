@@ -728,7 +728,7 @@ class ConversionPredictionModel(object):
             int(records_expected),
             int(records_expected / 10)
         )
-        print(data_row_range)
+
         for i in data_row_range:
             data_chunk = get_feature_frame_via_sqlalchemy(
                 self.min_date,
@@ -739,8 +739,7 @@ class ConversionPredictionModel(object):
                 (i, i + int(records_expected / 10),)
             )
 
-            self.prediction_data = data_chunk
-            self.batch_predict()
+            self.batch_predict(data_chunk)
             if i == 0:
                 negative_outcome_frame = precision_recall_fscore_support(
                     self.prediction_data['outcome'],
@@ -825,7 +824,7 @@ class ConversionPredictionModel(object):
 
         logger.info('  * Model constructs loaded')
 
-    def batch_predict(self):
+    def batch_predict(self, data):
         '''
         Requires:
             - min_date
@@ -840,24 +839,25 @@ class ConversionPredictionModel(object):
         Outputs predictions for a given time period
         '''
         logger.info('  * Preparing data for prediction')
-        self.create_feature_frame()
+
         self.load_model_related_constructs()
-        self.replace_dummy_columns_with_dummies()
 
         feature_frame_numeric = pd.DataFrame(
             self.scaler.transform(
-                self.user_profiles[
-                self.feature_columns.numeric_columns_with_window_variants]
+                data[
+                    self.feature_columns.numeric_columns_with_window_variants]
             ),
-            index=self.user_profiles.index,
+            index=data.index,
             columns=self.feature_columns.numeric_columns_with_window_variants).sort_index()
 
         self.prediction_data = pd.concat([
-            feature_frame_numeric, self.user_profiles[
-                [column for column in self.user_profiles.columns
+            feature_frame_numeric, data[
+                [column for column in data.columns
                  if column not in self.feature_columns.numeric_columns_with_window_variants +
                  self.feature_columns.config_columns +
                  self.feature_columns.bool_columns]].sort_index()], axis=1)
+
+        self.prediction_data = self.replace_dummy_columns_with_dummies(self.prediction_data)
 
         self.prediction_data = self.prediction_data.drop(['outcome', 'user_ids'], axis=1)
         logger.info('  * Prediction data ready')
@@ -897,7 +897,8 @@ class ConversionPredictionModel(object):
         Generates outcome prediction for conversion and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-        self.batch_predict()
+        self.create_feature_frame()
+        self.batch_predict(self.user_profiles)
 
         self.predictions['model_version'] = CURRENT_MODEL_VERSION
         self.predictions['created_at'] = datetime.utcnow()
