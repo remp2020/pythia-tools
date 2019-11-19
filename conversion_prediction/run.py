@@ -725,8 +725,8 @@ class ConversionPredictionModel(object):
 
         data_row_range = range(
             0,
-            int(records_expected),
-            int(records_expected / 10)
+            int(2 * records_expected / 100),
+            int(records_expected / 100)
         )
 
         for i in data_row_range:
@@ -736,7 +736,7 @@ class ConversionPredictionModel(object):
                 self.moving_window,
                 self.feature_aggregation_function,
                 self.undersampling_factor,
-                (i, i + int(records_expected / 10),)
+                (i, i + int(records_expected / 100),)
             )
 
             self.batch_predict(data_chunk)
