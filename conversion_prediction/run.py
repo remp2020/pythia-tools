@@ -722,11 +722,11 @@ class ConversionPredictionModel(object):
             records_expected += self.outcome_frame.loc[3, i].sum()
             if i == 1:
                 records_expected = records_expected * self.undersampling_factor
-
+        print(records_expected)
         data_row_range = range(
             0,
-            int(records_expected),
-            int(records_expected / 10)
+            int(2 * records_expected / 100),
+            int(records_expected / 100)
         )
         print(data_row_range)
         for i in data_row_range:
@@ -736,7 +736,7 @@ class ConversionPredictionModel(object):
                 self.moving_window,
                 self.feature_aggregation_function,
                 self.undersampling_factor,
-                (i, i + int(records_expected / 10),)
+                (i, i + int(records_expected / 100),)
             )
 
             self.prediction_data = data_chunk
@@ -841,8 +841,9 @@ class ConversionPredictionModel(object):
         '''
         logger.info('  * Preparing data for prediction')
         self.create_feature_frame()
-        self.load_model_related_constructs()
-        self.replace_dummy_columns_with_dummies()
+        if self.model is None:
+            self.load_model_related_constructs()
+        self.prediction_data = self.replace_dummy_columns_with_dummies(self.prediction_data)
 
         feature_frame_numeric = pd.DataFrame(
             self.scaler.transform(
