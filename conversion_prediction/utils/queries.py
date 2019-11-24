@@ -172,7 +172,7 @@ def get_filtered_cte(
     ).subquery()
 
     if offset_limit_tuple is not None:
-        filtered_data = filtered_data.offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).subquery()
+        filtered_data = postgres_session.query(filtered_data).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).subquery()
 
     if retrieving_positives is not True:
         filtered_data = postgres_session.query(filtered_data).filter(
