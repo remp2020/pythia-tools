@@ -19,7 +19,7 @@ import sqlalchemy
 import joblib
 
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from dateutil.parser import parse
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support
@@ -118,7 +118,8 @@ class ConversionPredictionModel(object):
         logger.info(f'  * {artifact.value} artifact dropped')
 
     def get_user_profiles_by_date(
-            self
+            self,
+            offset_limit_tuple: Tuple = None
     ):
         '''
         Requires:
@@ -137,7 +138,8 @@ class ConversionPredictionModel(object):
             self.max_date,
             self.moving_window,
             self.feature_aggregation_function,
-            self.undersampling_factor
+            self.undersampling_factor,
+            offset_limit_tuple
         )
 
         logger.info(f'  * Retrieved initial user profiles frame from DB')
@@ -174,14 +176,6 @@ class ConversionPredictionModel(object):
 
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
-
-        if self.user_profiles['date'].min() > self.min_date.date():
-            raise ValueError(f'''While the specified min_date is {self.min_date.date()},
-            only data going back to {self.user_profiles['date'].min()} were retrieved''')
-
-        if self.user_profiles['date'].max() < self.max_date.date():
-            raise ValueError(f'''While the specified max_date is {self.max_date.date()},
-            only data up until {self.user_profiles['date'].max()} were retrieved''')
         logger.info('  * Initial data validation success')
 
     def get_payment_window_features_from_csvs(self):
@@ -405,7 +399,10 @@ class ConversionPredictionModel(object):
         for missing_json_column in set(potential_columns) - set(self.user_profiles.columns):
             self.user_profiles[missing_json_column] = 0.0
 
-    def create_feature_frame(self):
+    def create_feature_frame(
+            self,
+            offset_limit_tuple: Tuple = None
+    ):
         '''
         Requires:
             - min_date
@@ -417,7 +414,7 @@ class ConversionPredictionModel(object):
         that were active a day ago
         '''
         logger.info(f'  * Loading user profiles')
-        self.get_user_profiles_by_date()
+        self.get_user_profiles_by_date(offset_limit_tuple)
         logger.info(f'  * Processing user profiles')
         test_outcome = self.user_profiles['outcome'].fillna(
             self.user_profiles.groupby('browser_id')['outcome'].fillna(method='bfill')
@@ -730,16 +727,8 @@ class ConversionPredictionModel(object):
         )
 
         for i in data_row_range:
-            data_chunk = get_feature_frame_via_sqlalchemy(
-                self.min_date,
-                self.max_date,
-                self.moving_window,
-                self.feature_aggregation_function,
-                self.undersampling_factor,
-                (i, i + int(records_expected / 10),)
-            )
-
-            self.batch_predict(data_chunk)
+            self.create_feature_frame((i, i + int(records_expected / 10),))
+            self.batch_predict(self.user_profiles)
             if i == 0:
                 negative_outcome_frame = precision_recall_fscore_support(
                     self.prediction_data['outcome'],
