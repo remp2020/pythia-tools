@@ -45,7 +45,7 @@ def get_feature_frame_via_sqlalchemy(
     moving_window_length: int = 7,
     feature_aggregation_function: func = func.sum,
     undersampling_factor: int = 1,
-    offset_limit_tuple: Tuple=None
+    offset_limit_tuple: Tuple = None
 ):
     seed = postgres_session.query(func.setseed(0))
     postgres_session.execute(seed)
