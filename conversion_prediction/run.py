@@ -83,7 +83,7 @@ class ConversionPredictionModel(object):
         self.predictions = pd.DataFrame()
         self.artifact_retention_mode = artifact_retention_mode
         self.artifacts_to_retain = artifacts_to_retain
-        self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES')
+        self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', None)
         self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
         self.feature_aggregation_function = feature_aggregation_function
         self.negative_outcome_frame = pd.DataFrame()
@@ -725,8 +725,8 @@ class ConversionPredictionModel(object):
 
         data_row_range = range(
             0,
-            int(2 * records_expected / 100),
-            int(records_expected / 100)
+            int(2 * records_expected / 10),
+            int(records_expected / 10)
         )
 
         for i in data_row_range:
@@ -736,7 +736,7 @@ class ConversionPredictionModel(object):
                 self.moving_window,
                 self.feature_aggregation_function,
                 self.undersampling_factor,
-                (i, i + int(records_expected / 100),)
+                (i, i + int(records_expected / 10),)
             )
 
             self.batch_predict(data_chunk)
@@ -800,11 +800,12 @@ class ConversionPredictionModel(object):
         model_related_file_list = os.listdir(self.path_to_model_files)
         last_model_related_files = {}
         for model_related_file in ['category_lists', 'scaler', 'model']:
-            last_file_date = {parse(re.sub(f'{model_related_file}_|.json|.pkl', '', filename)):
-                              abs(parse(re.sub(f'{model_related_file}_|.json|.pkl', '', filename)).date()
+            last_file_date = {parse(re.sub(f'{model_related_file}_|.json|.pkl|None', '', filename)):
+                              abs(parse(re.sub(f'{model_related_file}_|.json|.pkl|None', '', filename)).date()
                                   - self.scoring_date.date())
                               for filename in model_related_file_list
                               if re.search(f'{model_related_file}_', filename)}
+            print(last_file_date)
             last_file_date = [date for date, diff in last_file_date.items() if diff == min(last_file_date.values())][0]
             last_model_related_files[model_related_file] = last_file_date.date()
         if len(set(last_model_related_files.values())) > 1:
@@ -839,8 +840,9 @@ class ConversionPredictionModel(object):
         Outputs predictions for a given time period
         '''
         logger.info('  * Preparing data for prediction')
-
-        self.load_model_related_constructs()
+        
+        if self.model is None:
+            self.load_model_related_constructs()
 
         feature_frame_numeric = pd.DataFrame(
             self.scaler.transform(
@@ -862,6 +864,8 @@ class ConversionPredictionModel(object):
         self.prediction_data = self.prediction_data.drop(['outcome', 'user_ids'], axis=1)
         logger.info('  * Prediction data ready')
 
+        self.prediction_data.fillna(0.0, inplace=True)
+        print([column for column in self.X_train.columns if column not in self.prediction_data.columns])
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
         logger.info('  * Prediction generation success, handling artifacts')
 
