@@ -130,6 +130,7 @@ class ConversionPredictionModel(object):
         Retrieves rolling window user profiles from the db
         using row-wise normalized features
         '''
+        self_user_profiles = pd.DataFrame()
         self.min_date = self.min_date.replace(hour=0, minute=0, second=0, microsecond=0)
         self.max_date = self.max_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -141,6 +142,11 @@ class ConversionPredictionModel(object):
             self.undersampling_factor,
             offset_limit_tuple
         )
+
+        for column in [column for column in self.feature_columns.return_feature_list() 
+                if column not in self.user_profiles.columns
+                and column not in ['checkout', 'payment', 'clv', 'days_since_last_subscription', 'article_pageviews_count', 'pageviews_count', 'sum_paid', 'avg_price']]:
+            self.user_profiles[column] = 0.0
 
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
@@ -731,14 +737,14 @@ class ConversionPredictionModel(object):
             self.batch_predict(self.user_profiles)
             if i == 0:
                 negative_outcome_frame = precision_recall_fscore_support(
-                    self.prediction_data['outcome'],
-                    self.prediction_data['outcome_predicted']
+                    self.predictions['outcome'],
+                    self.predictions['outcome_predicted']
                 )
             else:
                 negative_outcome_frame = negative_outcome_frame + precision_recall_fscore_support(
-                    self.prediction_data['outcome'],
-                    self.prediction_data['outcome_predicted']
-                )
+                    self.predictions['outcome'],
+                    self.predictions['outcome_predicted']
+                    )
         self.negative_outcome_frame = negative_outcome_frame / 10
         self.negative_outcome_frame.loc[3, '1'] = self.negative_outcome_frame.loc[3, '1'] * 10
         print(negative_outcome_frame)
@@ -854,14 +860,13 @@ class ConversionPredictionModel(object):
         logger.info('  * Prediction data ready')
 
         self.prediction_data.fillna(0.0, inplace=True)
-        print([column for column in self.X_train.columns if column not in self.prediction_data.columns])
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
         logger.info('  * Prediction generation success, handling artifacts')
 
         label_range = range(len(LABELS))
 
         for i in label_range:
-            predictions.columns = [re.sub(str(i), self.le.inverse_transform(i) + '_probability', str(column))
+            predictions.columns = [re.sub(str(i), self.le.inverse_transform([i])[0] + '_probability', str(column))
                                    for column in predictions.columns]
         # We are adding outcome only for the sake of the batch test approach, we'll be dropping it in the actual
         # prediciton pipeline
