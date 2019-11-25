@@ -877,9 +877,6 @@ class ConversionPredictionModel(object):
         )
         self.predictions['predicted_outcome'] = self.le.inverse_transform(self.model.predict(self.prediction_data))
 
-        for artifact in [ModelArtifacts.MODEL, ModelArtifacts.PREDICTION_DATA, ModelArtifacts.USER_PROFILES]:
-            ConversionPredictionModel.artifact_handler(self, artifact)
-
     def generate_and_upload_prediction(self):
         '''
         Requires:
@@ -919,6 +916,9 @@ class ConversionPredictionModel(object):
         )
 
         logger.info('Predictions are now ready')
+
+        for artifact in [ModelArtifacts.MODEL, ModelArtifacts.PREDICTION_DATA, ModelArtifacts.USER_PROFILES]:
+            ConversionPredictionModel.artifact_handler(self, artifact)
 
 
 def mkdatetime(datestr: str) -> datetime:
