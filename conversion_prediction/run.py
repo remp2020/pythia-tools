@@ -854,7 +854,6 @@ class ConversionPredictionModel(object):
         logger.info('  * Prediction data ready')
 
         self.prediction_data.fillna(0.0, inplace=True)
-        print([column for column in self.X_train.columns if column not in self.prediction_data.columns])
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
         logger.info('  * Prediction generation success, handling artifacts')
 
@@ -871,9 +870,6 @@ class ConversionPredictionModel(object):
             axis=1
         )
         self.predictions['predicted_outcome'] = self.le.inverse_transform(self.model.predict(self.prediction_data))
-
-        for artifact in [ModelArtifacts.MODEL, ModelArtifacts.PREDICTION_DATA, ModelArtifacts.USER_PROFILES]:
-            ConversionPredictionModel.artifact_handler(self, artifact)
 
     def generate_and_upload_prediction(self):
         '''
@@ -914,6 +910,9 @@ class ConversionPredictionModel(object):
         )
 
         logger.info('Predictions are now ready')
+
+        for artifact in [ModelArtifacts.MODEL, ModelArtifacts.PREDICTION_DATA, ModelArtifacts.USER_PROFILES]:
+            ConversionPredictionModel.artifact_handler(self, artifact)
 
 
 def mkdatetime(datestr: str) -> datetime:
