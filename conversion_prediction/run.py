@@ -738,12 +738,12 @@ class ConversionPredictionModel(object):
             if i == 0:
                 negative_outcome_frame = precision_recall_fscore_support(
                     self.predictions['outcome'],
-                    self.predictions['outcome_predicted']
+                    self.predictions['predicted_outcome']
                 )
             else:
                 negative_outcome_frame = negative_outcome_frame + precision_recall_fscore_support(
                     self.predictions['outcome'],
-                    self.predictions['outcome_predicted']
+                    self.predictions['predicted_outcome']
                     )
         self.negative_outcome_frame = negative_outcome_frame / 10
         self.negative_outcome_frame.loc[3, '1'] = self.negative_outcome_frame.loc[3, '1'] * 10
@@ -800,7 +800,6 @@ class ConversionPredictionModel(object):
                                   - self.scoring_date.date())
                               for filename in model_related_file_list
                               if re.search(f'{model_related_file}_', filename)}
-            print(last_file_date)
             last_file_date = [date for date, diff in last_file_date.items() if diff == min(last_file_date.values())][0]
             last_model_related_files[model_related_file] = last_file_date.date()
         if len(set(last_model_related_files.values())) > 1:
@@ -860,6 +859,10 @@ class ConversionPredictionModel(object):
         logger.info('  * Prediction data ready')
 
         self.prediction_data.fillna(0.0, inplace=True)
+        if not self.X_train.empty:
+            for column in [column for column in self.X_train.columns if column not in self.prediction_data.columns]:
+                self.prediction_data[column] = 0.0
+        self.prediction_data = self.prediction_data[list(X_train.columns)]
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
         logger.info('  * Prediction generation success, handling artifacts')
 
@@ -870,6 +873,8 @@ class ConversionPredictionModel(object):
                                    for column in predictions.columns]
         # We are adding outcome only for the sake of the batch test approach, we'll be dropping it in the actual
         # prediciton pipeline
+        print(self.user_profiles.shape[['date', 'browser_id', 'user_ids', 'outcome']])
+        print(predictions.head())
         self.predictions = pd.concat(
             [self.user_profiles[['date', 'browser_id', 'user_ids', 'outcome']],
              predictions],

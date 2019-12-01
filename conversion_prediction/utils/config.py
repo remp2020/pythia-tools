@@ -192,6 +192,12 @@ class FeatureColumns(object):
             'article_pageviews_count', 'sum_paid',
             'pageviews_count', 'avg_price'
         ]
+    
+    def return_feature_list(self):
+        return (
+                self.categorical_columns +
+                self.numeric_columns
+        )
 
 
 LOGGING = {
