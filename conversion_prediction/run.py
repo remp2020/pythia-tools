@@ -87,6 +87,7 @@ class ConversionPredictionModel(object):
         self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
         self.feature_aggregation_function = feature_aggregation_function
         self.negative_outcome_frame = pd.DataFrame()
+        self.browser_day_combinations_original_set = pd.DataFrame()
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -350,10 +351,6 @@ class ConversionPredictionModel(object):
         self.user_profiles.rename(columns={'date_x': 'date'}, inplace=True)
 
     def introduce_row_wise_normalized_features(self):
-        self.user_profiles.drop(['date_str', 'date_y'], axis=1, inplace=True)
-        self.user_profiles.rename(columns={'date_x': 'date'}, inplace=True)
-
-    def introduce_row_wise_normalized_features(self):
         '''
         Requires:
             - user_profiles
@@ -602,6 +599,10 @@ class ConversionPredictionModel(object):
             f'{self.path_to_model_files}scaler_{self.model_date}.pkl'
         )
 
+        # This is used later on for excluging negatives that we already evaluated
+        self.browser_day_combinations_original_set = self.user_profiles[['browser_id', 'date']]
+        self.browser_day_combinations_original_set['used_in_training'] = True
+
         if ModelArtifacts.USER_PROFILES not in self.artifacts_to_retain.value:
             ConversionPredictionModel.artifact_handler(self, ModelArtifacts.USER_PROFILES)
 
@@ -692,7 +693,8 @@ class ConversionPredictionModel(object):
 
         for artifact in [
             ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
-            ModelArtifacts.TEST_DATA_FEATURES, ModelArtifacts.TEST_DATA_OUTCOME
+            ModelArtifacts.TEST_DATA_FEATURES, ModelArtifacts.TEST_DATA_OUTCOME,
+            ModelArtifacts.USER_PROFILES
         ]:
             if artifact not in self.artifacts_to_retain.value:
                 ConversionPredictionModel.artifact_handler(self, artifact)
@@ -712,6 +714,20 @@ class ConversionPredictionModel(object):
         self.outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
 
         logger.info('  * Outcome frame generated')
+
+    def remove_rows_from_original_flow(self):
+        self.user_profiles = pd.merge(
+            left=self.user_profiles,
+            right=self.browser_day_combinations_original_set,
+            on=['date', 'browser_id'],
+            how='left'
+        )
+
+        self.user_profiles = self.user_profiles[
+            self.user_profiles['used_in_training'] != True
+        ]
+
+        self.user_profiles.drop('used_in_training', axis=1, inplace=True)
 
     def collect_outcomes_for_all_negatives(self):
         '''
@@ -733,6 +749,7 @@ class ConversionPredictionModel(object):
 
         for i in data_row_range:
             self.create_feature_frame((i, i + int(records_expected / 10),))
+            self.remove_rows_from_original_flow()
             self.batch_predict(self.user_profiles)
             if i == 0:
                 negative_outcome_frame = pd.DataFrame(
