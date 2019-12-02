@@ -685,7 +685,9 @@ class ConversionPredictionModel(object):
         ],
             axis=1)
 
+        logger.info('  * Commencing accuracy metrics for negatives calculation')
         self.collect_outcomes_for_all_negatives()
+        logger.info('  * Finished accuracy metrics for negatives calculation')
 
         for artifact in [
             ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
