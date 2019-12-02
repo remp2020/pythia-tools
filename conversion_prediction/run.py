@@ -660,11 +660,8 @@ class ConversionPredictionModel(object):
             self.user_profiles['outcome'] = self.le.transform(self.user_profiles['outcome'])
 
         self.create_train_test_transformations()
-        # self.undersample_majority_class()
         self.X_train.fillna(0.0, inplace=True)
         self.X_test.fillna(0.0, inplace=True)
-        # self.X_train_undersampled.fillna(0.0, inplace=True)
-        # self.Y_train_undersampled.fillna(0.0, inplace=True)
 
         logger.info('  * Commencing model training')
 
