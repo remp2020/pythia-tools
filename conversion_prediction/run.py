@@ -692,7 +692,6 @@ class ConversionPredictionModel(object):
 
         for artifact in [
             ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
-            ModelArtifacts.UNDERSAMPLED_TRAIN_DATA_FEATURES, ModelArtifacts.UNDERSAMPLED_TRAIN_DATA_OUTCOME,
             ModelArtifacts.TEST_DATA_FEATURES, ModelArtifacts.TEST_DATA_OUTCOME
         ]:
             if artifact not in self.artifacts_to_retain.value:
@@ -704,7 +703,7 @@ class ConversionPredictionModel(object):
                                       for label in
                                       self.outcome_frame.columns[len(label_range):(2*len(label_range))]]
 
-        self.outcome_frame['1_test'] = self.negative_outcome_frame['1']
+        self.outcome_frame['1_test'] = self.negative_outcome_frame.loc[:, 1]
 
         for i in label_range:
             self.outcome_frame.columns = [re.sub(str(i), self.le.inverse_transform([i])[0], column)
@@ -719,7 +718,7 @@ class ConversionPredictionModel(object):
         In order to
         :return:
         '''
-
+        label_range = list(range(len(LABELS)))
         records_expected = 0
         for i in list(range(0, len(self.outcome_labels))):
             records_expected += self.outcome_frame.loc[3, i].sum()
@@ -728,7 +727,7 @@ class ConversionPredictionModel(object):
 
         data_row_range = range(
             0,
-            int(2 * records_expected / 10),
+            int(records_expected),
             int(records_expected / 10)
         )
 
@@ -736,18 +735,22 @@ class ConversionPredictionModel(object):
             self.create_feature_frame((i, i + int(records_expected / 10),))
             self.batch_predict(self.user_profiles)
             if i == 0:
-                negative_outcome_frame = precision_recall_fscore_support(
-                    self.predictions['outcome'],
-                    self.predictions['predicted_outcome']
+                negative_outcome_frame = pd.DataFrame(
+                    list(precision_recall_fscore_support(
+                        self.predictions['outcome'],
+                        self.predictions['predicted_outcome'])
+                    )
                 )
             else:
-                negative_outcome_frame = negative_outcome_frame + precision_recall_fscore_support(
-                    self.predictions['outcome'],
-                    self.predictions['predicted_outcome']
+                negative_outcome_frame = negative_outcome_frame + pd.DataFrame(
+                    list(precision_recall_fscore_support(
+                        self.predictions['outcome'],
+                        self.predictions['predicted_outcome'])
+                        )
                     )
+
         self.negative_outcome_frame = negative_outcome_frame / 10
-        self.negative_outcome_frame.loc[3, '1'] = self.negative_outcome_frame.loc[3, '1'] * 10
-        print(negative_outcome_frame)
+        self.negative_outcome_frame.loc[3, 1] = self.negative_outcome_frame.loc[3, 1] * 10
 
     def model_training_pipeline(self):
         '''
@@ -862,7 +865,7 @@ class ConversionPredictionModel(object):
         if not self.X_train.empty:
             for column in [column for column in self.X_train.columns if column not in self.prediction_data.columns]:
                 self.prediction_data[column] = 0.0
-        self.prediction_data = self.prediction_data[list(X_train.columns)]
+        self.prediction_data = self.prediction_data[list(self.X_train.columns)]
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
         logger.info('  * Prediction generation success, handling artifacts')
 
@@ -873,8 +876,6 @@ class ConversionPredictionModel(object):
                                    for column in predictions.columns]
         # We are adding outcome only for the sake of the batch test approach, we'll be dropping it in the actual
         # prediciton pipeline
-        print(self.user_profiles.shape[['date', 'browser_id', 'user_ids', 'outcome']])
-        print(predictions.head())
         self.predictions = pd.concat(
             [self.user_profiles[['date', 'browser_id', 'user_ids', 'outcome']],
              predictions],

@@ -353,18 +353,19 @@ def sum_hourly_intervals_into_4_hour_ranges(
         hours_in_interval = json_column_keys[i:i + 4]
         current_sum_name = (
                             f"hours_{re.sub('-[0-9][0-9][0-9][0-9]$', '', hours_in_interval[0])}" +  
-                            f"_{re.sub('^[0-9][0-9][0-9][0-9]-', '', hours_in_interval[3])}"
+                            f"_{re.sub('^[0-9][0-9][0-9][0-9]-', '', hours_in_interval[min(3, len(hours_in_interval) - 1)])}"
                            )
 
         range_sums[current_sum_name] = func.coalesce(
             filtered_data.c[column][hours_in_interval[0]].cast(Text).cast(Float),
             0.0
         )
-
-        for hour in hours_in_interval[1:]:
-            range_sums[current_sum_name] = (
-                    range_sums[current_sum_name] +
-                    func.coalesce(filtered_data.c[column][hour].cast(Text).cast(Float), 0.0))
+        
+        if len(hours_in_interval) > 1:
+            for hour in hours_in_interval[1:]:
+                range_sums[current_sum_name] = (
+                        range_sums[current_sum_name] +
+                        func.coalesce(filtered_data.c[column][hour].cast(Text).cast(Float), 0.0))
 
     return range_sums
 
