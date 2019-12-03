@@ -764,6 +764,21 @@ def get_global_context(start_time, end_time):
     return context
 
 
+def get_browser_days_count(
+        start_time: datetime,
+        end_time: datetime
+):
+    count_query = postgres_session.query(
+        func.count(aggregated_browser_days.c['browser_id']).label('count')
+    ).filter(
+        aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
+        aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP),
+    )
+    count = pd.read_sql(count_query.statement, count_query.session.bind)
+
+    return int(count.loc[0, 'count'])
+
+
 queries = dict()
 queries['upsert_predictions'] = '''
         INSERT INTO
