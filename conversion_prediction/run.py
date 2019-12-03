@@ -33,7 +33,8 @@ from utils.enums import SplitType, NormalizedFeatureHandling
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
 from utils.queries import queries
-from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context
+from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context, \
+    get_browser_days_count
 from utils.data_transformations import unique_list, row_wise_normalization
 
 
@@ -738,17 +739,17 @@ class ConversionPredictionModel(object):
         In order to
         :return:
         '''
-        label_range = list(range(len(LABELS)))
-        records_expected = 0
-        for i in list(range(0, len(self.outcome_labels))):
-            records_expected += (self.outcome_frame.loc[3, i].sum() if i != 1 else self.outcome_frame.loc[3, i].sum() * self.undersampling_factor)
+        records_expected = get_browser_days_count(
+            self.min_date,
+            self.max_date
+        )
 
         data_row_range = range(
             0,
             int(records_expected),
             int(records_expected / 10)
         )
-        print(self.browser_day_combinations_original_set.shape)
+
         for i in data_row_range:
             print('offset: ', i)
             print('limit: ', int(records_expected / 10))
