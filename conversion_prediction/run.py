@@ -723,9 +723,13 @@ class ConversionPredictionModel(object):
             how='left'
         )
 
+        print(self.user_profiles.head())
+
         self.user_profiles = self.user_profiles[
-            self.user_profiles['used_in_training'] != True
-        ]
+            self.user_profiles['used_in_training'].isna()
+        ].reset_index(drop=True)
+
+        print(self.user_profiles.head())
 
         self.user_profiles.drop('used_in_training', axis=1, inplace=True)
 
@@ -737,19 +741,21 @@ class ConversionPredictionModel(object):
         label_range = list(range(len(LABELS)))
         records_expected = 0
         for i in list(range(0, len(self.outcome_labels))):
-            records_expected += self.outcome_frame.loc[3, i].sum()
-            if i == 1:
-                records_expected = records_expected * self.undersampling_factor
+            records_expected += (self.outcome_frame.loc[3, i].sum() if i != 1 else self.outcome_frame.loc[3, i].sum() * self.undersampling_factor)
 
         data_row_range = range(
             0,
             int(records_expected),
             int(records_expected / 10)
         )
-
+        print(self.browser_day_combinations_original_set.shape)
         for i in data_row_range:
-            self.create_feature_frame((i, i + int(records_expected / 10),))
+            print('offset: ', i)
+            print('limit: ', int(records_expected / 10))
+            self.create_feature_frame((i, int(records_expected / 10),))
+            print(self.user_profiles.shape)
             self.remove_rows_from_original_flow()
+            print(self.user_profiles.shape)
             self.batch_predict(self.user_profiles)
             if i == 0:
                 negative_outcome_frame = pd.DataFrame(
@@ -764,7 +770,7 @@ class ConversionPredictionModel(object):
                         self.predictions['outcome'],
                         self.predictions['predicted_outcome'])
                         )
-                    )
+                )
 
         self.negative_outcome_frame = negative_outcome_frame / len(data_row_range)
         self.negative_outcome_frame.loc[3, 1] = self.negative_outcome_frame.loc[3, 1] * 10
