@@ -132,7 +132,7 @@ class ConversionPredictionModel(object):
         Retrieves rolling window user profiles from the db
         using row-wise normalized features
         '''
-        self_user_profiles = pd.DataFrame()
+        self.user_profiles = pd.DataFrame()
         self.min_date = self.min_date.replace(hour=0, minute=0, second=0, microsecond=0)
         self.max_date = self.max_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -753,7 +753,7 @@ class ConversionPredictionModel(object):
         for i in data_row_range:
             print('offset: ', i)
             print('limit: ', int(records_expected / 10))
-            self.create_feature_frame((i, int(records_expected / 10),))
+            self.create_feature_frame((i, int(records_expected / 10)))
             print(self.user_profiles.shape)
             self.remove_rows_from_original_flow()
             print(self.user_profiles.shape)
