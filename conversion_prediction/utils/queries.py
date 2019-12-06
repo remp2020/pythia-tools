@@ -7,7 +7,7 @@ from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
-from .db_utils import get_sqlalchemy_tables_w_session
+from .db_utils import get_sqlalchemy_tables_w_session, literalquery
 from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, Tuple
@@ -182,7 +182,8 @@ def get_filtered_cte(
                 ).cte('negatives_sampled')
     else:
         filtered_data = postgres_session.query(filtered_data).cte(name='positives')
-    print(filtered_data.compile(compile_kwargs={"literal_binds": True}))
+
+    print(literalquery(filtered_data))
     return filtered_data
 
 
