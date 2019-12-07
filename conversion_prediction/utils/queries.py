@@ -160,8 +160,7 @@ def get_filtered_cte(
     label_filter = aggregated_browser_days.c['next_7_days_event'].in_(
                 [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
     )
-    start_time = str(start_time)
-    end_time = str(end_time)
+
     filtered_data = postgres_session.query(
         aggregated_browser_days
     ).filter(
@@ -172,16 +171,17 @@ def get_filtered_cte(
 
     if offset_limit_tuple is not None:
         print('correct branch')
-        filtered_data = postgres_session.query(filtered_data).order_by(filtered_data.c['date'], filtered_data.c['browser_id']).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).cte('negatives_chunk')
+        filtered_data = postgres_session.query(
+            filtered_data
+        ).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).cte('negatives_chunk')
         print(filtered_data)
     elif retrieving_positives is not True:
-            filtered_data = postgres_session.query(filtered_data).filter(
-                1/undersampling_factor >= func.random()
-                ).cte('negatives_sampled')
+        filtered_data = postgres_session.query(filtered_data).filter(
+            1 / undersampling_factor >= func.random()
+            ).cte('negatives_sampled')
     else:
         filtered_data = postgres_session.query(filtered_data).cte(name='positives')
 
-    print('query: ', literalquery(postgres_session.query(filtered_data)))
     return filtered_data
 
 
