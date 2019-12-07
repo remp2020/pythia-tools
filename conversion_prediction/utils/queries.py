@@ -112,9 +112,7 @@ def get_full_features_query(
         filtered_data = get_filtered_cte(start_time - timedelta(days=180), end_time, True, None)
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
-        filtered_data,
-        start_time,
-        end_time
+        filtered_data
     )
 
     unique_events = get_unique_events_subquery(filtered_data)
@@ -183,15 +181,18 @@ def get_filtered_cte(
     else:
         filtered_data = postgres_session.query(filtered_data).cte(name='positives')
 
-    print(literalquery(filtered_data))
+    print('query: ', literalquery(postgres_session.query(filtered_data)))
     return filtered_data
 
 
 def get_subqueries_for_non_gapped_time_series(
-        filtered_data,
-        start_time: datetime,
-        end_time: datetime,
+        filtered_data
 ):
+    start_time, end_time = postgres_session.query(
+        func.min(filtered_data.c['date']),
+        func.max(filtered_data.c['date']),
+    ).all()[0]
+
     generated_time_series = postgres_session.query(
         func.generate_series(
             start_time,
