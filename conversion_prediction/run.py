@@ -739,21 +739,20 @@ class ConversionPredictionModel(object):
         In order to
         :return:
         '''
-        records_expected = get_browser_days_count(
-            self.min_date,
-            self.max_date
-        )
+        browsers_expected = len(
+            self.Y_train[self.Y_train['outcome'] == self.le.transform('no_conversion')]
+        ) * self.undersampling_factor
 
         data_row_range = range(
             0,
-            int(records_expected),
-            int(records_expected / 10)
+            int(browsers_expected),
+            int(browsers_expected / 10)
         )
 
         for i in data_row_range:
             print('offset: ', i)
-            print('limit: ', int(records_expected / 10))
-            self.create_feature_frame((i, int(records_expected / 10)))
+            print('limit: ', int(browsers_expected / 10))
+            self.create_feature_frame((i, int(browsers_expected / 10)))
             print(self.user_profiles.shape)
             self.remove_rows_from_original_flow()
             print(self.user_profiles.shape)

@@ -110,7 +110,7 @@ def get_full_features_query(
     if not retrieving_positives:
         filtered_data = get_filtered_cte(start_time, end_time, False, undersampling_factor, offset_limit_tuple)
     else:
-        filtered_data = get_filtered_cte(start_time - timedelta(days=180), end_time, True, None)
+        filtered_data = get_filtered_cte(start_time - timedelta(days=90), end_time, True, None)
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
         filtered_data
@@ -170,20 +170,61 @@ def get_filtered_cte(
         label_filter
     ).subquery()
 
-    if offset_limit_tuple is not None:
-        print('correct branch')
+    if retrieving_positives:
+        filtered_data = postgres_session.query(filtered_data).cte(name='positives')
+    else:
+        negative_browser_filter = subset_negative_browsers(
+            filtered_data,
+            offset_limit_tuple,
+            undersampling_factor
+        )
+
         filtered_data = postgres_session.query(
             filtered_data
-        ).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).cte('negatives_chunk')
-        print(filtered_data)
-    elif retrieving_positives is not True:
-        filtered_data = postgres_session.query(filtered_data).filter(
-            1 / undersampling_factor >= func.random()
-            ).cte('negatives_sampled')
-    else:
-        filtered_data = postgres_session.query(filtered_data).cte(name='positives')
+        ).filter(
+            filtered_data.c['browser'].in_(negative_browser_filter)
+        ).cte('negatives')
+
+    # if offset_limit_tuple is not None:
+    #     print('correct branch')
+    #     filtered_data = postgres_session.query(
+    #         filtered_data
+    #     ).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).cte('negatives_chunk')
+    #     print(filtered_data)
+    # elif retrieving_positives is not True:
+    #     filtered_data = postgres_session.query(filtered_data).filter(
+    #         1 / undersampling_factor >= func.random()
+    #         ).cte('negatives_sampled')
+    # else:
+    #     filtered_data = postgres_session.query(filtered_data).cte(name='positives')
 
     return filtered_data
+
+
+def subset_negative_browsers(
+        filtered_data,
+        # if None, we'll be sampling browsers for train, otherwise we want a offset-limit combination of browsers
+        offset_limit_tuple: Tuple = None,
+        undersampling_factor: int = 500
+):
+    negative_browsers = postgres_session(
+        filtered_data.c['browser_id'].label('browser_id')
+    ).group_by(
+        filtered_data.c['browser_id'].label('browser_id')
+    )
+
+    if offset_limit_tuple:
+        negative_browsers = postgres_session(
+            negative_browsers.offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1])
+        ).subquery()
+    else:
+        negative_browsers = postgres_session(
+            negative_browsers.filter(
+                1 / undersampling_factor >= func.random()
+            )
+        ).subquery()
+
+    return negative_browsers
 
 
 def get_subqueries_for_non_gapped_time_series(
