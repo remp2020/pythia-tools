@@ -89,6 +89,7 @@ def get_feature_frame_via_sqlalchemy(
     full_query = full_query_negatives.union(full_query_positives)
 
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
+    print(feature_frame.shape)
     feature_frame.columns = [re.sub('anon_1_', '', column) for column in feature_frame.columns]
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
     feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.date
