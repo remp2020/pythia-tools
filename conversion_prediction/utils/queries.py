@@ -50,15 +50,6 @@ def get_feature_frame_via_sqlalchemy(
     seed = postgres_session.query(func.setseed(0))
     postgres_session.execute(seed)
 
-    full_query_positives = get_full_features_query(
-        start_time,
-        end_time,
-        moving_window_length,
-        True,
-        feature_aggregation_function,
-        offset_limit_tuple
-    )
-
     full_query_negatives = get_full_features_query(
         start_time,
         end_time,
@@ -69,26 +60,38 @@ def get_feature_frame_via_sqlalchemy(
         offset_limit_tuple
     )
 
-    column_names_current_data = [column.name for column in full_query_negatives.columns]
-    column_names_past_positives = [column.name for column in full_query_positives.columns]
-    column_check = (
-        [column for column in column_names_current_data if column not in column_names_past_positives] +
-        [column for column in column_names_past_positives if column not in column_names_current_data]
-    )
+    if not offset_limit_tuple:
+        full_query_positives = get_full_features_query(
+            start_time,
+            end_time,
+            moving_window_length,
+            True,
+            feature_aggregation_function,
+            offset_limit_tuple
+        )
 
-    # We're removing the misaligned columns, due to the fact that their absence / presence might be an indication
-    # for the past positives, in which case it would create a lookahead
-    full_query_negatives = postgres_session.query(
-            *[full_query_negatives.c[column].label(column) for column in column_names_current_data if column not in column_check]
-            )
-    
-    full_query_positives = postgres_session.query(
-            *[full_query_positives.c[column].label(column) for column in column_names_past_positives if column not in column_check]
-            )
-    
-    full_query = full_query_negatives.union(full_query_positives)
+        column_names_current_data = [column.name for column in full_query_negatives.columns]
+        column_names_past_positives = [column.name for column in full_query_positives.columns]
+        column_check = (
+            [column for column in column_names_current_data if column not in column_names_past_positives] +
+            [column for column in column_names_past_positives if column not in column_names_current_data]
+        )
 
-    feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
+        # We're removing the misaligned columns, due to the fact that their absence / presence might be an indication
+        # for the past positives, in which case it would create a lookahead
+        full_query_negatives = postgres_session.query(
+                *[full_query_negatives.c[column].label(column) for column in column_names_current_data if column not in column_check]
+                )
+
+        full_query_positives = postgres_session.query(
+                *[full_query_positives.c[column].label(column) for column in column_names_past_positives if column not in column_check]
+                )
+    
+        full_query = full_query_negatives.union(full_query_positives)
+        feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
+    else:
+        feature_frame = pd.read_sql(full_query_negatives.statement, full_query_negatives.session.bind)
+
     print(feature_frame.shape)
     feature_frame.columns = [re.sub('anon_1_', '', column) for column in feature_frame.columns]
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
@@ -172,7 +175,6 @@ def get_filtered_cte(
 
     if retrieving_positives:
         filtered_data = postgres_session.query(filtered_data).cte(name='positives')
-        print('positives_query')
     else:
         negative_browser_filter = subset_negative_browsers(
             filtered_data,
@@ -185,20 +187,6 @@ def get_filtered_cte(
         ).filter(
             filtered_data.c['browser_id'].in_(negative_browser_filter)
         ).cte('negatives')
-        print('negatives query')
-
-    # if offset_limit_tuple is not None:
-    #     print('correct branch')
-    #     filtered_data = postgres_session.query(
-    #         filtered_data
-    #     ).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).cte('negatives_chunk')
-    #     print(filtered_data)
-    # elif retrieving_positives is not True:
-    #     filtered_data = postgres_session.query(filtered_data).filter(
-    #         1 / undersampling_factor >= func.random()
-    #         ).cte('negatives_sampled')
-    # else:
-    #     filtered_data = postgres_session.query(filtered_data).cte(name='positives')
 
     return filtered_data
 
