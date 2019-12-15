@@ -172,6 +172,7 @@ def get_filtered_cte(
 
     if retrieving_positives:
         filtered_data = postgres_session.query(filtered_data).cte(name='positives')
+        print('positives_query')
     else:
         negative_browser_filter = subset_negative_browsers(
             filtered_data,
@@ -182,8 +183,9 @@ def get_filtered_cte(
         filtered_data = postgres_session.query(
             filtered_data
         ).filter(
-            filtered_data.c['browser'].in_(negative_browser_filter)
+            filtered_data.c['browser_id'].in_(negative_browser_filter)
         ).cte('negatives')
+        print('negatives query')
 
     # if offset_limit_tuple is not None:
     #     print('correct branch')
@@ -207,21 +209,23 @@ def subset_negative_browsers(
         offset_limit_tuple: Tuple = None,
         undersampling_factor: int = 500
 ):
-    negative_browsers = postgres_session(
+    negative_browsers = postgres_session.query(
         filtered_data.c['browser_id'].label('browser_id')
     ).group_by(
         filtered_data.c['browser_id'].label('browser_id')
-    )
-
+    ).subquery()
+    
+    negative_browsers_count = postgres_session.query(
+        func.count(negative_browsers.c['browser_id'])
+    ).all()
+    print(negative_browsers_count)
     if offset_limit_tuple:
-        negative_browsers = postgres_session(
-            negative_browsers.offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1])
-        ).subquery()
+        negative_browsers = postgres_session.query(
+            negative_browsers).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).subquery()
     else:
-        negative_browsers = postgres_session(
-            negative_browsers.filter(
+        print(1/undersampling_factor)
+        negative_browsers = postgres_session.query(negative_browsers).filter(
                 1 / undersampling_factor >= func.random()
-            )
         ).subquery()
 
     return negative_browsers

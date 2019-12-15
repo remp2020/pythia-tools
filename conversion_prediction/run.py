@@ -601,7 +601,7 @@ class ConversionPredictionModel(object):
         )
 
         # This is used later on for excluging negatives that we already evaluated
-        self.browser_day_combinations_original_set = self.user_profiles[['browser_id', 'date']]
+        self.browser_day_combinations_original_set = self.user_profiles[['browser_id', 'date', 'outcome']]
         self.browser_day_combinations_original_set['used_in_training'] = True
 
         if ModelArtifacts.USER_PROFILES not in self.artifacts_to_retain.value:
@@ -719,7 +719,7 @@ class ConversionPredictionModel(object):
     def remove_rows_from_original_flow(self):
         self.user_profiles = pd.merge(
             left=self.user_profiles,
-            right=self.browser_day_combinations_original_set,
+            right=self.browser_day_combinations_original_set[['date', 'browser_id']],
             on=['date', 'browser_id'],
             how='left'
         )
@@ -739,14 +739,16 @@ class ConversionPredictionModel(object):
         In order to
         :return:
         '''
-        browsers_expected = len(
-            self.Y_train[self.Y_train['outcome'] == self.le.transform('no_conversion')]
+        print(len(self.browser_day_combinations_original_set))
+        browsers_expected = len(self.browser_day_combinations_original_set.loc[
+            self.browser_day_combinations_original_set['outcome'] == self.le.transform(['no_conversion'])[0], 'browser_id'].unique()
         ) * self.undersampling_factor
 
+        print(browsers_expected)
         data_row_range = range(
             0,
             int(browsers_expected),
-            int(browsers_expected / 10)
+            int(len(self.browser_day_combination_original_set)))
         )
 
         for i in data_row_range:
