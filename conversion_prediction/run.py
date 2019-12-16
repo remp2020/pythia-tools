@@ -719,7 +719,7 @@ class ConversionPredictionModel(object):
     def remove_rows_from_original_flow(self):
         self.user_profiles = pd.merge(
             left=self.user_profiles,
-            right=self.browser_day_combinations_original_set[['date', 'browser_id']],
+            right=self.browser_day_combinations_original_set[['date', 'browser_id', 'used_in_training']],
             on=['date', 'browser_id'],
             how='left'
         )
@@ -748,7 +748,7 @@ class ConversionPredictionModel(object):
         data_row_range = range(
             0,
             int(browsers_expected),
-            int(len(self.browser_day_combinations_original_set))
+            int(len(self.browser_day_combinations_original_set['browser_id'].unique()))
         )
 
         for i in data_row_range:

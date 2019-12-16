@@ -81,15 +81,16 @@ def get_feature_frame_via_sqlalchemy(
         # for the past positives, in which case it would create a lookahead
         full_query_negatives = postgres_session.query(
                 *[full_query_negatives.c[column].label(column) for column in column_names_current_data if column not in column_check]
-                )
+        )
 
         full_query_positives = postgres_session.query(
                 *[full_query_positives.c[column].label(column) for column in column_names_past_positives if column not in column_check]
-                )
+        )
     
         full_query = full_query_negatives.union(full_query_positives)
         feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
     else:
+        full_query_negatives = postgres_session.query(full_query_negatives)
         feature_frame = pd.read_sql(full_query_negatives.statement, full_query_negatives.session.bind)
 
     print(feature_frame.shape)
