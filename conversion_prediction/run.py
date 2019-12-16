@@ -724,13 +724,9 @@ class ConversionPredictionModel(object):
             how='left'
         )
 
-        print(self.user_profiles.head())
-
         self.user_profiles = self.user_profiles[
             self.user_profiles['used_in_training'].isna()
         ].reset_index(drop=True)
-
-        print(self.user_profiles.head())
 
         self.user_profiles.drop('used_in_training', axis=1, inplace=True)
 
@@ -739,12 +735,10 @@ class ConversionPredictionModel(object):
         In order to
         :return:
         '''
-        print(len(self.browser_day_combinations_original_set))
         browsers_expected = len(self.browser_day_combinations_original_set.loc[
             self.browser_day_combinations_original_set['outcome'] == self.le.transform(['no_conversion'])[0], 'browser_id'].unique()
         ) * self.undersampling_factor
 
-        print(browsers_expected)
         data_row_range = range(
             0,
             int(browsers_expected),
@@ -753,11 +747,8 @@ class ConversionPredictionModel(object):
 
         for i in data_row_range:
             print('offset: ', i)
-            print('limit: ', int(browsers_expected / 10))
             self.create_feature_frame((i, int(browsers_expected / 10)))
-            print(self.user_profiles.shape)
             self.remove_rows_from_original_flow()
-            print(self.user_profiles.shape)
             self.batch_predict(self.user_profiles)
             if i == 0:
                 negative_outcome_frame = pd.DataFrame(
