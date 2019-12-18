@@ -742,7 +742,7 @@ class ConversionPredictionModel(object):
         data_row_range = range(
             0,
             int(browsers_expected),
-            int(len(self.browser_day_combinations_original_set['browser_id'].unique()))
+            int(len(self.browser_day_combinations_original_set['browser_id'].unique())) * 10
         )
 
         for i in data_row_range:
