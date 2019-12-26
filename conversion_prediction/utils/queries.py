@@ -203,21 +203,44 @@ def subset_negative_browsers(
     ).group_by(
         filtered_data.c['browser_id'].label('browser_id')
     ).subquery()
-    
-    negative_browsers_count = postgres_session.query(
-        func.count(negative_browsers.c['browser_id'])
-    ).all()
-    print(negative_browsers_count)
+
     if offset_limit_tuple:
         negative_browsers = postgres_session.query(
             negative_browsers).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).subquery()
     else:
-        print(1/undersampling_factor)
         negative_browsers = postgres_session.query(negative_browsers).filter(
                 1 / undersampling_factor >= func.random()
         ).subquery()
 
     return negative_browsers
+
+
+def get_negative_browser_count(
+        start_time: datetime,
+        end_time: datetime
+):
+    filtered_data = get_filtered_cte(start_time, end_time, False, 1, None)
+
+    negative_browsers = postgres_session.query(
+        filtered_data.c['browser_id'].label('browser_id')
+    ).group_by(
+        filtered_data.c['browser_id'].label('browser_id')
+    ).subquery()
+
+    negative_browsers_count = return_browser_count(negative_browsers)
+
+    return negative_browsers_count
+
+
+def return_browser_count(unique_browser_query):
+    '''
+    Assumes the input query returns only unique browsers
+    :param unique_browser_query:
+    :return:
+    '''
+    return postgres_session.query(
+        func.count(unique_browser_query.c['browser_id'])
+    ).all()
 
 
 def get_subqueries_for_non_gapped_time_series(

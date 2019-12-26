@@ -34,7 +34,7 @@ from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, Mode
 from utils.db_utils import create_connection
 from utils.queries import queries
 from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context, \
-    get_browser_days_count
+    get_browser_days_count, get_negative_browser_count
 from utils.data_transformations import unique_list, row_wise_normalization
 
 
@@ -735,9 +735,12 @@ class ConversionPredictionModel(object):
         In order to
         :return:
         '''
-        browsers_expected = len(self.browser_day_combinations_original_set.loc[
-            self.browser_day_combinations_original_set['outcome'] == self.le.transform(['no_conversion'])[0], 'browser_id'].unique()
-        ) * self.undersampling_factor
+        browsers_expected = get_negative_browser_count(
+            self.min_date,
+            self.max_date
+        )
+
+        logger.info(f'Test set contains {browsers_expected} browsers')
 
         data_row_range = range(
             0,
