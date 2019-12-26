@@ -735,16 +735,14 @@ class ConversionPredictionModel(object):
         In order to
         :return:
         '''
-        #browsers_expected = len(self.browser_day_combinations_original_set.loc[
-        #    self.browser_day_combinations_original_set['outcome'] == self.le.transform(['no_conversion'])[0], 'browser_id'].unique()
-        #) * self.undersampling_factor
-        
-        browsers_expected = 883388.0
+        browsers_expected = len(self.browser_day_combinations_original_set.loc[
+            self.browser_day_combinations_original_set['outcome'] == self.le.transform(['no_conversion'])[0], 'browser_id'].unique()
+        ) * self.undersampling_factor
 
         data_row_range = range(
             0,
             int(browsers_expected),
-            int(len(self.browser_day_combinations_original_set['browser_id'].unique())) * 10
+            int(browsers_expected / 10)
         )
 
         for i in data_row_range:
