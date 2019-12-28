@@ -155,7 +155,7 @@ class ConversionPredictionModel(object):
         try:
             self.get_contextual_features_from_mysql()
             self.feature_columns.add_global_context_features()
-            logger.info('Successfully added global context features from csvs')
+            logger.info('Successfully added global context features from mysql')
         except Exception as e:
              logger.info(
                 f'''Failed adding global context features from mysql with exception:
@@ -173,9 +173,11 @@ class ConversionPredictionModel(object):
                 proceeding with remaining features''')
         
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
+
         try:
             self.get_user_history_features_from_mysql()
             self.feature_columns.add_payment_history_features()
+            logger.info('Successfully added user payment history features from mysql')
         except Exception as e:
             logger.info(
                 f'''Failed adding payment history features from mysql with exception: 
@@ -198,7 +200,7 @@ class ConversionPredictionModel(object):
         dates = [date.date() for date in pd.date_range(self.min_date - timedelta(days=7), self.max_date)]
         dates = [re.sub('-', '', str(date)) for date in dates]
         for date in dates:
-            commerce_daily = pd.read_csv(f'{self.path_to_csvs}/commerce_{date}.csv.gz')
+            commerce_daily = pd.read_csv(f'{self.path_to_csvs}commerce_{date}.csv.gz')
             commerce = commerce.append(commerce_daily)
 
         commerce = commerce[commerce['browser_id'].isin(self.user_profiles['browser_id'].unique())]
@@ -745,28 +747,28 @@ class ConversionPredictionModel(object):
         data_row_range = range(
             0,
             int(browsers_expected),
-            int(browsers_expected / 10)
+            int(browsers_expected / 4)
         )
-
+    
         for i in data_row_range:
-            print('offset: ', i)
             self.create_feature_frame((i, int(browsers_expected / 10)))
             self.remove_rows_from_original_flow()
-            self.batch_predict(self.user_profiles)
-            if i == 0:
-                negative_outcome_frame = pd.DataFrame(
-                    list(precision_recall_fscore_support(
-                        self.predictions['outcome'],
-                        self.predictions['predicted_outcome'])
-                    )
-                )
-            else:
-                negative_outcome_frame = negative_outcome_frame + pd.DataFrame(
-                    list(precision_recall_fscore_support(
-                        self.predictions['outcome'],
-                        self.predictions['predicted_outcome'])
+            if not self.user_profiles.empty:
+                self.batch_predict(self.user_profiles)
+                if i == 0:
+                    negative_outcome_frame = pd.DataFrame(
+                        list(precision_recall_fscore_support(
+                            self.predictions['outcome'],
+                            self.predictions['predicted_outcome'])
                         )
-                )
+                    )
+                else:
+                    negative_outcome_frame = negative_outcome_frame + pd.DataFrame(
+                        list(precision_recall_fscore_support(
+                            self.predictions['outcome'],
+                            self.predictions['predicted_outcome'])
+                            )
+                    )
 
         self.negative_outcome_frame = negative_outcome_frame / len(data_row_range)
         self.negative_outcome_frame.loc[3, 1] = self.negative_outcome_frame.loc[3, 1] * 10

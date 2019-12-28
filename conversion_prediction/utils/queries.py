@@ -229,7 +229,7 @@ def get_negative_browser_count(
 
     negative_browsers_count = return_browser_count(negative_browsers)
 
-    return negative_browsers_count
+    return negative_browsers_count[0][0]
 
 
 def return_browser_count(unique_browser_query):
@@ -761,6 +761,8 @@ def get_global_context(start_time, end_time):
             payments.c['created_at'] >= start_time,
             payments.c['created_at'] <= end_time,
             payments.c['status'] == 'paid'
+        ).group_by(
+                'date'
         ).subquery()
 
         return payments_filtered
@@ -772,6 +774,8 @@ def get_global_context(start_time, end_time):
         ).filter(
             article_pageviews.c['time_from'] >= start_time,
             article_pageviews.c['time_from'] <= end_time
+        ).group_by(
+                'date'
         ).subquery()
 
         return article_pageviews_filtered
