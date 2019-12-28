@@ -814,7 +814,7 @@ def get_global_context(start_time, end_time):
     context_query = mysql_predplatne_session.query(
         payments_context.c['date'],
         payments_context.c['payment_count'],
-	payments_context.c['sum_paid'],
+        payments_context.c['sum_paid'],
         article_pageviews_context.c['article_pageviews_count']
     ).join(
         article_pageviews_context,
