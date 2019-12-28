@@ -112,9 +112,23 @@ def get_full_features_query(
         offset_limit_tuple: Tuple = None
 ):
     if not retrieving_positives:
-        filtered_data = get_filtered_cte(start_time, end_time, False, undersampling_factor, offset_limit_tuple)
+        filtered_data = get_filtered_cte(
+            # We retrieve an additional window length lookback of records to correctly construct the rolling window
+            # for the records on the 1st day of the time period we intend to use
+            start_time - timedelta(days=moving_window_length),
+            end_time,
+            False,
+            undersampling_factor,
+            offset_limit_tuple
+        )
     else:
-        filtered_data = get_filtered_cte(start_time - timedelta(days=90), end_time, True, None)
+        filtered_data = get_filtered_cte(
+            # The additional 90 days lookback is to also retrieve past positives due to label imbalance
+            start_time - timedelta(days=90) - timedelta(days=moving_window_length),
+            end_time,
+            True,
+            None
+        )
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
         filtered_data
@@ -148,11 +162,17 @@ def get_full_features_query(
         retrieving_positives
     )
 
-    all_time_delta_columns = add_all_time_delta_columns(
+    filtered_w_derived_metrics_w_all_time_delta_columns = add_all_time_delta_columns(
         filtered_w_derived_metrics
-    ).subquery()
+    )
 
-    return all_time_delta_columns
+    final_query_for_outcome_category = remove_helper_lookback_rows(
+        filtered_w_derived_metrics_w_all_time_delta_columns,
+        retrieving_positives,
+        start_time
+    )
+
+    return final_query_for_outcome_category
 
 
 def get_filtered_cte(
@@ -190,6 +210,24 @@ def get_filtered_cte(
         ).cte('negatives')
 
     return filtered_data
+
+
+def remove_helper_lookback_rows(
+    filtered_w_derived_metrics_w_all_time_delta_columns,
+    retrieving_positives,
+    start_time
+):
+    label_lookback_cause = filtered_w_derived_metrics_w_all_time_delta_columns.c['date'] >= (
+        start_time - timedelta(days=90) if retrieving_positives else start_time
+    )
+
+    final_query_for_outcome_category = postgres_session.query(
+        filtered_w_derived_metrics_w_all_time_delta_columns
+    ).filter(
+        label_lookback_cause
+    ).subquery()
+
+    return final_query_for_outcome_category
 
 
 def subset_negative_browsers(
@@ -673,7 +711,7 @@ def filter_joined_queries_adding_derived_metrics(
 def add_all_time_delta_columns(
         filtered_w_derived_metrics
 ):
-    all_time_delta_columns = postgres_session.query(
+    filtered_w_derived_metrics_w_all_time_delta_columns = postgres_session.query(
         filtered_w_derived_metrics,
         *[
             (
@@ -699,9 +737,9 @@ def add_all_time_delta_columns(
             for column in filtered_w_derived_metrics.columns
             if re.search('_last_window_half', column.name)
          ]
-    )
+    ).subquery()
 
-    return all_time_delta_columns
+    return filtered_w_derived_metrics_w_all_time_delta_columns
 
 
 def get_payment_history_features(end_time: datetime):
