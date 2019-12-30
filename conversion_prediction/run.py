@@ -717,19 +717,27 @@ class ConversionPredictionModel(object):
     def format_outcome_frame(
             outcome_frame: pd.DataFrame,
             label_range: List[str],
-            label_encoder: LabelEncoder
+            label_encoder: LabelEncoder,
+            sets_in_outcome: List[str] = ['train', 'test']
     ):
         '''
         Takes a given outcome frame and polishes the row & column names
         :param outcome_frame:
         :param label_range:
         :param label_encoder:
+        :param sets_in_outcome
         :return:
         '''
-        train_outcome_columns = [str(label) + '_train' for label in outcome_frame.columns[0:len(label_range)]]
-        test_outcome_columns = [
-            str(label) + '_test' for label in outcome_frame.columns[len(label_range):(2*len(label_range))]
-        ]
+        train_outcome_columns = (
+            [str(label) + '_train' for label in outcome_frame.columns[0:len(label_range)]]
+            if 'train' in sets_in_outcome
+            else []
+        )
+        test_outcome_columns = (
+            [str(label) + '_test' for label in outcome_frame.columns[len(label_range):(2*len(label_range))]]
+            if 'test' in sets_in_outcome
+            else []
+        )
         outcome_frame.columns = train_outcome_columns + test_outcome_columns
 
         for i in label_range:
@@ -807,7 +815,8 @@ class ConversionPredictionModel(object):
         self.format_outcome_frame(
             self.negative_outcome_frame,
             list(range(0, len(self.outcome_labels))),
-            self.le
+            self.le,
+            ['test']
         )
 
         self.negative_outcome_frame.loc['support', 'no_conversion_test'] = self.negative_outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
