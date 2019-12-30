@@ -772,6 +772,7 @@ class ConversionPredictionModel(object):
         for i in data_row_range:
             logging.info('  * Fetching negative outcomes negatives chunk')
             logger.setLevel(logging.ERROR)
+            self.create_feature_frame((i, int(browsers_expected / 5)))
             logger.setLevel(logging.INFO)
             self.remove_rows_from_original_flow()
             logging.info('  * Removing negative outcomes from training set from negatives chunk')
