@@ -222,7 +222,8 @@ def remove_helper_lookback_rows(
     )
 
     final_query_for_outcome_category = postgres_session.query(
-        filtered_w_derived_metrics_w_all_time_delta_columns
+        # We re-alias since adding another layer causes sqlalchemy to abbreviate columns
+        *[filtered_w_derived_metrics_w_all_time_delta_columns.c[column.name].label(column.name) for column in filtered_w_derived_metrics_w_all_time_delta_columns.columns]
     ).filter(
         label_lookback_cause
     ).subquery()
