@@ -844,6 +844,8 @@ class ConversionPredictionModel(object):
 
         logger.info(f'Saved to {self.path_to_model_files}model_{self.model_date}.pkl')
 
+        self.collect_outcomes_for_all_negatives()
+
     def load_model_related_constructs(self):
         '''
         Requires:
