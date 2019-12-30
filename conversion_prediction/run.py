@@ -612,7 +612,6 @@ class ConversionPredictionModel(object):
         ]
         self.browser_day_combinations_original_set['used_in_training'] = True
 
-
         if ModelArtifacts.USER_PROFILES not in self.artifacts_to_retain.value:
             ConversionPredictionModel.artifact_handler(self, ModelArtifacts.USER_PROFILES)
 
@@ -856,7 +855,6 @@ class ConversionPredictionModel(object):
         for artifact in [
             ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
             ModelArtifacts.TEST_DATA_FEATURES, ModelArtifacts.TEST_DATA_OUTCOME,
-            ModelArtifacts.USER_PROFILES
         ]:
             if artifact not in self.artifacts_to_retain.value:
                 ConversionPredictionModel.artifact_handler(self, artifact)
