@@ -699,14 +699,6 @@ class ConversionPredictionModel(object):
         # TODO: Remove after testing flow change
         # self.collect_outcomes_for_all_negatives()
 
-        for artifact in [
-            ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
-            ModelArtifacts.TEST_DATA_FEATURES, ModelArtifacts.TEST_DATA_OUTCOME,
-            ModelArtifacts.USER_PROFILES
-        ]:
-            if artifact not in self.artifacts_to_retain.value:
-                ConversionPredictionModel.artifact_handler(self, artifact)
-
         self.format_outcome_frame(
             self.outcome_frame,
             label_range,
@@ -778,10 +770,14 @@ class ConversionPredictionModel(object):
         )
     
         for i in data_row_range:
-            self.create_feature_frame((i, int(browsers_expected / 10)))
+            logging.info('  * Fetching negative outcomes negatives chunk')
+            logger.setLevel(logging.ERROR)
+            logger.setLevel(logging.INFO)
             self.remove_rows_from_original_flow()
+            logging.info('  * Removing negative outcomes from training set from negatives chunk')
             if not self.user_profiles.empty:
                 self.batch_predict(self.user_profiles)
+                logging.info('  * Generatincg predictions for negatives chunk')
                 if i == 0:
                     negative_outcome_frame = pd.DataFrame(
                         list(precision_recall_fscore_support(
@@ -796,6 +792,8 @@ class ConversionPredictionModel(object):
                             self.predictions['predicted_outcome'])
                             )
                     )
+
+            logging.info(f'*  Collected negative outcome accuracies at {str(100 * i / browsers_expected)} %')
 
         self.negative_outcome_frame = negative_outcome_frame / len(data_row_range)
 
@@ -834,6 +832,7 @@ class ConversionPredictionModel(object):
                 self.delete_existing_model_file_for_same_date(model_file)
 
         self.train_model()
+        self.remove_model_training_artefacts()
 
         logger.info(f'Training ready, dumping to file')
 
@@ -845,6 +844,15 @@ class ConversionPredictionModel(object):
         logger.info(f'Saved to {self.path_to_model_files}model_{self.model_date}.pkl')
 
         self.collect_outcomes_for_all_negatives()
+
+    def remove_model_training_artefacts(self):
+        for artifact in [
+            ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
+            ModelArtifacts.TEST_DATA_FEATURES, ModelArtifacts.TEST_DATA_OUTCOME,
+            ModelArtifacts.USER_PROFILES
+        ]:
+            if artifact not in self.artifacts_to_retain.value:
+                ConversionPredictionModel.artifact_handler(self, artifact)
 
     def load_model_related_constructs(self):
         '''
