@@ -602,9 +602,15 @@ class ConversionPredictionModel(object):
             f'{self.path_to_model_files}scaler_{self.model_date}.pkl'
         )
 
-        # This is used later on for excluging negatives that we already evaluated
-        self.browser_day_combinations_original_set = self.user_profiles[['browser_id', 'date', 'outcome']]
+        # This is used later on for excluding negatives that we already evaluated
+        self.browser_day_combinations_original_set = self.user_profiles.loc[
+            # We only pick train indices, since we will be iterating over all negatives and it's simpler to do the
+            # ones included in the undersampled test set again than to introduce some special handling
+            train_indices,
+            ['browser_id', 'date', 'outcome']
+        ]
         self.browser_day_combinations_original_set['used_in_training'] = True
+
 
         if ModelArtifacts.USER_PROFILES not in self.artifacts_to_retain.value:
             ConversionPredictionModel.artifact_handler(self, ModelArtifacts.USER_PROFILES)
@@ -690,9 +696,8 @@ class ConversionPredictionModel(object):
         ],
             axis=1)
 
-        logger.info('  * Commencing accuracy metrics for negatives calculation')
-        self.collect_outcomes_for_all_negatives()
-        logger.info('  * Finished accuracy metrics for negatives calculation')
+        # TODO: Remove after testing flow change
+        # self.collect_outcomes_for_all_negatives()
 
         for artifact in [
             ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
@@ -702,23 +707,41 @@ class ConversionPredictionModel(object):
             if artifact not in self.artifacts_to_retain.value:
                 ConversionPredictionModel.artifact_handler(self, artifact)
 
-        self.outcome_frame.columns = [str(label) + '_train'
-                                      for label in self.outcome_frame.columns[0:len(label_range)]] + \
-                                     [str(label) + '_test'
-                                      for label in
-                                      self.outcome_frame.columns[len(label_range):(2*len(label_range))]]
-
-        self.outcome_frame['1_test'] = self.negative_outcome_frame.loc[:, 1]
-
-        for i in label_range:
-            self.outcome_frame.columns = [re.sub(str(i), self.le.inverse_transform([i])[0], column)
-                                     for column in self.outcome_frame.columns]
-
-        self.outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
+        self.format_outcome_frame(
+            self.outcome_frame,
+            label_range,
+            self.le
+        )
 
         logger.info('  * Outcome frame generated')
 
+    @staticmethod
+    def format_outcome_frame(
+            outcome_frame: pd.DataFrame,
+            label_range: List[str],
+            label_encoder: LabelEncoder
+    ):
+        '''
+        Takes a given outcome frame and polishes the row & column names
+        :param outcome_frame:
+        :param label_range:
+        :param label_encoder:
+        :return:
+        '''
+        train_outcome_columns = [str(label) + '_train' for label in outcome_frame.columns[0:len(label_range)]]
+        test_outcome_columns = [
+            str(label) + '_test' for label in outcome_frame.columns[len(label_range):(2*len(label_range))]
+        ]
+        outcome_frame.columns = train_outcome_columns + test_outcome_columns
+
+        for i in label_range:
+            outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform([i])[0], column)
+                                     for column in outcome_frame.columns]
+
+        outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
+
     def remove_rows_from_original_flow(self):
+        logger.info('  * Commencing accuracy metrics for negatives calculation')
         self.user_profiles = pd.merge(
             left=self.user_profiles,
             right=self.browser_day_combinations_original_set[['date', 'browser_id', 'used_in_training']],
@@ -734,9 +757,13 @@ class ConversionPredictionModel(object):
 
     def collect_outcomes_for_all_negatives(self):
         '''
-        In order to
+        Due to a potential memmory constraint, we only pull a sample of data for training a model. For
+        the purpose of evaluating our algorithm we would however like to know how it would do on the full
+        dataset. This method iterates over the undersampled class returning a result for the full population.
+        In the future we might also make this a sample (although a larger one compared to the one used in train)
         :return:
         '''
+        # TODO: Consider doing a sample, but a larger one (such as 10 % of all negatives)
         browsers_expected = get_negative_browser_count(
             self.min_date,
             self.max_date
@@ -771,7 +798,16 @@ class ConversionPredictionModel(object):
                     )
 
         self.negative_outcome_frame = negative_outcome_frame / len(data_row_range)
+
+        self.format_outcome_frame(
+            self.negative_outcome_frame,
+            list(range(0, len(self.outcome_labels))),
+            self.le
+        )
+
         self.negative_outcome_frame.loc[3, 1] = self.negative_outcome_frame.loc[3, 1] * 10
+        self.outcome_frame['no_conversion_test'] = self.negative_outcome_frame.loc[:, 'no_conversion_test']
+        logger.info('  * Finished accuracy metrics for negatives calculation')
 
     def model_training_pipeline(self):
         '''
