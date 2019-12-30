@@ -367,6 +367,7 @@ class ConversionPredictionModel(object):
         self.add_missing_json_columns()
         for column_set_list in self.feature_columns.profile_numeric_columns_from_json_fields.values():
             for column_set in column_set_list:
+                self.user_profiles[column_set] = self.user_profiles[column_set].astype(float)
                 normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
                 normalized_data.fillna(0.0, inplace=True)
                 normalized_data.columns = column_set
@@ -775,7 +776,7 @@ class ConversionPredictionModel(object):
         )
     
         for i in data_row_range:
-            logging.info('  * Fetching negative outcomes negatives chunk')
+            logging.info('  * Fetching negatives chunk')
             logger.setLevel(logging.ERROR)
             self.create_feature_frame((i, int(browsers_expected / 5)))
             logger.setLevel(logging.INFO)
@@ -799,7 +800,7 @@ class ConversionPredictionModel(object):
                             )
                     )
 
-            logging.info(f'*  Collected negative outcome accuracies at {str(100 * i / browsers_expected)} %')
+            logging.info(f'*  Collected negative outcome accuracies at {str(100 * (i + browsers_expected / 5) / browsers_expected)} %')
 
         self.negative_outcome_frame = negative_outcome_frame / len(data_row_range)
 
@@ -809,7 +810,7 @@ class ConversionPredictionModel(object):
             self.le
         )
 
-        self.negative_outcome_frame.loc[3, 1] = self.negative_outcome_frame.loc[3, 1] * 10
+        self.negative_outcome_frame.loc['support', 'no_conversion_test'] = self.negative_outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
         self.outcome_frame['no_conversion_test'] = self.negative_outcome_frame.loc[:, 'no_conversion_test']
         logger.info('  * Finished accuracy metrics for negatives calculation')
 
