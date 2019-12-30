@@ -89,6 +89,7 @@ class ConversionPredictionModel(object):
         self.feature_aggregation_function = feature_aggregation_function
         self.negative_outcome_frame = pd.DataFrame()
         self.browser_day_combinations_original_set = pd.DataFrame()
+        self.variable_importances = pd.Series()
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -703,6 +704,11 @@ class ConversionPredictionModel(object):
             self.outcome_frame,
             label_range,
             self.le
+        )
+
+        self.variable_importances = pd.Series(
+            data=self.model.feature_importances_,
+            index=self.X_train.columns
         )
 
         logger.info('  * Outcome frame generated')
