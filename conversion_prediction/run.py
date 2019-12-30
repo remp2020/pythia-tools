@@ -838,7 +838,6 @@ class ConversionPredictionModel(object):
                 self.delete_existing_model_file_for_same_date(model_file)
 
         self.train_model()
-        self.remove_model_training_artefacts()
 
         logger.info(f'Training ready, dumping to file')
 
@@ -850,6 +849,7 @@ class ConversionPredictionModel(object):
         logger.info(f'Saved to {self.path_to_model_files}model_{self.model_date}.pkl')
 
         self.collect_outcomes_for_all_negatives()
+        self.remove_model_training_artefacts()
 
     def remove_model_training_artefacts(self):
         for artifact in [
