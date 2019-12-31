@@ -734,7 +734,11 @@ class ConversionPredictionModel(object):
             else []
         )
         test_outcome_columns = (
-            [str(label) + '_test' for label in outcome_frame.columns[len(label_range):(2*len(label_range))]]
+            [
+                str(label) + '_test' for label in outcome_frame.columns[
+                    # We either have 6 columns (3 for train and 3 for test) or 3 (test only), therefore we need to adjust indexing 
+                    len(label_range) * (len(sets_in_outcome) - 1 ):(len(sets_in_outcome)*len(label_range))]
+            ]
             if 'test' in sets_in_outcome
             else []
         )
