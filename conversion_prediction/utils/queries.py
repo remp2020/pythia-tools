@@ -647,9 +647,10 @@ def create_rolling_window_columns_config(
 
     # This will need to change if we implement multiple aggregation functions
     rolling_agg_variants = {
-        'count': False,
-        'count_last_window_half': True
+        f'{aggregation_function_aliases[aggregation_function]}': False,
+        f'{aggregation_function_aliases[aggregation_function]}_last_window_half': True
     }
+
     # this generates all basic rolling sum columns for both full and second half of the window
     rolling_agg_columns = rolling_agg_columns + [
         create_rolling_agg_function(
