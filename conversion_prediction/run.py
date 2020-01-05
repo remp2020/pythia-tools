@@ -827,7 +827,10 @@ class ConversionPredictionModel(object):
         self.outcome_frame['no_conversion_test'] = self.negative_outcome_frame.loc[:, 'no_conversion_test']
         logger.info('  * Finished accuracy metrics for negatives calculation')
 
-    def model_training_pipeline(self):
+    def model_training_pipeline(
+            self,
+            sampled_negatives_results: bool = False
+    ):
         '''
         Requires:
             - undersampling_factor
@@ -862,7 +865,8 @@ class ConversionPredictionModel(object):
 
         logger.info(f'Saved to {self.path_to_model_files}model_{self.model_date}.pkl')
 
-        self.collect_outcomes_for_all_negatives()
+        if sampled_negatives_results:
+            self.collect_outcomes_for_all_negatives()
         self.remove_model_training_artefacts()
 
     def remove_model_training_artefacts(self):
