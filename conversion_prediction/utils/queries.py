@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session, literalquery
-from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS, AGGREGATION_FUNCTIONS_w_ALIASES
+from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, AGGREGATION_FUNCTIONS_w_ALIASES
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, Tuple
 
@@ -686,6 +686,8 @@ def filter_joined_queries_adding_derived_metrics(
     if not retrieving_past_positives:
         finalizing_filter.append(joined_partial_queries.c['date'] >= start_time)
 
+    derived_metrics_config = build_derived_metrics_config(aggregation_function_alias)
+
     filtered_w_derived_metrics = postgres_session.query(
         *[column.label(re.sub('timespent_count', 'timespent_sum', column.name))
           for column in joined_partial_queries.columns
@@ -702,10 +704,10 @@ def filter_joined_queries_adding_derived_metrics(
         ).label('outcome'),
         *[
             func.coalesce((
-                joined_partial_queries.c[DERIVED_METRICS_CONFIG[key]['nominator'] + suffix] /
-                joined_partial_queries.c[DERIVED_METRICS_CONFIG[key]['denominator'] + suffix]
+                joined_partial_queries.c[derived_metrics_config[key]['nominator'] + suffix] /
+                joined_partial_queries.c[derived_metrics_config[key]['denominator'] + suffix]
             ), 0.0).label(key + suffix)
-            for key in DERIVED_METRICS_CONFIG.keys()
+            for key in derived_metrics_config.keys()
             for suffix in ['', '_last_window_half']
         ]
     ).filter(and_(*finalizing_filter)).subquery()

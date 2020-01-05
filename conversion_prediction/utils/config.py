@@ -77,28 +77,32 @@ LABELS = {'no_conversion': 'negative', 'shared_account_login': 'positive', 'conv
 
 CURRENT_MODEL_VERSION = '1.0'
 
-DERIVED_METRICS_CONFIG = {
-    'pageviews_per_visit': {
-        'nominator': 'pageview_count',
-        'denominator': 'visit_count'
-    },
-    'visits_per_day_active': {
-        'nominator': 'visit_count',
-        'denominator': 'days_active_count'
-    },
-    'direct_visits_share': {
-        'nominator': 'direct_visit_count',
-        'denominator': 'visit_count'
-    },
-    'timespent_per_visit': {
-        'nominator': 'timespent_count',
-        'denominator': 'visit_count'
-    },
-    'timespent_per_pageview': {
-        'nominator': 'timespent_count',
-        'denominator': 'pageview_count'
-    },
-}
+
+def build_derived_metrics_config(aggregation_function_alias):
+    derived_metrics_config = {
+        'pageviews_per_visit': {
+            'nominator': f'pageview_{aggregation_function_alias}',
+            'denominator': f'visit_{aggregation_function_alias}'
+        },
+        'visits_per_day_active': {
+            'nominator': f'visit_{aggregation_function_alias}',
+            'denominator': f'days_active_{aggregation_function_alias}'
+        },
+        'direct_visits_share': {
+            'nominator': f'direct_visit_{aggregation_function_alias}',
+            'denominator': f'visit_{aggregation_function_alias}'
+        },
+        'timespent_per_visit': {
+            'nominator': f'timespent_{aggregation_function_alias}',
+            'denominator': f'visit_{aggregation_function_alias}'
+        },
+        'timespent_per_pageview': {
+            'nominator': f'timespent_{aggregation_function_alias}',
+            'denominator': f'pageview_{aggregation_function_alias}'
+        },
+    }
+
+    return derived_metrics_config
 
 
 JSON_COLUMNS = ['referer_medium_pageviews', 'hour_interval_pageviews', 'article_category_pageviews']
