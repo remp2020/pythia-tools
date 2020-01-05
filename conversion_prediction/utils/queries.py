@@ -525,13 +525,13 @@ def calculate_rolling_windows_features(
         moving_window_length: int,
         start_time: datetime,
         json_key_column_names: List[str],
-        feature_aggregation_function
+        aggregation_function_w_alias
 ):
     rolling_agg_columns_base = create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
         moving_window_length,
-        feature_aggregation_function
+        aggregation_function_w_alias
     )
 
     queries_with_basic_window_columns = postgres_session.query(
@@ -648,8 +648,8 @@ def create_rolling_window_columns_config(
 
     # This will need to change if we implement multiple aggregation functions
     rolling_agg_variants = {
-        f'{aggregation_function_w_alias}': False,
-        f'{aggregation_function_w_alias}_last_window_half': True
+        f'{aggregation_function_alias}': False,
+        f'{aggregation_function_alias}_last_window_half': True
     }
 
     # this generates all basic rolling sum columns for both full and second half of the window
