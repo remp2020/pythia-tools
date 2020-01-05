@@ -639,16 +639,18 @@ def create_rolling_window_columns_config(
     rolling_agg_columns = []
 
     aggregation_function_aliases = {
-        func.sum: 'count',
-        func.avg: 'avg',
-        func.min: 'min',
-        func.max: 'max'
+        'count': func.sum,
+        'avg': func.avg,
+        'min': func.min,
+        'max': func.max
     }
+
+    aggregation_function_alias = [key for key, value in aggregation_function_aliases.items() if type(value()) == type(aggregation_function())][0]
 
     # This will need to change if we implement multiple aggregation functions
     rolling_agg_variants = {
-        f'{aggregation_function_aliases[aggregation_function]}': False,
-        f'{aggregation_function_aliases[aggregation_function]}_last_window_half': True
+        f'{aggregation_function_alias}': False,
+        f'{aggregation_function_alias}_last_window_half': True
     }
 
     # this generates all basic rolling sum columns for both full and second half of the window
