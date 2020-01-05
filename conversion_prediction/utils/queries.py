@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session, literalquery
-from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS
+from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS, AGGREGATION_FUNCTIONS_w_ALIASES
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, Tuple
 
@@ -110,6 +110,11 @@ def get_full_features_query(
         undersampling_factor: int = 1,
         offset_limit_tuple: Tuple = None
 ):
+    aggregation_function_w_alias = {
+        key: value for key, value in AGGREGATION_FUNCTIONS_w_ALIASES.items()
+        if type(value()) == type(feature_aggregation_function())
+    }
+
     if not retrieving_positives:
         filtered_data = get_filtered_cte(
             # We retrieve an additional window length lookback of records to correctly construct the rolling window
@@ -152,13 +157,14 @@ def get_full_features_query(
         moving_window_length,
         start_time,
         json_key_column_names,
-        feature_aggregation_function
+        aggregation_function_w_alias
     )
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
         data_with_rolling_windows,
         start_time,
-        retrieving_positives
+        retrieving_positives,
+        aggregation_function_w_alias
     )
 
     filtered_w_derived_metrics_w_all_time_delta_columns = add_all_time_delta_columns(
@@ -606,8 +612,10 @@ def create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
         moving_window_length,
-        aggregation_function
+        aggregation_function_w_alias
 ):
+    aggregation_function_alias, aggregation_function = next(iter(aggregation_function_w_alias.items()))
+
     # {name of the resulting column : source / calculation}
     column_source_to_name_mapping = {
         'pageview': joined_queries.c['pageviews'],
@@ -638,19 +646,10 @@ def create_rolling_window_columns_config(
     # {naming suffix : related parameter for determining part of full window}
     rolling_agg_columns = []
 
-    aggregation_function_aliases = {
-        'count': func.sum,
-        'avg': func.avg,
-        'min': func.min,
-        'max': func.max
-    }
-
-    aggregation_function_alias = [key for key, value in aggregation_function_aliases.items() if type(value()) == type(aggregation_function())][0]
-
     # This will need to change if we implement multiple aggregation functions
     rolling_agg_variants = {
-        f'{aggregation_function_alias}': False,
-        f'{aggregation_function_alias}_last_window_half': True
+        f'{aggregation_function_w_alias}': False,
+        f'{aggregation_function_w_alias}_last_window_half': True
     }
 
     # this generates all basic rolling sum columns for both full and second half of the window
@@ -673,11 +672,14 @@ def create_rolling_window_columns_config(
 def filter_joined_queries_adding_derived_metrics(
     joined_partial_queries,
     start_time: datetime,
-    retrieving_past_positives
+    retrieving_past_positives,
+    aggregation_function_w_alias
 ):
+    print([column.name for column in joined_partial_queries.columns])
+    aggregation_function_alias, _ = next(iter(aggregation_function_w_alias.items()))
 
     finalizing_filter = [
-        joined_partial_queries.c['pageview_count'] > 0,
+        joined_partial_queries.c[f'pageview_{aggregation_function_alias}'] > 0,
         joined_partial_queries.c['row_number'] == 1
     ]
 

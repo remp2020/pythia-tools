@@ -1,4 +1,5 @@
 from typing import List, Dict
+from sqlalchemy import func
 
 
 CATEGORICAL_COLUMNS = ['device', 'browser', 'os', 'day_of_week']
@@ -98,6 +99,7 @@ DERIVED_METRICS_CONFIG = {
         'denominator': 'pageview_count'
     },
 }
+
 
 JSON_COLUMNS = ['referer_medium_pageviews', 'hour_interval_pageviews', 'article_category_pageviews']
 
@@ -218,4 +220,11 @@ LOGGING = {
         'level': 'INFO',
         'handlers': ['console']
     }
+}
+
+AGGREGATION_FUNCTIONS_w_ALIASES = {
+    'count': func.sum,
+    'avg': func.avg,
+    'min': func.min,
+    'max': func.max
 }
