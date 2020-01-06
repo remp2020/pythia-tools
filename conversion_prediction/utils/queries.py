@@ -10,7 +10,7 @@ from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session, literalquery
 from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, get_aggregation_function_config
 from sqlalchemy.dialects.postgresql import ARRAY
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 postgres_mappings = get_sqlalchemy_tables_w_session(
     'POSTGRES_CONNECTION_STRING',
@@ -43,10 +43,13 @@ def get_feature_frame_via_sqlalchemy(
     start_time: datetime,
     end_time: datetime,
     moving_window_length: int = 7,
-    feature_aggregation_function: func = func.sum,
+    feature_aggregation_functions: Dict[str, func] = None,
     undersampling_factor: int = 1,
     offset_limit_tuple: Tuple = None
 ):
+    if feature_aggregation_functions is None:
+        feature_aggregation_functions = {'count': func.sum}
+
     seed = postgres_session.query(func.setseed(0))
     postgres_session.execute(seed)
 
@@ -55,7 +58,7 @@ def get_feature_frame_via_sqlalchemy(
         end_time,
         moving_window_length,
         False,
-        feature_aggregation_function,
+        feature_aggregation_functions,
         undersampling_factor,
         offset_limit_tuple
     )
@@ -66,7 +69,7 @@ def get_feature_frame_via_sqlalchemy(
             end_time,
             moving_window_length,
             True,
-            feature_aggregation_function,
+            feature_aggregation_functions,
             offset_limit_tuple
         )
 
@@ -106,11 +109,14 @@ def get_full_features_query(
         end_time: datetime,
         moving_window_length: int = 7,
         retrieving_positives: bool = False,
-        feature_aggregation_function: func = func.sum,
+        feature_aggregation_functions: Dict[str, func] = None,
         undersampling_factor: int = 1,
         offset_limit_tuple: Tuple = None
 ):
-    aggregation_function_w_alias = get_aggregation_function_config(feature_aggregation_function)
+    if feature_aggregation_functions is None:
+        feature_aggregation_functions = {'count': func.sum}
+
+    aggregation_function_w_alias = get_aggregation_function_config(feature_aggregation_functions.values())
 
     if not retrieving_positives:
         filtered_data = get_filtered_cte(
@@ -154,14 +160,14 @@ def get_full_features_query(
         moving_window_length,
         start_time,
         json_key_column_names,
-        aggregation_function_w_alias
+        feature_aggregation_functions
     )
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
         data_with_rolling_windows,
         start_time,
         retrieving_positives,
-        aggregation_function_w_alias
+        feature_aggregation_functions
     )
 
     filtered_w_derived_metrics_w_all_time_delta_columns = add_all_time_delta_columns(
@@ -522,13 +528,13 @@ def calculate_rolling_windows_features(
         moving_window_length: int,
         start_time: datetime,
         json_key_column_names: List[str],
-        aggregation_function_w_alias
+        feature_aggregation_functions
 ):
     rolling_agg_columns_base = create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
         moving_window_length,
-        aggregation_function_w_alias
+        feature_aggregation_functions
     )
 
     queries_with_basic_window_columns = postgres_session.query(
@@ -609,10 +615,8 @@ def create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
         moving_window_length,
-        aggregation_function_w_alias
+        feature_aggregation_functions
 ):
-    aggregation_function_alias, aggregation_function = next(iter(aggregation_function_w_alias.items()))
-
     # {name of the resulting column : source / calculation},
     column_source_to_name_mapping = {
         'pageview': joined_queries.c['pageviews'],
@@ -632,27 +636,28 @@ def create_rolling_window_columns_config(
     )
 
     column_source_to_name_mapping.update(time_column_config)
-    # {naming suffix : related parameter for determining part of full window}
+
+    def get_rolling_agg_window_variants(aggregation_function_alias):
+        # {naming suffix : related parameter for determining part of full window}
+        return {
+            f'{aggregation_function_alias}': False,
+            f'{aggregation_function_alias}_last_window_half': True
+        }
+
     rolling_agg_columns = []
-
-    # This will need to change if we implement multiple aggregation functions
-    rolling_agg_variants = {
-        f'{aggregation_function_alias}': False,
-        f'{aggregation_function_alias}_last_window_half': True
-    }
-
     # this generates all basic rolling sum columns for both full and second half of the window
     rolling_agg_columns = rolling_agg_columns + [
         create_rolling_agg_function(
             moving_window_length,
             is_half_window,
-            aggregation_function if column_name != 'days_active' else func.sum,
+            aggregation_function,
             column_source,
             joined_queries.c['browser_id'],
             joined_queries.c['date']
         ).cast(Float).label(f'{column_name}_{suffix}' if column_name != 'days_active' else 'days_active_count')
         for column_name, column_source in column_source_to_name_mapping.items()
-        for suffix, is_half_window in rolling_agg_variants.items()
+        for aggregation_function_alias, aggregation_function in feature_aggregation_functions.items()
+        for suffix, is_half_window in get_rolling_agg_window_variants(aggregation_function_alias).items()
     ]
 
     # It only makes sense to aggregate active days by summing, all other aggregations would end up with a value
@@ -674,10 +679,7 @@ def create_rolling_window_columns_config(
             joined_queries.c['browser_id'],
             joined_queries.c['date']
         ).cast(Float).label(f'days_active_{suffix}')
-        for suffix, is_half_window in {
-            f'count': False,
-            f'count_last_window_half': True
-        }.items()
+        for suffix, is_half_window in get_rolling_agg_window_variants('count').items()
     ]
 
     return rolling_agg_columns
@@ -687,12 +689,14 @@ def filter_joined_queries_adding_derived_metrics(
     joined_partial_queries,
     start_time: datetime,
     retrieving_past_positives,
-    aggregation_function_w_alias
+    feature_aggregation_functions
 ):
-    aggregation_function_alias, _ = next(iter(aggregation_function_w_alias.items()))
+    # We will only check the first requested aggregation as we want to make sure there was at least 1 PV during the
+    # time window, which works for any aggregation type result for number of pageviews being higher than 0
+    first_aggregation_function_alias = next(iter(feature_aggregation_functions.keys()))
 
     finalizing_filter = [
-        joined_partial_queries.c[f'pageview_{aggregation_function_alias}'] > 0,
+        joined_partial_queries.c[f'pageview_{first_aggregation_function_alias}'] > 0,
         joined_partial_queries.c['row_number'] == 1
     ]
 

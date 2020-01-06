@@ -28,7 +28,8 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
 
 from utils.db_utils import create_predictions_table, create_predictions_job_log
-from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, get_aggregation_function_config
+from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, get_aggregation_function_config, \
+    AGGREGATION_FUNCTIONS_w_ALIASES
 from utils.enums import SplitType, NormalizedFeatureHandling
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
@@ -45,16 +46,16 @@ class ConversionPredictionModel(object):
             max_date: datetime = datetime.utcnow() - timedelta(days=1),
             moving_window_length: int = 7,
             normalization_handling: NormalizedFeatureHandling = NormalizedFeatureHandling.REPLACE_WITH,
-            outcome_labels: List[str] = list(LABELS.keys()),
+            outcome_labels: List[str] = tuple(LABELS.keys()),
             overwrite_files: bool = True,
             training_split_parameters=None,
-            model_arguments = None,
+            model_arguments=None,
             undersampling_factor=300,
             # This applies to all model artifacts that are not part of the flow output
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
             artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
-            feature_aggregation_function: sqlalchemy.func=func.sum
+            feature_aggregation_functions: Dict[str, sqlalchemy.func] = AGGREGATION_FUNCTIONS_w_ALIASES
     ):
         self.min_date = min_date
         self.max_date = max_date
@@ -62,10 +63,10 @@ class ConversionPredictionModel(object):
         self.overwrite_files = overwrite_files
         self.user_profiles = None
         self.normalization_handling = normalization_handling
-        self.feature_aggregation_function = get_aggregation_function_config(feature_aggregation_function)
+        self.feature_aggregation_functions = feature_aggregation_functions
         # next(iter())) returns the first element (defined by the dict attribute specified), since our
         # feature_aggregation_function is a one element dict, this way we get a single element
-        self.feature_columns = FeatureColumns(next(iter(self.feature_aggregation_function.keys())))
+        self.feature_columns = FeatureColumns(self.feature_aggregation_functions.keys())
         self.category_list_dict = {}
         self.le = LabelEncoder()
         self.outcome_labels = outcome_labels
@@ -143,7 +144,7 @@ class ConversionPredictionModel(object):
             self.min_date,
             self.max_date,
             self.moving_window,
-            next(iter(self.feature_aggregation_function.values())),
+            self.feature_aggregation_functions,
             self.undersampling_factor,
             offset_limit_tuple
         )
@@ -152,8 +153,11 @@ class ConversionPredictionModel(object):
                        if column not in self.user_profiles.columns
                        and column not in [
                               'checkout', 'payment', 'clv', 'days_since_last_subscription', 'article_pageviews_count',
-                              f'pageviews_{next(iter(self.feature_aggregation_function.keys()))}',
-                              'sum_paid', 'avg_price']
+                              'sum_paid', 'avg_price'] +
+                       [  # Iterate over all aggregation function types
+                              f'pageviews_{aggregation_function_alias}'
+                              for aggregation_function_alias in self.feature_aggregation_functions.keys()
+                       ]
                        ]:
             self.user_profiles[column] = 0.0
 

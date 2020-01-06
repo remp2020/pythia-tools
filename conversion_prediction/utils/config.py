@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from sqlalchemy import func
 
 
@@ -169,10 +169,14 @@ def unpack_profile_based_fields(
 
 
 class FeatureColumns(object):
-    def __init__(self, aggregation_function_alias):
-        numeric_columns_base = build_numeric_columns_base(aggregation_function_alias)
+    def __init__(self, aggregation_function_aliases):
+        # Add one version for each aggregation whenever available
+        numeric_columns_base = []
+        for aggregation_function_alias in aggregation_function_aliases:
+            numeric_columns_base = set(numeric_columns_base + build_numeric_columns_base(aggregation_function_alias))
+
         self.categorical_columns = CATEGORICAL_COLUMNS
-        self.base_numeric_columns = numeric_columns_base
+        self.base_numeric_columns = list(numeric_columns_base)
         self.profile_numeric_columns_from_json_fields = build_out_profile_based_column_names(False)
 
         self.numeric_columns = numeric_columns_base + \
@@ -237,12 +241,3 @@ AGGREGATION_FUNCTIONS_w_ALIASES = {
     'min': func.min,
     'max': func.max
 }
-
-
-def get_aggregation_function_config(aggregation_function: func) -> Dict[str, func]:
-    aggregation_function_w_alias = {
-        key: value for key, value in AGGREGATION_FUNCTIONS_w_ALIASES.items()
-        if type(value()) == type(aggregation_function())
-    }
-
-    return aggregation_function_w_alias
