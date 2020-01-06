@@ -28,8 +28,7 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
 
 from utils.db_utils import create_predictions_table, create_predictions_job_log
-from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, get_aggregation_function_config, \
-    AGGREGATION_FUNCTIONS_w_ALIASES
+from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES
 from utils.enums import SplitType, NormalizedFeatureHandling
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection

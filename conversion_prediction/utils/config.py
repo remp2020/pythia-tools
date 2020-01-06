@@ -6,7 +6,7 @@ CATEGORICAL_COLUMNS = ['device', 'browser', 'os', 'day_of_week']
 
 
 def build_numeric_columns_base(aggregation_function_alias: str) -> List:
-    numeric_columns_base = [
+    numeric_columns_base = (
         f'pageview_{aggregation_function_alias}',
         f'visit_{aggregation_function_alias}',
         f'direct_visit_{aggregation_function_alias}',
@@ -18,7 +18,7 @@ def build_numeric_columns_base(aggregation_function_alias: str) -> List:
         'timespent_per_visit',
         'timespent_per_pageview',
         'days_since_last_active'
-    ]
+    )
 
     return numeric_columns_base
 
@@ -171,15 +171,16 @@ def unpack_profile_based_fields(
 class FeatureColumns(object):
     def __init__(self, aggregation_function_aliases):
         # Add one version for each aggregation whenever available
-        numeric_columns_base = []
+        base_numeric_columns = set()
         for aggregation_function_alias in aggregation_function_aliases:
-            numeric_columns_base = set(numeric_columns_base + build_numeric_columns_base(aggregation_function_alias))
+            base_numeric_columns.update(build_numeric_columns_base(aggregation_function_alias))
+            
 
         self.categorical_columns = CATEGORICAL_COLUMNS
-        self.base_numeric_columns = list(numeric_columns_base)
+        self.base_numeric_columns = list(base_numeric_columns)
         self.profile_numeric_columns_from_json_fields = build_out_profile_based_column_names(False)
 
-        self.numeric_columns = numeric_columns_base + \
+        self.numeric_columns = self.base_numeric_columns + \
             unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields)
 
         self.numeric_columns_with_window_variants = create_window_variant_permuations(self.base_numeric_columns) + \

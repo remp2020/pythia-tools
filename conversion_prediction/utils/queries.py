@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session, literalquery
-from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, get_aggregation_function_config
+from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, Tuple, Dict
 
@@ -115,8 +115,6 @@ def get_full_features_query(
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
-
-    aggregation_function_w_alias = get_aggregation_function_config(feature_aggregation_functions.values())
 
     if not retrieving_positives:
         filtered_data = get_filtered_cte(
