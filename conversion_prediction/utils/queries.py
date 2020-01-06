@@ -619,14 +619,6 @@ def create_rolling_window_columns_config(
         'timespent': joined_queries.c['timespent'],
         'direct_visit': joined_queries.c['sessions_without_ref'],
         'visit': joined_queries.c['sessions'],
-        'days_active': case(
-            [
-                (
-                    joined_queries.c['date_w_gaps'] == None,
-                    0
-                )
-            ],
-            else_=1),
         # All json key columns have their own rolling sums
         **{
             column: joined_queries.c[column] for column in json_key_column_names
@@ -654,8 +646,6 @@ def create_rolling_window_columns_config(
         create_rolling_agg_function(
             moving_window_length,
             is_half_window,
-            # It only makes sense to aggregate active days by summing, all other aggregations would end up with a value
-            # of 1 after we eventually filter out windows with no active days in them
             aggregation_function if column_name != 'days_active' else func.sum,
             column_source,
             joined_queries.c['browser_id'],
@@ -663,6 +653,31 @@ def create_rolling_window_columns_config(
         ).cast(Float).label(f'{column_name}_{suffix}' if column_name != 'days_active' else 'days_active_count')
         for column_name, column_source in column_source_to_name_mapping.items()
         for suffix, is_half_window in rolling_agg_variants.items()
+    ]
+
+    # It only makes sense to aggregate active days by summing, all other aggregations would end up with a value
+    # of 1 after we eventually filter out windows with no active days in them, this is why we separate this feature
+    # out from the loop with all remaining features
+    rolling_agg_columns = rolling_agg_columns + [
+        create_rolling_agg_function(
+            moving_window_length,
+            is_half_window,
+            func.sum,
+            case(
+                [
+                    (
+                        joined_queries.c['date_w_gaps'] == None,
+                        0
+                    )
+                ],
+                else_=1),
+            joined_queries.c['browser_id'],
+            joined_queries.c['date']
+        ).cast(Float).label(f'days_active_{suffix}')
+        for suffix, is_half_window in {
+            f'count': False,
+            f'count_last_window_half': True
+        }.items()
     ]
 
     return rolling_agg_columns
