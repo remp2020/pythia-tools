@@ -701,7 +701,9 @@ def filter_joined_queries_adding_derived_metrics(
     if not retrieving_past_positives:
         finalizing_filter.append(joined_partial_queries.c['date'] >= start_time)
 
-    derived_metrics_config = build_derived_metrics_config(aggregation_function_alias)
+    derived_metrics_config = {}
+    for feature_aggregation_function_alias in feature_aggregation_functions.keys():
+        derived_metrics_config.update(build_derived_metrics_config(feature_aggregation_function_alias))
 
     filtered_w_derived_metrics = postgres_session.query(
         *[column.label(column.name)

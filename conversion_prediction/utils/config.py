@@ -11,12 +11,12 @@ def build_numeric_columns_base(aggregation_function_alias: str) -> List:
         f'visit_{aggregation_function_alias}',
         f'direct_visit_{aggregation_function_alias}',
         'days_active_count',
-        'pageviews_per_visit',
+        f'pageviews_per_visit_{aggregation_function_alias}',
         f'timespent_{aggregation_function_alias}',
-        'visits_per_day_active',
-        'direct_visits_share',
-        'timespent_per_visit',
-        'timespent_per_pageview',
+        f'visits_per_day_active_{aggregation_function_alias}',
+        f'direct_visits_share_{aggregation_function_alias}',
+        f'timespent_per_visit_{aggregation_function_alias}',
+        f'timespent_per_pageview_{aggregation_function_alias}',
         'days_since_last_active'
     )
 
@@ -84,23 +84,23 @@ CURRENT_MODEL_VERSION = '1.0'
 
 def build_derived_metrics_config(aggregation_function_alias: str) -> Dict:
     derived_metrics_config = {
-        'pageviews_per_visit': {
+        f'pageviews_per_visit_{aggregation_function_alias}': {
             'nominator': f'pageview_{aggregation_function_alias}',
             'denominator': f'visit_{aggregation_function_alias}'
         },
-        'visits_per_day_active': {
+        f'visits_per_day_active_{aggregation_function_alias}': {
             'nominator': f'visit_{aggregation_function_alias}',
             'denominator': f'days_active_count'
         },
-        'direct_visits_share': {
+        f'direct_visits_share_{aggregation_function_alias}': {
             'nominator': f'direct_visit_{aggregation_function_alias}',
             'denominator': f'visit_{aggregation_function_alias}'
         },
-        'timespent_per_visit': {
+        f'timespent_per_visit_{aggregation_function_alias}': {
             'nominator': f'timespent_{aggregation_function_alias}',
             'denominator': f'visit_{aggregation_function_alias}'
         },
-        'timespent_per_pageview': {
+        f'timespent_per_pageview_{aggregation_function_alias}': {
             'nominator': f'timespent_{aggregation_function_alias}',
             'denominator': f'pageview_{aggregation_function_alias}'
         },
