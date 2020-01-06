@@ -4,19 +4,23 @@ from sqlalchemy import func
 
 CATEGORICAL_COLUMNS = ['device', 'browser', 'os', 'day_of_week']
 
-NUMERIC_COLUMNS_BASE = [
-    'pageview_count',
-    'visit_count',
-    'direct_visit_count',
-    'days_active_count',
-    'pageviews_per_visit',
-    'timespent_sum',
-    'visits_per_day_active',
-    'direct_visits_share',
-    'timespent_per_visit',
-    'timespent_per_pageview',
-    'days_since_last_active'
-]
+
+def build_numeric_columns_base(aggregation_function_alias: str) -> List:
+    numeric_columns_base = [
+        f'pageview_{aggregation_function_alias}',
+        f'visit_{aggregation_function_alias}',
+        f'direct_visit_{aggregation_function_alias}',
+        'days_active_count',
+        'pageviews_per_visit',
+        f'timespent_{aggregation_function_alias}',
+        'visits_per_day_active',
+        'direct_visits_share',
+        'timespent_per_visit',
+        'timespent_per_pageview',
+        'days_since_last_active'
+    ]
+
+    return numeric_columns_base
 
 
 SUPPORTED_JSON_FIELDS_KEYS = {
@@ -78,7 +82,7 @@ LABELS = {'no_conversion': 'negative', 'shared_account_login': 'positive', 'conv
 CURRENT_MODEL_VERSION = '1.0'
 
 
-def build_derived_metrics_config(aggregation_function_alias):
+def build_derived_metrics_config(aggregation_function_alias: str) -> Dict:
     derived_metrics_config = {
         'pageviews_per_visit': {
             'nominator': f'pageview_{aggregation_function_alias}',
@@ -165,12 +169,13 @@ def unpack_profile_based_fields(
 
 
 class FeatureColumns(object):
-    def __init__(self):
+    def __init__(self, aggregation_function_alias):
+        numeric_columns_base = build_numeric_columns_base(aggregation_function_alias)
         self.categorical_columns = CATEGORICAL_COLUMNS
-        self.base_numeric_columns = NUMERIC_COLUMNS_BASE
+        self.base_numeric_columns = numeric_columns_base
         self.profile_numeric_columns_from_json_fields = build_out_profile_based_column_names(False)
 
-        self.numeric_columns = NUMERIC_COLUMNS_BASE + \
+        self.numeric_columns = numeric_columns_base + \
             unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields)
 
         self.numeric_columns_with_window_variants = create_window_variant_permuations(self.base_numeric_columns) + \
@@ -232,3 +237,12 @@ AGGREGATION_FUNCTIONS_w_ALIASES = {
     'min': func.min,
     'max': func.max
 }
+
+
+def get_aggregation_function_config(aggregation_function: func) -> Dict[str, func]:
+    aggregation_function_w_alias = {
+        key: value for key, value in AGGREGATION_FUNCTIONS_w_ALIASES.items()
+        if type(value()) == type(aggregation_function())
+    }
+
+    return aggregation_function_w_alias

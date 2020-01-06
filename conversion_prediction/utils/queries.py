@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session, literalquery
-from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, AGGREGATION_FUNCTIONS_w_ALIASES
+from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, get_aggregation_function_config
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, Tuple
 
@@ -110,10 +110,7 @@ def get_full_features_query(
         undersampling_factor: int = 1,
         offset_limit_tuple: Tuple = None
 ):
-    aggregation_function_w_alias = {
-        key: value for key, value in AGGREGATION_FUNCTIONS_w_ALIASES.items()
-        if type(value()) == type(feature_aggregation_function())
-    }
+    aggregation_function_w_alias = get_aggregation_function_config(feature_aggregation_function)
 
     if not retrieving_positives:
         filtered_data = get_filtered_cte(
@@ -616,7 +613,7 @@ def create_rolling_window_columns_config(
 ):
     aggregation_function_alias, aggregation_function = next(iter(aggregation_function_w_alias.items()))
 
-    # {name of the resulting column : source / calculation}
+    # {name of the resulting column : source / calculation},
     column_source_to_name_mapping = {
         'pageview': joined_queries.c['pageviews'],
         'timespent': joined_queries.c['timespent'],
@@ -657,11 +654,13 @@ def create_rolling_window_columns_config(
         create_rolling_agg_function(
             moving_window_length,
             is_half_window,
-            aggregation_function,
+            # It only makes sense to aggregate active days by summing, all other aggregations would end up with a value
+            # of 1 after we eventually filter out windows with no active days in them
+            aggregation_function if column_name != 'days_active' else func.sum,
             column_source,
             joined_queries.c['browser_id'],
             joined_queries.c['date']
-        ).cast(Float).label(f'{column_name}_{suffix}')
+        ).cast(Float).label(f'{column_name}_{suffix}' if column_name != 'days_active' else 'days_active_count')
         for column_name, column_source in column_source_to_name_mapping.items()
         for suffix, is_half_window in rolling_agg_variants.items()
     ]
@@ -675,7 +674,6 @@ def filter_joined_queries_adding_derived_metrics(
     retrieving_past_positives,
     aggregation_function_w_alias
 ):
-    print([column.name for column in joined_partial_queries.columns])
     aggregation_function_alias, _ = next(iter(aggregation_function_w_alias.items()))
 
     finalizing_filter = [
@@ -689,7 +687,7 @@ def filter_joined_queries_adding_derived_metrics(
     derived_metrics_config = build_derived_metrics_config(aggregation_function_alias)
 
     filtered_w_derived_metrics = postgres_session.query(
-        *[column.label(re.sub('timespent_count', 'timespent_sum', column.name))
+        *[column.label(column.name)
           for column in joined_partial_queries.columns
           if not re.search('outcome', column.name)
           and column.name != 'row_number'],
