@@ -87,7 +87,7 @@ class ConversionPredictionModel(object):
         self.predictions = pd.DataFrame()
         self.artifact_retention_mode = artifact_retention_mode
         self.artifacts_to_retain = artifacts_to_retain
-        self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', None)
+        self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', '')
         self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
         self.negative_outcome_frame = pd.DataFrame()
         self.browser_day_combinations_original_set = pd.DataFrame()
