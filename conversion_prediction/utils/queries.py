@@ -7,7 +7,7 @@ from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
-from .db_utils import get_sqlalchemy_tables_w_session, literalquery
+from .db_utils import get_sqlalchemy_tables_w_session
 from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, Tuple, Dict
@@ -19,24 +19,6 @@ postgres_mappings = get_sqlalchemy_tables_w_session(
 )
 postgres_session = postgres_mappings['session']
 aggregated_browser_days = postgres_mappings['aggregated_browser_days']
-
-predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-    'MYSQL_CONNECTION_STRING',
-    'predplatne',
-    ['payments', 'subscriptions']
-)
-
-mysql_predplatne_session = predplatne_mysql_mappings['session']
-payments = predplatne_mysql_mappings['payments']
-subscriptions = predplatne_mysql_mappings['subscriptions']
-
-beam_mysql_mappings = get_sqlalchemy_tables_w_session(
-    'MYSQL_CONNECTION_STRING',
-    'remp_beam',
-    ['article_pageviews']
-)
-mysql_beam_session = beam_mysql_mappings['session']
-article_pageviews = beam_mysql_mappings['article_pageviews']
 
 
 def get_feature_frame_via_sqlalchemy(
@@ -767,6 +749,16 @@ def add_all_time_delta_columns(
 
 
 def get_payment_history_features(end_time: datetime):
+    predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
+        'MYSQL_CONNECTION_STRING',
+        'predplatne',
+        ['payments', 'subscriptions']
+    )
+
+    mysql_predplatne_session = predplatne_mysql_mappings['session']
+    payments = predplatne_mysql_mappings['payments']
+    subscriptions = predplatne_mysql_mappings['subscriptions']
+
     clv = mysql_predplatne_session.query(
         func.sum(payments.c['amount']).label('clv'),
         payments.c['user_id']
@@ -809,10 +801,29 @@ def get_payment_history_features(end_time: datetime):
         'days_since_last_subscription'
     ].astype(float)
 
+    mysql_predplatne_session.close()
+
     return user_payment_history
 
 
 def get_global_context(start_time, end_time):
+    beam_mysql_mappings = get_sqlalchemy_tables_w_session(
+        'MYSQL_CONNECTION_STRING',
+        'remp_beam',
+        ['article_pageviews']
+    )
+    mysql_beam_session = beam_mysql_mappings['session']
+    article_pageviews = beam_mysql_mappings['article_pageviews']
+
+    predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
+        'MYSQL_CONNECTION_STRING',
+        'predplatne',
+        ['payments']
+    )
+
+    mysql_predplatne_session = predplatne_mysql_mappings['session']
+    payments = predplatne_mysql_mappings['payments']
+
     # We create two subqueries using the same data to merge twice in order to get rolling sum in mysql
     def get_payments_filtered():
         payments_filtered = mysql_predplatne_session.query(
@@ -888,6 +899,9 @@ def get_global_context(start_time, end_time):
         context_query.session.bind
     )
 
+    mysql_predplatne_session.close()
+    mysql_beam_session.close()
+    
     return context
 
 
