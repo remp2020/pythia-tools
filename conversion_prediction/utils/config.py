@@ -90,7 +90,7 @@ def build_derived_metrics_config(aggregation_function_alias: str) -> Dict:
         },
         'visits_per_day_active': {
             'nominator': f'visit_{aggregation_function_alias}',
-            'denominator': f'days_active_{aggregation_function_alias}'
+            'denominator': f'days_active_count'
         },
         'direct_visits_share': {
             'nominator': f'direct_visit_{aggregation_function_alias}',
