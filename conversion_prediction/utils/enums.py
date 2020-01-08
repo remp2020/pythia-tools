@@ -65,6 +65,8 @@ class ArtifactRetentionCollection(Enum):
         ModelArtifacts.UNDERSAMPLED_TRAIN_DATA_OUTCOME,
         ModelArtifacts.TEST_DATA_FEATURES,
         ModelArtifacts.TEST_DATA_OUTCOME,
+        ModelArtifacts.OUTCOME_FRAME,
+        ModelArtifacts.VARIABLE_IMPORTANCES
     ]
     UNDERSAMPLING_TUNING = [
         ModelArtifacts.USER_PROFILES,
@@ -72,6 +74,8 @@ class ArtifactRetentionCollection(Enum):
         ModelArtifacts.TRAIN_DATA_OUTCOME,
         ModelArtifacts.TEST_DATA_FEATURES,
         ModelArtifacts.TEST_DATA_OUTCOME,
+        ModelArtifacts.OUTCOME_FRAME,
+        ModelArtifacts.VARIABLE_IMPORTANCES
     ]
     MODEL_RETRAINING = [
         ModelArtifacts.MODEL,
