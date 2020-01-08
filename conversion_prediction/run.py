@@ -640,30 +640,6 @@ class ConversionPredictionModel(object):
                 None if self.path_to_model_files == '' else self.path_to_model_files):
             os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
 
-    # Deprecated, sampling now happens when sourcing from DB
-    def undersample_majority_class(self):
-        '''
-        Requires:
-            - user_profiles
-            - undersampling_factor
-        A function that undersamples majority class to help the algorithm identify the classes with
-        lower occurence. Operates based on an undersampling factor.
-        TODO: Currently hardcodes the conversion prediction class encoding, could be done based on actual frequencies
-        TODO: or at least not use check label encodings (0 = no_conversion, 1 = conversion, 2 = shared_account_login)
-        :return:
-        '''
-        joined_df = pd.concat([self.X_train, self.Y_train], axis=1)
-        positive_outcomes = joined_df[joined_df['outcome'].isin([0, 2])]
-        negative_outcome = joined_df[joined_df['outcome'] == 1].sample(
-            frac=1 / self.undersampling_factor,
-            random_state=42
-        )
-        sampled_df = pd.concat([positive_outcomes, negative_outcome], axis=0)
-        self.X_train_undersampled = sampled_df.drop('outcome', axis=1)
-        self.Y_train_undersampled = sampled_df['outcome']
-
-        logger.info('  * Train undersampling success')
-
     def train_model(
             self):
         '''
