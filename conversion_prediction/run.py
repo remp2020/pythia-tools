@@ -995,7 +995,9 @@ class ConversionPredictionModel(object):
         # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
         if not self.dry_run:
             self.predictions.drop('outcome', axis=1, inplace=True)
+
             logger.info(f'Storing predicted data')
+
             _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
             create_predictions_table(postgres)
             create_predictions_job_log(postgres)
