@@ -482,7 +482,7 @@ class ConversionPredictionModel(object):
                 ].value_counts(normalize=True)[self.user_profiles[column].value_counts(normalize=True) < 0.05].index)
             self.user_profiles.loc[self.user_profiles[column].isin(column_values_to_recode), column] = 'Other'
 
-    def generate_category_lists_dict(self) -> Dict:
+    def generate_category_list_dict(self) -> Dict:
         '''
         Requires:
             - user_profiles
@@ -575,11 +575,11 @@ class ConversionPredictionModel(object):
 
         self.X_train = self.user_profiles.iloc[train_indices].drop(columns=['outcome', 'user_ids'])
         self.X_test = self.user_profiles.iloc[test_indices].drop(columns=['outcome', 'user_ids'])
-        self.generate_category_lists_dict()
+        self.generate_category_list_dict()
 
         with open(
                 f'{self.path_to_model_files}category_lists_{self.model_date}.json', 'w') as outfile:
-            json.dump(self.category_lists_dict, outfile)
+            json.dump(self.category_list_dict, outfile)
 
         self.X_train = self.replace_dummy_columns_with_dummies(self.X_train)
         self.X_test = self.replace_dummy_columns_with_dummies(self.X_test)
