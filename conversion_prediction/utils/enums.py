@@ -85,4 +85,3 @@ class ArtifactRetentionCollection(Enum):
     PREDICTION =[
         ModelArtifacts.PREDICTIONS
     ]
-
