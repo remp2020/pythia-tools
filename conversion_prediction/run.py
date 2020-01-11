@@ -170,11 +170,11 @@ class ConversionPredictionModel(object):
             self.feature_columns.add_global_context_features()
             logger.info('Successfully added global context features from mysql')
         except Exception as e:
-             logger.info(
+            logger.info(
                 f'''Failed adding global context features from mysql with exception:
-               {e};
-               proceeding with remaining features''')
-
+                {e};
+                proceeding with remaining features''')
+                
         try:
             self.get_payment_window_features_from_csvs()
             self.feature_columns.add_commerce_csv_features()
