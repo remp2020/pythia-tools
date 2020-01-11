@@ -353,11 +353,10 @@ class ConversionPredictionModel(object):
         context.index = context['date']
         context.drop('date', axis=1, inplace=True)
         context.index = pd.to_datetime(context.index)
-        dates = [date.date() for date in pd.date_range(context.index.min(), context.index.max())]
         rolling_context = (context.groupby('date')
-                                             .fillna(0)  # fill each missing group with 0
-                                             .rolling(7, min_periods=1)
-                                             .sum())  # do a rolling sum
+                           .fillna(0)  # fill each missing group with 0
+                           .rolling(7, min_periods=1)
+                           .sum())  # do a rolling sum
         rolling_context.reset_index(inplace=True)
         rolling_context['avg_price'] = rolling_context['sum_paid'] / rolling_context['payment_count']
         rolling_context['date'] = pd.to_datetime(rolling_context['date']).dt.date
