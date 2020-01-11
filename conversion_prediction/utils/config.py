@@ -174,7 +174,6 @@ class FeatureColumns(object):
         base_numeric_columns = set()
         for aggregation_function_alias in aggregation_function_aliases:
             base_numeric_columns.update(build_numeric_columns_base(aggregation_function_alias))
-            
 
         self.categorical_columns = CATEGORICAL_COLUMNS
         self.base_numeric_columns = list(base_numeric_columns)
