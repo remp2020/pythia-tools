@@ -53,7 +53,8 @@ class ConversionPredictionModel(object):
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
             artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
-            feature_aggregation_functions: Dict[str, sqlalchemy.func] = AGGREGATION_FUNCTIONS_w_ALIASES
+            feature_aggregation_functions: Dict[str, sqlalchemy.func] = AGGREGATION_FUNCTIONS_w_ALIASES,
+            dry_run: bool = False
     ):
         self.min_date = min_date
         self.max_date = max_date
@@ -91,6 +92,8 @@ class ConversionPredictionModel(object):
         self.negative_outcome_frame = pd.DataFrame()
         self.browser_day_combinations_original_set = pd.DataFrame()
         self.variable_importances = pd.Series()
+        self.dry_run = dry_run
+        self.prediction_job_log = None
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -985,16 +988,18 @@ class ConversionPredictionModel(object):
         _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
         create_predictions_table(postgres)
         create_predictions_job_log(postgres)
-        postgres.execute(
-            sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
-        )
 
-        prediction_job_log = self.predictions[
-            ['date', 'model_version', 'created_at', 'updated_at']].head(1).to_dict('records')[0]
-        prediction_job_log['rows_predicted'] = len(self.predictions)
-        postgres.execute(
-            sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [prediction_job_log]
-        )
+        if not self.dry_run:
+            postgres.execute(
+                sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
+            )
+
+            self.prediction_job_log = self.predictions[
+                ['date', 'model_version', 'created_at', 'updated_at']].head(1).to_dict('records')[0]
+            self.prediction_job_log['rows_predicted'] = len(self.predictions)
+            postgres.execute(
+                sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
+            )
 
         logger.info('Predictions are now ready')
 
