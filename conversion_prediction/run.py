@@ -85,7 +85,7 @@ class ConversionPredictionModel(object):
         self.prediction_data = pd.DataFrame()
         self.predictions = pd.DataFrame()
         self.artifact_retention_mode = artifact_retention_mode
-        self.artifacts_to_retain = artifacts_to_retain
+        self.artifacts_to_retain = [artifact.value for artifact in artifacts_to_retain.value]
         self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', '')
         self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
         self.negative_outcome_frame = pd.DataFrame()
@@ -108,6 +108,7 @@ class ConversionPredictionModel(object):
         A function that handles model artifacts that we don't need as an output currently by either
         storing and dumping or by straight up dumping them
         '''
+        print()
         if self.artifact_retention_mode == ArtifactRetentionMode.DUMP:
             if artifact == ModelArtifacts.MODEL:
                 joblib.dump(
@@ -621,8 +622,8 @@ class ConversionPredictionModel(object):
         ]
         self.browser_day_combinations_original_set['used_in_training'] = True
 
-        if ModelArtifacts.USER_PROFILES not in self.artifacts_to_retain.value:
-            ConversionPredictionModel.artifact_handler(self, ModelArtifacts.USER_PROFILES)
+        if ModelArtifacts.USER_PROFILES.value not in self.artifacts_to_retain:
+            self.artifact_handler(ModelArtifacts.USER_PROFILES)
 
     def delete_existing_model_file_for_same_date(self, filename: str) -> datetime.date:
         '''
@@ -858,8 +859,8 @@ class ConversionPredictionModel(object):
             ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
             ModelArtifacts.TEST_DATA_FEATURES, ModelArtifacts.TEST_DATA_OUTCOME,
         ]:
-            if artifact not in self.artifacts_to_retain.value:
-                ConversionPredictionModel.artifact_handler(self, artifact)
+            if artifact.value not in self.artifacts_to_retain:
+                self.artifact_handler(artifact)
 
     def load_model_related_constructs(self):
         '''
@@ -998,7 +999,7 @@ class ConversionPredictionModel(object):
         logger.info('Predictions are now ready')
 
         for artifact in [ModelArtifacts.MODEL, ModelArtifacts.PREDICTION_DATA, ModelArtifacts.USER_PROFILES]:
-            ConversionPredictionModel.artifact_handler(self, artifact)
+            self.artifact_handler(artifact)
 
 
 def mkdatetime(datestr: str) -> datetime:
