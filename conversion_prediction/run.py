@@ -567,11 +567,11 @@ class ConversionPredictionModel(object):
 
         self.X_train = self.user_profiles.iloc[train_indices].drop(columns=['outcome', 'user_ids'])
         self.X_test = self.user_profiles.iloc[test_indices].drop(columns=['outcome', 'user_ids'])
-        category_lists_dict = self.generate_category_lists_dict()
+        self.generate_category_lists_dict()
 
         with open(
                 f'{self.path_to_model_files}category_lists_{self.model_date}.json', 'w') as outfile:
-            json.dump(category_lists_dict, outfile)
+            json.dump(self.category_lists_dict, outfile)
 
         self.X_train = self.replace_dummy_columns_with_dummies(self.X_train)
         self.X_test = self.replace_dummy_columns_with_dummies(self.X_test)
@@ -982,7 +982,10 @@ class ConversionPredictionModel(object):
         self.predictions['model_version'] = CURRENT_MODEL_VERSION
         self.predictions['created_at'] = datetime.utcnow()
         self.predictions['updated_at'] = datetime.utcnow()
-        self.predictions.drop('outcome', axis=1, inplace=True)
+        
+        # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
+        if self.dry_run:
+            self.predictions.drop('outcome', axis=1, inplace=True)
 
         logger.info(f'Storing predicted data')
         _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
