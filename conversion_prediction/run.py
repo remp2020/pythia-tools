@@ -189,7 +189,7 @@ class ConversionPredictionModel(object):
                 {e};
                 proceeding with remaining features''')
             # To make sure these columns are filled in case of failure to retrieve
-            for column in ['checkout', 'payment']:
+            for column in ['checkout', 'payment', 'purchase']:
                 self.user_profiles[column] = 0.0
         
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
@@ -951,7 +951,7 @@ class ConversionPredictionModel(object):
         if not self.X_train.empty:
             for column in [column for column in self.X_train.columns if column not in self.prediction_data.columns]:
                 self.prediction_data[column] = 0.0
-        self.prediction_data = self.prediction_data[list(self.X_train.columns)]
+            self.prediction_data = self.prediction_data[list(self.X_train.columns)]
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
         logger.info('  * Prediction generation success, handling artifacts')
 
