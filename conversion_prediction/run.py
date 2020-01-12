@@ -127,7 +127,8 @@ class ConversionPredictionModel(object):
 
     def get_user_profiles_by_date(
             self,
-            offset_limit_tuple: Tuple = None
+            offset_limit_tuple: Tuple = None,
+            train: bool = True
     ):
         '''
         Requires:
@@ -148,7 +149,8 @@ class ConversionPredictionModel(object):
             self.moving_window,
             self.feature_aggregation_functions,
             self.undersampling_factor,
-            offset_limit_tuple
+            offset_limit_tuple,
+            train
         )
 
         for column in [column for column in self.feature_columns.return_feature_list()
@@ -429,7 +431,8 @@ class ConversionPredictionModel(object):
 
     def create_feature_frame(
             self,
-            offset_limit_tuple: Tuple = None
+            offset_limit_tuple: Tuple = None,
+            train: bool = True
     ):
         '''
         Requires:
@@ -442,7 +445,7 @@ class ConversionPredictionModel(object):
         that were active a day ago
         '''
         logger.info(f'  * Loading user profiles')
-        self.get_user_profiles_by_date(offset_limit_tuple)
+        self.get_user_profiles_by_date(offset_limit_tuple, train)
         logger.info(f'  * Processing user profiles')
         test_outcome = self.user_profiles['outcome'].fillna(
             self.user_profiles.groupby('browser_id')['outcome'].fillna(method='bfill')
@@ -786,7 +789,7 @@ class ConversionPredictionModel(object):
         for i in data_row_range:
             logging.info('  * Fetching negatives chunk')
             logger.setLevel(logging.ERROR)
-            self.create_feature_frame((i, int(browsers_expected / 5)))
+            self.create_feature_frame((i, int(browsers_expected / 5)), train=False)
             logger.setLevel(logging.INFO)
             self.remove_rows_from_original_flow()
             logging.info('  * Removing negative outcomes from training set from negatives chunk')
@@ -844,7 +847,7 @@ class ConversionPredictionModel(object):
         '''
         logger.info(f'Executing training pipeline')
         if self.user_profiles is None:
-            self.create_feature_frame()
+            self.create_feature_frame(train=True)
 
         if self.overwrite_files:
             for model_file in ['category_lists', 'scaler', 'model']:
@@ -984,7 +987,7 @@ class ConversionPredictionModel(object):
         Generates outcome prediction for conversion and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-        self.create_feature_frame()
+        self.create_feature_frame(train=False)
         self.batch_predict(self.user_profiles)
 
         self.predictions['model_version'] = CURRENT_MODEL_VERSION
@@ -1089,6 +1092,7 @@ if __name__ == "__main__":
         conversion_prediction = ConversionPredictionModel(
             min_date=args['min_date'],
             max_date=args['max_date'],
+            undersampling_factor=1,
             moving_window_length=args['moving_window_length'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.PREDICTION

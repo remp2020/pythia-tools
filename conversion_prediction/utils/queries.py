@@ -27,7 +27,8 @@ def get_feature_frame_via_sqlalchemy(
     moving_window_length: int = 7,
     feature_aggregation_functions: Dict[str, func] = None,
     undersampling_factor: int = 1,
-    offset_limit_tuple: Tuple = None
+    offset_limit_tuple: Tuple = None,
+    train: bool = True
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
@@ -52,7 +53,9 @@ def get_feature_frame_via_sqlalchemy(
             moving_window_length,
             True,
             feature_aggregation_functions,
-            offset_limit_tuple
+            undersampling_factor,
+            offset_limit_tuple,
+            train
         )
 
         column_names_current_data = [column.name for column in full_query_negatives.columns]
@@ -93,7 +96,8 @@ def get_full_features_query(
         retrieving_positives: bool = False,
         feature_aggregation_functions: Dict[str, func] = None,
         undersampling_factor: int = 1,
-        offset_limit_tuple: Tuple = None
+        offset_limit_tuple: Tuple = None,
+        train: bool = True
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
@@ -109,9 +113,11 @@ def get_full_features_query(
             offset_limit_tuple
         )
     else:
+        # The additional 90 days look back is to also retrieve past positives due to label imbalance, this only
+        # happens with training
+        lookback_days = 90 if train else 0
         filtered_data = get_filtered_cte(
-            # The additional 90 days lookback is to also retrieve past positives due to label imbalance
-            start_time - timedelta(days=90) - timedelta(days=moving_window_length),
+            start_time - timedelta(days=lookback_days) - timedelta(days=moving_window_length),
             end_time,
             True,
             None
