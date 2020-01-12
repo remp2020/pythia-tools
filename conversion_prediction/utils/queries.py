@@ -176,15 +176,38 @@ def get_filtered_cte(
     undersampling_factor: int = 1,
     offset_limit_tuple: Tuple = None
 ):
-    label_filter = aggregated_browser_days.c['next_7_days_event'].in_(
-                [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
-    )
+    # This transforms the 7 day event into 1 day event
+    aggregated_browser_days_w_1_day_event_window = postgres_session.query(
+        *[aggregated_browser_days.c[column.name].label(column.name) for column in aggregated_browser_days.columns
+          if column.name != 'next_7_days_event'],
+        case(
+            [
+                (and_(
+                    aggregated_browser_days.c['next_7_days_event'].in_(
+                        [label for label, label_type in LABELS.items() if label_type == 'positive']
+                    ),
+                    func.extract(
+                        'day',
+                        aggregated_browser_days.c['next_event_time'] - aggregated_browser_days.c['date']
+                    ) >= 1
+                ),
+                 aggregated_browser_days.c['next_7_days_event'])
+            ],
+            else_=[label for label, label_type in LABELS.items() if label_type == 'negative'][0]
+        ).label('next_7_days_event')
+    ).subquery()
+
+    label_filter = [
+        aggregated_browser_days_w_1_day_event_window.c['next_7_days_event'].in_(
+            [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
+        )
+    ]
 
     filtered_data = postgres_session.query(
-        aggregated_browser_days
+        aggregated_browser_days_w_1_day_event_window
     ).filter(
-        aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
-        aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP),
+        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time, TIMESTAMP),
+        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, TIMESTAMP),
         label_filter
     ).subquery()
 
