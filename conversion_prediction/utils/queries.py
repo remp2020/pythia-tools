@@ -197,11 +197,9 @@ def get_filtered_cte(
         ).label('next_7_days_event')
     ).subquery()
 
-    label_filter = [
-        aggregated_browser_days_w_1_day_event_window.c['next_7_days_event'].in_(
-            [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
-        )
-    ]
+    label_filter = aggregated_browser_days_w_1_day_event_window.c['next_7_days_event'].in_(
+        [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
+    )
 
     filtered_data = postgres_session.query(
         aggregated_browser_days_w_1_day_event_window

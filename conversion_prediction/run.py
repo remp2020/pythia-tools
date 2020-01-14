@@ -191,7 +191,7 @@ class ConversionPredictionModel(object):
                 {e};
                 proceeding with remaining features''')
             # To make sure these columns are filled in case of failure to retrieve
-            for column in ['checkout', 'payment']:
+            for column in ['checkout', 'payment', 'purchase']:
                 self.user_profiles[column] = 0.0
         
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
