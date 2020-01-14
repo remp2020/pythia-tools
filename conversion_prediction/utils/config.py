@@ -185,7 +185,7 @@ class FeatureColumns(object):
         )
 
         self.numeric_columns = self.base_numeric_columns + \
-            unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields)
+                               unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields)
 
         self.numeric_columns_with_window_variants = create_window_variant_permuations(self.base_numeric_columns) + \
             self.base_numeric_columns

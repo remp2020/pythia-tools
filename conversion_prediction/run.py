@@ -916,6 +916,11 @@ class ConversionPredictionModel(object):
         if not sampled_negatives_results:
             self.collect_outcomes_for_all_negatives()
         self.remove_model_training_artefacts()
+        # TODO: This would eventually be replaced with storing variable importances to DB
+        self.variable_importances.to_csv(
+            f'{self.path_to_model_files}variable_importances_{self.model_date}.csv',
+            index=False
+        )
 
     def remove_model_training_artefacts(self):
         for artifact in [
@@ -935,9 +940,9 @@ class ConversionPredictionModel(object):
 
         model_related_file_list = os.listdir(self.path_to_model_files)
         last_model_related_files = {}
-        for model_related_file in ['category_lists', 'scaler', 'model']:
-            last_file_date = {parse(re.sub(f'{model_related_file}_|.json|.pkl|None', '', filename)):
-                              abs(parse(re.sub(f'{model_related_file}_|.json|.pkl|None', '', filename)).date()
+        for model_related_file in ['category_lists', 'scaler', 'model', 'variable_importances']:
+            last_file_date = {parse(re.sub(f'{model_related_file}_|.json|.pkl|.csv|None', '', filename)):
+                              abs(parse(re.sub(f'{model_related_file}_|.json|.pkl|.csv|None', '', filename)).date()
                                   - self.scoring_date.date())
                               for filename in model_related_file_list
                               if re.search(f'{model_related_file}_', filename)}
@@ -948,15 +953,21 @@ class ConversionPredictionModel(object):
                 category_list date: {last_model_related_files['category_lists']}
                 scaler date: {last_model_related_files['scaler']}
                 model date: {last_model_related_files['model']}
+                'variable importances': {last_model_related_files['variable_importances_']}
                 ''')
+
         if not self.path_to_model_files:
             self.path_to_model_files = ''
         with open(self.path_to_model_files +
                   'category_lists_' + str(last_model_related_files['category_lists']) + '.json', 'r') as outfile:
             self.category_list_dict = json.load(outfile)
 
-        self.scaler = joblib.load(self.path_to_model_files + 'scaler_' + str(last_model_related_files['scaler']) + '.pkl')
-        self.model = joblib.load(self.path_to_model_files + 'model_' + str(last_model_related_files['model']) + '.pkl')
+        self.scaler = joblib.load(f"{self.path_to_model_files}scaler{str(last_model_related_files['scaler'])}.pkl")
+        self.model = joblib.load(f"{self.path_to_model_files}model_{str(last_model_related_files['model'])}.pkl")
+        #TODO: This would eventually be replaced with loading variable importances from DB
+        self.variable_importances = pd.read_csv(
+            f"{self.path_to_model_files}variable_importances{str(last_model_related_files['variable_importances'])}.csv"
+        )
 
         logger.info('  * Model constructs loaded')
 
@@ -996,7 +1007,14 @@ class ConversionPredictionModel(object):
 
         self.prediction_data = self.replace_dummy_columns_with_dummies(self.prediction_data)
 
-        self.prediction_data = self.prediction_data.drop(['outcome', 'user_ids'], axis=1)
+        self.prediction_data.drop(['outcome', 'user_ids'], axis=1, inplace=True)
+        # Sometimes we can have a json column key that appears in prediction data, but wasn't present in train
+        self.prediction_data.drop(
+            [column for column in self.prediction_data.columns if column not in self.variable_importances],
+            axis=1,
+            inplace=True
+        )
+
         logger.info('  * Prediction data ready')
 
         self.prediction_data.fillna(0.0, inplace=True)
