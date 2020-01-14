@@ -113,7 +113,8 @@ JSON_COLUMNS = ['referer_medium_pageviews', 'hour_interval_pageviews', 'article_
 
 
 def build_out_profile_based_column_names(
-        normalized: bool = False
+        normalized: bool = False,
+        aggregation_function_aliases: str = 'count'
 ):
     if normalized is True:
         suffix = '_normalized'
@@ -122,23 +123,24 @@ def build_out_profile_based_column_names(
     profile_numeric_columns_from_json_fields = {
         # Referral features
         'referer_medium_pageviews': [
-            [f'referer_medium_pageviews_{referral_category}_count{suffix}'
+            [f'referer_medium_pageviews_{referral_category}_{aggregation_function_aliases}{suffix}'
              for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium_pageviews']]
         ],
         # Article category (section) features
         'article_category_pageviews': [
-            [f'article_category_pageviews_{article_category}_count{suffix}'
+            [f'article_category_pageviews_{article_category}_{aggregation_function_aliases}{suffix}'
              for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']]
         ],
         # Time based features combining day_of_week with hour interval
         'hour_interval_pageviews': [
-            [f'dow_{dow}_hours_{hours}_count{suffix}'
+            [f'dow_{dow}_hours_{hours}_{aggregation_function_aliases}{suffix}'
              for dow in range(0, 7)
              for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']
              ],
-            [f'dow_{dow}_count{suffix}' for dow in range(0, 7)
+            [f'dow_{dow}_{aggregation_function_aliases}{suffix}' for dow in range(0, 7)
              ],
-            [f'hours_{hours}_count{suffix}' for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
+            [f'hours_{hours}_{aggregation_function_aliases}{suffix}'
+             for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
         ]
     }
 
@@ -177,7 +179,10 @@ class FeatureColumns(object):
 
         self.categorical_columns = CATEGORICAL_COLUMNS
         self.base_numeric_columns = list(base_numeric_columns)
-        self.profile_numeric_columns_from_json_fields = build_out_profile_based_column_names(False)
+        self.profile_numeric_columns_from_json_fields = build_out_profile_based_column_names(
+            False,
+            aggregation_function_aliases
+        )
 
         self.numeric_columns = self.base_numeric_columns + \
             unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields)
