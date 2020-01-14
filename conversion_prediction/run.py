@@ -666,7 +666,6 @@ class ConversionPredictionModel(object):
             - artifact_retention_mode
         Trains a new model given a full dataset
         '''
-        label_range = list(range(0, len(self.outcome_labels)))
         if 0 not in self.user_profiles['outcome'].unique():
             self.user_profiles['outcome'] = self.le.transform(self.user_profiles['outcome'])
 
@@ -681,27 +680,38 @@ class ConversionPredictionModel(object):
 
         logger.info('  * Model training complete, generating outcome frame')
 
-        self.outcome_frame = pd.concat([
-            pd.DataFrame(list(precision_recall_fscore_support(
-                self.Y_train,
-                self.model.predict(self.X_train),
-                labels=label_range))
-            ),
-            pd.DataFrame(list(
-                precision_recall_fscore_support(
-                    self.Y_test,
-                    self.model.predict(self.X_test),
-                    labels=label_range))
-            )
-        ],
-            axis=1)
+        # TODO: Remove after testing
+        # self.outcome_frame = pd.concat([
+        #     pd.DataFrame(list(precision_recall_fscore_support(
+        #         self.Y_train,
+        #         self.model.predict(self.X_train),
+        #         labels=label_range))
+        #     ),
+        #     pd.DataFrame(list(
+        #         precision_recall_fscore_support(
+        #             self.Y_test,
+        #             self.model.predict(self.X_test),
+        #             labels=label_range))
+        #     )
+        # ],
+        #     axis=1)
+        #
+        # self.format_outcome_frame(
+        #     self.outcome_frame,
+        #     label_range,
+        #     self.le
+        # )
 
-        # TODO: Remove after testing flow change
-        # self.collect_outcomes_for_all_negatives()
-
-        self.format_outcome_frame(
-            self.outcome_frame,
-            label_range,
+        self.outcome_frame = self.create_outcome_frame(
+            {
+                'train': self.Y_train,
+                'test': self.model.predict(self.X_train)
+            },
+            {
+                'train': self.Y_test,
+                'test': self.model.predict(self.X_test)
+            },
+            self.outcome_labels,
             self.le
         )
 
@@ -713,41 +723,78 @@ class ConversionPredictionModel(object):
         logger.info('  * Outcome frame generated')
 
     @staticmethod
-    def format_outcome_frame(
-            outcome_frame: pd.DataFrame,
-            label_range: List[str],
-            label_encoder: LabelEncoder,
-            sets_in_outcome: List[str] = ['train', 'test']
+    def create_outcome_frame(
+            labels_actual: Dict[str, np.array],
+            labels_predicted: Dict[str, np.array],
+            outcome_labels,
+            label_encoder
     ):
-        '''
-        Takes a given outcome frame and polishes the row & column names
-        :param outcome_frame:
-        :param label_range:
-        :param label_encoder:
-        :param sets_in_outcome
-        :return:
-        '''
-        train_outcome_columns = (
-            [str(label) + '_train' for label in outcome_frame.columns[0:len(label_range)]]
-            if 'train' in sets_in_outcome
-            else []
-        )
-        test_outcome_columns = (
-            [
-                str(label) + '_test' for label in outcome_frame.columns[
-                    # We either have 6 columns (3 for train and 3 for test) or 3 (test only), therefore we need to adjust indexing 
-                    len(label_range) * (len(sets_in_outcome) - 1 ):(len(sets_in_outcome)*len(label_range))]
-            ]
-            if 'test' in sets_in_outcome
-            else []
-        )
-        outcome_frame.columns = train_outcome_columns + test_outcome_columns
+        if len(labels_actual) != len(labels_predicted):
+            raise ValueError('Trying to pass differing lengths of actual and predicted data')
+        elif labels_actual.keys() != labels_predicted.keys():
+            raise ValueError('Unaligned number of outcome sets provided')
 
-        for i in label_range:
-            outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform([i])[0], column)
-                                     for column in outcome_frame.columns]
+        def format_outcome_frame(
+                sets_in_outcome: List[str] = ['train', 'test']
+        ):
+            '''
+            Takes a given outcome frame and polishes the row & column names
+            :param outcome_frame:
+            :param label_range:
+            :param label_encoder:
+            :param sets_in_outcome
+            :return:
+            '''
+            train_outcome_columns = (
+                [str(label) + '_train' for label in outcome_frame.columns[0:len(label_range)]]
+                if 'train' in sets_in_outcome
+                else []
+            )
+            test_outcome_columns = (
+                [
+                    str(label) + '_test' for label in outcome_frame.columns[
+                                                      # We either have 6 columns (3 for train and 3 for test) or 3 (test only), therefore we need to adjust indexing
+                                                      len(label_range) * (len(sets_in_outcome) - 1):(
+                                                                  len(sets_in_outcome) * len(label_range))]
+                ]
+                if 'test' in sets_in_outcome
+                else []
+            )
+            outcome_frame.columns = train_outcome_columns + test_outcome_columns
 
-        outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
+            for i in label_range:
+                outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform([i])[0], column)
+                                         for column in outcome_frame.columns]
+
+            outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
+
+        label_range = list(range(0, len(outcome_labels)))
+        outcome_frame = pd.DataFrame()
+        for actual, predicted in labels_actual.values(), labels_predicted.values():
+            outcome_frame_partial = pd.DataFrame(
+                list(
+                    precision_recall_fscore_support(
+                        actual,
+                        predicted,
+                        labels=label_range
+                    )
+                )
+            )
+
+            if outcome_frame.empty:
+                outcome_frame = outcome_frame_partial
+            else:
+                outcome_frame = pd.concat(
+                    [
+                        outcome_frame,
+                        outcome_frame_partial
+                    ],
+                    axis=1
+                )
+
+        format_outcome_frame(
+            sets_in_outcome=list(labels_actual.keys())
+        )
 
     def remove_rows_from_original_flow(self):
         logger.info('  * Commencing accuracy metrics for negatives calculation')
@@ -766,7 +813,7 @@ class ConversionPredictionModel(object):
 
     def collect_outcomes_for_all_negatives(self):
         '''
-        Due to a potential memmory constraint, we only pull a sample of data for training a model. For
+        Due to a potential memory constraint, we only pull a sample of data for training a model. For
         the purpose of evaluating our algorithm we would however like to know how it would do on the full
         dataset. This method iterates over the undersampled class returning a result for the full population.
         In the future we might also make this a sample (although a larger one compared to the one used in train)
@@ -796,33 +843,35 @@ class ConversionPredictionModel(object):
             if not self.user_profiles.empty:
                 self.batch_predict(self.user_profiles)
                 logging.info('  * Generatincg predictions for negatives chunk')
+
+                actual_labels = {'test': self.predictions['outcome']}
+                predicted_labels = {'test': self.predictions['predicted_outcome']}
+
                 if i == 0:
-                    negative_outcome_frame = pd.DataFrame(
-                        list(precision_recall_fscore_support(
-                            self.predictions['outcome'],
-                            self.predictions['predicted_outcome'])
-                        )
+                    negative_outcome_frame = self.create_outcome_frame(
+                        actual_labels,
+                        predicted_labels,
+                        self.outcome_labels,
+                        self.le
                     )
                 else:
-                    negative_outcome_frame = negative_outcome_frame + pd.DataFrame(
-                        list(precision_recall_fscore_support(
-                            self.predictions['outcome'],
-                            self.predictions['predicted_outcome'])
-                            )
+                    negative_outcome_frame = negative_outcome_frame + self.create_outcome_frame(
+                        actual_labels,
+                        predicted_labels,
+                        self.outcome_labels,
+                        self.le
                     )
 
-            logging.info(f'*  Collected negative outcome accuracies at {str(100 * (i + browsers_expected / 5) / browsers_expected)} %')
+            logging.info(f'''
+                            *  Collected negative outcome accuracies at 
+                            {str(100 * (i + browsers_expected / 5) / browsers_expected)} %
+                         '''
+                         )
 
         self.negative_outcome_frame = negative_outcome_frame / len(data_row_range)
 
-        self.format_outcome_frame(
-            self.negative_outcome_frame,
-            list(range(0, len(self.outcome_labels))),
-            self.le,
-            ['test']
-        )
-
-        self.negative_outcome_frame.loc['support', 'no_conversion_test'] = self.negative_outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
+        self.negative_outcome_frame.loc['support', 'no_conversion_test'] = \
+            self.negative_outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
         self.outcome_frame['no_conversion_test'] = self.negative_outcome_frame.loc[:, 'no_conversion_test']
         logger.info('  * Finished accuracy metrics for negatives calculation')
 
@@ -864,7 +913,7 @@ class ConversionPredictionModel(object):
 
         logger.info(f'Saved to {self.path_to_model_files}model_{self.model_date}.pkl')
 
-        if sampled_negatives_results:
+        if not sampled_negatives_results:
             self.collect_outcomes_for_all_negatives()
         self.remove_model_training_artefacts()
 
@@ -964,7 +1013,7 @@ class ConversionPredictionModel(object):
             predictions.columns = [re.sub(str(i), self.le.inverse_transform([i])[0] + '_probability', str(column))
                                    for column in predictions.columns]
         # We are adding outcome only for the sake of the batch test approach, we'll be dropping it in the actual
-        # prediciton pipeline
+        # prediction pipeline
         self.predictions = pd.concat(
             [self.user_profiles[['date', 'browser_id', 'user_ids', 'outcome']],
              predictions],
