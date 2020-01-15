@@ -705,10 +705,10 @@ class ConversionPredictionModel(object):
         self.outcome_frame = self.create_outcome_frame(
             {
                 'train': self.Y_train,
-                'test': self.model.predict(self.X_train)
+                'test': self.Y_test
             },
             {
-                'train': self.Y_test,
+                'train': self.model.predict(self.X_train),
                 'test': self.model.predict(self.X_test)
             },
             self.outcome_labels,
