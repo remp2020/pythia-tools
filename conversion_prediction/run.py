@@ -770,7 +770,9 @@ class ConversionPredictionModel(object):
 
         label_range = list(range(0, len(outcome_labels)))
         outcome_frame = pd.DataFrame()
-        for actual, predicted in labels_actual.values(), labels_predicted.values():
+        for i in range(0, len(labels_actual)):
+            actual = list(labels_actual.values())[i]
+            predicted = list(labels_predicted.values())[i]
             outcome_frame_partial = pd.DataFrame(
                 list(
                     precision_recall_fscore_support(
