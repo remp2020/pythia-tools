@@ -798,6 +798,8 @@ class ConversionPredictionModel(object):
             sets_in_outcome=list(labels_actual.keys())
         )
 
+        return outcome_frame
+
     def remove_rows_from_original_flow(self):
         logger.info('  * Commencing accuracy metrics for negatives calculation')
         self.user_profiles = pd.merge(
