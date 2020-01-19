@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 # TODO: Look into unifying TEXT and Text
-from sqlalchemy import select
+from sqlalchemy import select, exc
 from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_, func, case
@@ -32,8 +32,12 @@ def get_feature_frame_via_sqlalchemy(
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
+    try:
+        seed = postgres_session.query(func.setseed(0))
+    except exc.InvalidRequestError:
+        postgres_session.rollback()
+        seed = postgres_session.query(func.setseed(0))
 
-    seed = postgres_session.query(func.setseed(0))
     postgres_session.execute(seed)
 
     full_query_negatives = get_full_features_query(
