@@ -54,7 +54,8 @@ class ConversionPredictionModel(object):
             # By default everything gets stored (since we expect most runs to still be in experimental model
             artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
             feature_aggregation_functions: Dict[str, sqlalchemy.func] = AGGREGATION_FUNCTIONS_w_ALIASES,
-            dry_run: bool = False
+            dry_run: bool = False,
+            path_to_model_files: str = None
     ):
         self.min_date = min_date
         self.max_date = max_date
@@ -77,7 +78,6 @@ class ConversionPredictionModel(object):
         self.scaler = MinMaxScaler()
         self.model_date = None
         self.training_split_parameters = training_split_parameters
-        self.model_arguments = model_arguments
         self.undersampling_factor = undersampling_factor
         self.model = None
         self.outcome_frame = None
@@ -87,7 +87,7 @@ class ConversionPredictionModel(object):
         self.predictions = pd.DataFrame()
         self.artifact_retention_mode = artifact_retention_mode
         self.artifacts_to_retain = [artifact.value for artifact in artifacts_to_retain.value]
-        self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', '')
+        self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', path_to_model_files)
         self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
         self.negative_outcome_frame = pd.DataFrame()
         self.browser_day_combinations_original_set = pd.DataFrame()
@@ -658,7 +658,10 @@ class ConversionPredictionModel(object):
             os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
 
     def train_model(
-            self):
+            self,
+            model_function,
+            model_arguments
+    ):
         '''
         Requires:
             - user_profiles
@@ -677,32 +680,10 @@ class ConversionPredictionModel(object):
 
         logger.info('  * Commencing model training')
 
-        classifier_instance = RandomForestClassifier(**self.model_arguments)
+        classifier_instance = model_function(**model_arguments)
         self.model = classifier_instance.fit(self.X_train, self.Y_train)
 
         logger.info('  * Model training complete, generating outcome frame')
-
-        # TODO: Remove after testing
-        # self.outcome_frame = pd.concat([
-        #     pd.DataFrame(list(precision_recall_fscore_support(
-        #         self.Y_train,
-        #         self.model.predict(self.X_train),
-        #         labels=label_range))
-        #     ),
-        #     pd.DataFrame(list(
-        #         precision_recall_fscore_support(
-        #             self.Y_test,
-        #             self.model.predict(self.X_test),
-        #             labels=label_range))
-        #     )
-        # ],
-        #     axis=1)
-        #
-        # self.format_outcome_frame(
-        #     self.outcome_frame,
-        #     label_range,
-        #     self.le
-        # )
 
         self.outcome_frame = self.create_outcome_frame(
             {
@@ -885,7 +866,9 @@ class ConversionPredictionModel(object):
 
     def model_training_pipeline(
             self,
-            sampled_negatives_results: bool = False
+            sampled_negatives_results: bool = False,
+            model_function=RandomForestClassifier,
+            model_arguments={'n_estimators': 250}
     ):
         '''
         Requires:
@@ -910,7 +893,10 @@ class ConversionPredictionModel(object):
             for model_file in ['category_lists', 'scaler', 'model']:
                 self.delete_existing_model_file_for_same_date(model_file)
 
-        self.train_model()
+        self.train_model(
+            model_function,
+            model_arguments
+        )
 
         logger.info(f'Training ready, dumping to file')
 
@@ -1168,12 +1154,15 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             overwrite_files=args['overwrite_files'],
             training_split_parameters=args['training_split_parameters'],
-            model_arguments={'n_estimators': 250},
             undersampling_factor=500,
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING
             )
-        conversion_prediction.model_training_pipeline()
+
+        conversion_prediction.model_training_pipeline(
+            sampled_negatives_results=True,
+            model_arguments={'n_estimators': 250},
+        )
 
         metrics = ['precision', 'recall', 'f1_score', 'suport']
         print({metrics[i]: conversion_prediction.outcome_frame.to_dict('records')[i] for i in range(0, len(metrics))})
@@ -1186,3 +1175,5 @@ if __name__ == "__main__":
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.PREDICTION
         )
+
+        conversion_prediction.generate_and_upload_prediction()
