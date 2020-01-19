@@ -87,7 +87,7 @@ def get_feature_frame_via_sqlalchemy(
 
     feature_frame.columns = [re.sub('anon_1_', '', column) for column in feature_frame.columns]
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
-    feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.date
+    feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.tz_localize(None).dt.date
     feature_frame.drop('date_w_gaps', axis=1, inplace=True)
 
     return feature_frame
