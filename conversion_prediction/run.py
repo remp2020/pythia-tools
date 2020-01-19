@@ -752,6 +752,7 @@ class ConversionPredictionModel(object):
                 if 'train' in sets_in_outcome
                 else []
             )
+
             test_outcome_columns = (
                 [
                     str(label) + '_test' for label in outcome_frame.columns[
@@ -762,6 +763,7 @@ class ConversionPredictionModel(object):
                 if 'test' in sets_in_outcome
                 else []
             )
+
             outcome_frame.columns = train_outcome_columns + test_outcome_columns
 
             for i in label_range:
@@ -925,7 +927,7 @@ class ConversionPredictionModel(object):
         # TODO: This would eventually be replaced with storing variable importances to DB
         self.variable_importances.to_csv(
             f'{self.path_to_model_files}variable_importances_{self.model_date}.csv',
-            index=False
+            index=True
         )
 
     def remove_model_training_artefacts(self):
@@ -959,7 +961,7 @@ class ConversionPredictionModel(object):
                 category_list date: {last_model_related_files['category_lists']}
                 scaler date: {last_model_related_files['scaler']}
                 model date: {last_model_related_files['model']}
-                'variable importances': {last_model_related_files['variable_importances_']}
+                'variable importances': {last_model_related_files['variable_importances']}
                 ''')
 
         if not self.path_to_model_files:
@@ -968,11 +970,14 @@ class ConversionPredictionModel(object):
                   'category_lists_' + str(last_model_related_files['category_lists']) + '.json', 'r') as outfile:
             self.category_list_dict = json.load(outfile)
 
-        self.scaler = joblib.load(f"{self.path_to_model_files}scaler{str(last_model_related_files['scaler'])}.pkl")
+        self.scaler = joblib.load(f"{self.path_to_model_files}scaler_{str(last_model_related_files['scaler'])}.pkl")
         self.model = joblib.load(f"{self.path_to_model_files}model_{str(last_model_related_files['model'])}.pkl")
         #TODO: This would eventually be replaced with loading variable importances from DB
         self.variable_importances = pd.read_csv(
-            f"{self.path_to_model_files}variable_importances{str(last_model_related_files['variable_importances'])}.csv"
+                f"{self.path_to_model_files}variable_importances_{str(last_model_related_files['variable_importances'])}.csv",
+                squeeze=True,
+                index_col=0,
+                header=None
         )
 
         logger.info('  * Model constructs loaded')
@@ -1022,9 +1027,9 @@ class ConversionPredictionModel(object):
         )
 
         logger.info('  * Prediction data ready')
-
         self.prediction_data.fillna(0.0, inplace=True)
         if not self.X_train.empty:
+            print(self.X_train.shape)
             for column in [column for column in self.X_train.columns if column not in self.prediction_data.columns]:
                 self.prediction_data[column] = 0.0
             self.prediction_data = self.prediction_data[list(self.X_train.columns)]
@@ -1085,6 +1090,17 @@ class ConversionPredictionModel(object):
             self.prediction_job_log['rows_predicted'] = len(self.predictions)
             postgres.execute(
                 sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
+            )
+        else:
+            self.outcome_frame = self.create_outcome_frame(
+                {
+                    'test': self.le.transform(self.predictions['outcome'])
+                },
+                {
+                    'test': self.le.transform(self.predictions['predicted_outcome'])
+                },
+                self.outcome_labels,
+                self.le
             )
 
         logger.info('Predictions are now ready')
