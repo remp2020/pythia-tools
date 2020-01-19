@@ -653,9 +653,10 @@ class ConversionPredictionModel(object):
         else:
             suffix = 'json'
 
-        if f'scaler_{self.model_date}.pkl' in os.listdir(
-                None if self.path_to_model_files == '' else self.path_to_model_files):
-            os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
+        if self.path_to_model_files in os.listdir(None): 
+            if f'scaler_{self.model_date}.pkl' in os.listdir(
+                    None if self.path_to_model_files == '' else self.path_to_model_files):
+                os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
 
     def train_model(
             self,
