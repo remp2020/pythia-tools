@@ -99,7 +99,7 @@ class ConversionPredictionModel(object):
         '''
         :param artifact:
         :return:
-        Requires:
+        Requires::w
             - artifact_retention_mode
             - path_to_model_files
             - if model artifact
@@ -194,7 +194,7 @@ class ConversionPredictionModel(object):
             for column in ['checkout', 'payment', 'purchase']:
                 self.user_profiles[column] = 0.0
         
-        self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.localize(None).dt.date
+        self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
 
         try:
             self.get_user_history_features_from_mysql()
@@ -223,11 +223,14 @@ class ConversionPredictionModel(object):
         commerce = pd.DataFrame()
         # TODO: remove commented out code in case testing the line below is a success
         # dates = [date.date() for date in pd.date_range(self.min_date - timedelta(days=7), self.max_date)]
-        dates = [date.date() for date in pd.date_range(self.user_profiles['date'].dt.min() - timedelta(days=7), self.max_date)]
+        dates = [date.date() for date in pd.date_range(self.user_profiles['date'].min() - timedelta(days=7), self.max_date)]
         dates = [re.sub('-', '', str(date)) for date in dates]
         for date in dates:
             commerce_daily = pd.read_csv(f'{self.path_to_csvs}commerce_{date}.csv.gz')
-            commerce = commerce.append(commerce_daily)
+            commerce = commerce.append(
+                    commerce_daily,
+                    sort=False
+                    )
 
         commerce = commerce[commerce['browser_id'].isin(self.user_profiles['browser_id'].unique())]
         commerce['date'] = pd.to_datetime(commerce['time']).dt.date
