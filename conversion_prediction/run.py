@@ -85,7 +85,7 @@ class ConversionPredictionModel(object):
         self.artifact_retention_mode = artifact_retention_mode
         self.artifacts_to_retain = artifacts_to_retain
         self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', None)
-        self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
+        self.path_to_commerce_csvs = os.getenv('PATH_TO_COMMERCE_CSV_FILES')
         self.feature_aggregation_function = feature_aggregation_function
         self.negative_outcome_frame = pd.DataFrame()
         self.browser_day_combinations_original_set = pd.DataFrame()
@@ -201,7 +201,7 @@ class ConversionPredictionModel(object):
         dates = [date.date() for date in pd.date_range(self.min_date - timedelta(days=7), self.max_date)]
         dates = [re.sub('-', '', str(date)) for date in dates]
         for date in dates:
-            commerce_daily = pd.read_csv(f'{self.path_to_csvs}commerce_{date}.csv.gz')
+            commerce_daily = pd.read_csv(f'{self.path_to_commerce_csvs}commerce_{date}.csv.gz')
             commerce = commerce.append(commerce_daily)
 
         commerce = commerce[commerce['browser_id'].isin(self.user_profiles['browser_id'].unique())]
@@ -555,11 +555,11 @@ class ConversionPredictionModel(object):
 
         self.X_train = self.user_profiles.iloc[train_indices].drop(columns=['outcome', 'user_ids'])
         self.X_test = self.user_profiles.iloc[test_indices].drop(columns=['outcome', 'user_ids'])
-        category_lists_dict = self.generate_category_lists_dict()
+        self.generate_category_lists_dict()
 
         with open(
                 f'{self.path_to_model_files}category_lists_{self.model_date}.json', 'w') as outfile:
-            json.dump(category_lists_dict, outfile)
+            json.dump(self.category_list_dict, outfile)
 
         self.X_train = self.replace_dummy_columns_with_dummies(self.X_train)
         self.X_test = self.replace_dummy_columns_with_dummies(self.X_test)
