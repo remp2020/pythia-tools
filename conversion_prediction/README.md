@@ -1,6 +1,10 @@
-# Conversion Prediction
+# Pythia Conversion Prediction
 
-## Preparation
+Script generating conversion prediction models based on data aggregated by `cmd/aggregate`, data stored in Beam's MySQL databaze and data provided by CRM MySQL database.
+
+Once the prediction models are generated, script is writing list of users to PostgreSQL database with the probability of their conversion. This list is a requirement for `cmd/pythia_segments` API which can be integrated into REMP Campaign and REMP Beam to target users.
+
+## Requirements
 
 #### System prerequisities (Ubuntu)
 
@@ -41,7 +45,9 @@ source .virtualenv/bin/activate
 pip3 install -r requirements.txt
 ```
 
-## Running
+## Usage
+
+If you don't have the model files generated yet, let's *train* the models first:
 
 ```bash
 python run.py --min-date=$(date -d "yesterday" --rfc-3339=date) --action 'train' 
