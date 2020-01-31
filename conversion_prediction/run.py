@@ -701,11 +701,14 @@ class ConversionPredictionModel(object):
             self.outcome_labels,
             self.le
         )
-
-        self.variable_importances = pd.Series(
-            data=self.model.feature_importances_,
-            index=self.X_train.columns
-        )
+        try:
+            self.variable_importances = pd.Series(
+                data=self.model.feature_importances_,
+                index=self.X_train.columns
+            )
+        except:
+            # This handles parameter tuning, when some model types may not have variable importance
+            self.variable_importances = pd.Series()
 
         logger.info('  * Outcome frame generated')
 
@@ -917,7 +920,8 @@ class ConversionPredictionModel(object):
         # TODO: This would eventually be replaced with storing variable importances to DB
         self.variable_importances.to_csv(
             f'{self.path_to_model_files}variable_importances_{self.model_date}.csv',
-            index=True
+            index=True,
+            header=False
         )
 
     def remove_model_training_artefacts(self):
