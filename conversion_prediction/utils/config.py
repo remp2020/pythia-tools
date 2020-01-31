@@ -246,3 +246,5 @@ AGGREGATION_FUNCTIONS_w_ALIASES = {
     'min': func.min,
     'max': func.max
 }
+
+MIN_TRAINING_DAYS = 7
