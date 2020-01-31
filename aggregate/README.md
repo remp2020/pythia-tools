@@ -17,8 +17,7 @@ source .virtualenv/bin/activate
 pip install -r requirements.txt
 ```
 
-Script requires connection variables for PostreSQL DB and address of Elastic storage, 
-put these to `.env` file according to `.env.example` file.
+Create `.env` file based on `.env.example` file and fill the configuration options.
 
 ## Usage
 

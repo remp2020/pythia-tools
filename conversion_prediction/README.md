@@ -45,6 +45,8 @@ source .virtualenv/bin/activate
 pip3 install -r requirements.txt
 ```
 
+Create `.env` file based on `.env.example` file and fill the configuration options.
+
 ## Usage
 
 If you don't have the model files generated yet, let's *train* the models first:

@@ -146,6 +146,8 @@ class ConversionPredictionModel(object):
             offset_limit_tuple
         )
 
+        logger.info(f'  * Query finished, processing retrieved data')
+
         for column in [column for column in self.feature_columns.return_feature_list() 
                 if column not in self.user_profiles.columns
                 and column not in ['checkout', 'payment', 'clv', 'days_since_last_subscription', 'article_pageviews_count', 'pageviews_count', 'sum_paid', 'avg_price']]:
@@ -1029,7 +1031,7 @@ if __name__ == "__main__":
     logger.info(f'CONVERSION PREDICTION')
     parser = argparse.ArgumentParser()
     parser.add_argument('--action',
-                        help='Should either be "train" for model training or "predict for prediction"',
+                        help='Should either be "train" for model training or "predict" for prediction',
                         type=str)
     parser.add_argument('--min-date',
                         help='Min date denoting from when to fetch data',
