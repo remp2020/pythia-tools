@@ -2,7 +2,7 @@ ua-parser==0.8.0
 psycopg2==2.7.5
 psycopg2-binary==2.7.5
 arrow==0.12.1
-pyyaml==3.13
+pyyaml==5.1
 user-agents==1.1.0
 es2csv==5.5.2
 python-dotenv==0.9.1
