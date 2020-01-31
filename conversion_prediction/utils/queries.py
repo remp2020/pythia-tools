@@ -1,16 +1,16 @@
 import re
 import pandas as pd
 # TODO: Look into unifying TEXT and Text
-from sqlalchemy import select
+from sqlalchemy import select, exc
 from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
-from .db_utils import get_sqlalchemy_tables_w_session, literalquery
-from .config import DERIVED_METRICS_CONFIG, JSON_COLUMNS, LABELS
+from .db_utils import get_sqlalchemy_tables_w_session
+from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 postgres_mappings = get_sqlalchemy_tables_w_session(
     'POSTGRES_CONNECTION_STRING',
@@ -20,34 +20,24 @@ postgres_mappings = get_sqlalchemy_tables_w_session(
 postgres_session = postgres_mappings['session']
 aggregated_browser_days = postgres_mappings['aggregated_browser_days']
 
-predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-    'MYSQL_CONNECTION_STRING',
-    'predplatne',
-    ['payments', 'subscriptions']
-)
-
-mysql_predplatne_session = predplatne_mysql_mappings['session']
-payments = predplatne_mysql_mappings['payments']
-subscriptions = predplatne_mysql_mappings['subscriptions']
-
-beam_mysql_mappings = get_sqlalchemy_tables_w_session(
-    'MYSQL_CONNECTION_STRING',
-    'remp_beam',
-    ['article_pageviews']
-)
-mysql_beam_session = beam_mysql_mappings['session']
-article_pageviews = beam_mysql_mappings['article_pageviews']
-
 
 def get_feature_frame_via_sqlalchemy(
     start_time: datetime,
     end_time: datetime,
     moving_window_length: int = 7,
-    feature_aggregation_function: func = func.sum,
+    feature_aggregation_functions: Dict[str, func] = None,
     undersampling_factor: int = 1,
-    offset_limit_tuple: Tuple = None
+    offset_limit_tuple: Tuple = None,
+    train: bool = True
 ):
-    seed = postgres_session.query(func.setseed(0))
+    if feature_aggregation_functions is None:
+        feature_aggregation_functions = {'count': func.sum}
+    try:
+        seed = postgres_session.query(func.setseed(0))
+    except exc.InvalidRequestError:
+        postgres_session.rollback()
+        seed = postgres_session.query(func.setseed(0))
+
     postgres_session.execute(seed)
 
     full_query_negatives = get_full_features_query(
@@ -55,7 +45,7 @@ def get_feature_frame_via_sqlalchemy(
         end_time,
         moving_window_length,
         False,
-        feature_aggregation_function,
+        feature_aggregation_functions,
         undersampling_factor,
         offset_limit_tuple
     )
@@ -66,8 +56,10 @@ def get_feature_frame_via_sqlalchemy(
             end_time,
             moving_window_length,
             True,
-            feature_aggregation_function,
-            offset_limit_tuple
+            feature_aggregation_functions,
+            undersampling_factor,
+            offset_limit_tuple,
+            train
         )
 
         column_names_current_data = [column.name for column in full_query_negatives.columns]
@@ -95,7 +87,7 @@ def get_feature_frame_via_sqlalchemy(
 
     feature_frame.columns = [re.sub('anon_1_', '', column) for column in feature_frame.columns]
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
-    feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.date
+    feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.tz_localize(None).dt.date
     feature_frame.drop('date_w_gaps', axis=1, inplace=True)
 
     return feature_frame
@@ -106,10 +98,14 @@ def get_full_features_query(
         end_time: datetime,
         moving_window_length: int = 7,
         retrieving_positives: bool = False,
-        feature_aggregation_function: func = func.sum,
+        feature_aggregation_functions: Dict[str, func] = None,
         undersampling_factor: int = 1,
-        offset_limit_tuple: Tuple = None
+        offset_limit_tuple: Tuple = None,
+        train: bool = True
 ):
+    if feature_aggregation_functions is None:
+        feature_aggregation_functions = {'count': func.sum}
+
     if not retrieving_positives:
         filtered_data = get_filtered_cte(
             # We retrieve an additional window length lookback of records to correctly construct the rolling window
@@ -121,9 +117,11 @@ def get_full_features_query(
             offset_limit_tuple
         )
     else:
+        # The additional 90 days look back is to also retrieve past positives due to label imbalance, this only
+        # happens with training
+        lookback_days = 90 if train else 0
         filtered_data = get_filtered_cte(
-            # The additional 90 days lookback is to also retrieve past positives due to label imbalance
-            start_time - timedelta(days=90) - timedelta(days=moving_window_length),
+            start_time - timedelta(days=lookback_days) - timedelta(days=moving_window_length),
             end_time,
             True,
             None
@@ -152,13 +150,14 @@ def get_full_features_query(
         moving_window_length,
         start_time,
         json_key_column_names,
-        feature_aggregation_function
+        feature_aggregation_functions
     )
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
         data_with_rolling_windows,
         start_time,
-        retrieving_positives
+        retrieving_positives,
+        feature_aggregation_functions
     )
 
     filtered_w_derived_metrics_w_all_time_delta_columns = add_all_time_delta_columns(
@@ -181,15 +180,36 @@ def get_filtered_cte(
     undersampling_factor: int = 1,
     offset_limit_tuple: Tuple = None
 ):
-    label_filter = aggregated_browser_days.c['next_7_days_event'].in_(
-                [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
+    # This transforms the 7 day event into 1 day event
+    aggregated_browser_days_w_1_day_event_window = postgres_session.query(
+        *[aggregated_browser_days.c[column.name].label(column.name) for column in aggregated_browser_days.columns
+          if column.name != 'next_7_days_event'],
+        case(
+            [
+                (and_(
+                    aggregated_browser_days.c['next_7_days_event'].in_(
+                        [label for label, label_type in LABELS.items() if label_type == 'positive']
+                    ),
+                    func.extract(
+                        'day',
+                        aggregated_browser_days.c['next_event_time'] - aggregated_browser_days.c['date']
+                    ) >= 1
+                ),
+                 aggregated_browser_days.c['next_7_days_event'])
+            ],
+            else_=[label for label, label_type in LABELS.items() if label_type == 'negative'][0]
+        ).label('next_7_days_event')
+    ).subquery()
+
+    label_filter = aggregated_browser_days_w_1_day_event_window.c['next_7_days_event'].in_(
+        [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
     )
 
     filtered_data = postgres_session.query(
-        aggregated_browser_days
+        aggregated_browser_days_w_1_day_event_window
     ).filter(
-        aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
-        aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP),
+        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time, TIMESTAMP),
+        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, TIMESTAMP),
         label_filter
     ).subquery()
 
@@ -519,13 +539,13 @@ def calculate_rolling_windows_features(
         moving_window_length: int,
         start_time: datetime,
         json_key_column_names: List[str],
-        feature_aggregation_function
+        feature_aggregation_functions
 ):
     rolling_agg_columns_base = create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
         moving_window_length,
-        feature_aggregation_function
+        feature_aggregation_functions
     )
 
     queries_with_basic_window_columns = postgres_session.query(
@@ -606,22 +626,14 @@ def create_rolling_window_columns_config(
         joined_queries,
         json_key_column_names,
         moving_window_length,
-        aggregation_function
+        feature_aggregation_functions
 ):
-    # {name of the resulting column : source / calculation}
+    # {name of the resulting column : source / calculation},
     column_source_to_name_mapping = {
         'pageview': joined_queries.c['pageviews'],
         'timespent': joined_queries.c['timespent'],
         'direct_visit': joined_queries.c['sessions_without_ref'],
         'visit': joined_queries.c['sessions'],
-        'days_active': case(
-            [
-                (
-                    joined_queries.c['date_w_gaps'] == None,
-                    0
-                )
-            ],
-            else_=1),
         # All json key columns have their own rolling sums
         **{
             column: joined_queries.c[column] for column in json_key_column_names
@@ -635,21 +647,15 @@ def create_rolling_window_columns_config(
     )
 
     column_source_to_name_mapping.update(time_column_config)
-    # {naming suffix : related parameter for determining part of full window}
+
+    def get_rolling_agg_window_variants(aggregation_function_alias):
+        # {naming suffix : related parameter for determining part of full window}
+        return {
+            f'{aggregation_function_alias}': False,
+            f'{aggregation_function_alias}_last_window_half': True
+        }
+
     rolling_agg_columns = []
-
-    aggregation_function_aliases = {
-        func.sum: 'count',
-        func.avg: 'avg',
-        func.min: 'min',
-        func.max: 'max'
-    }
-
-    # This will need to change if we implement multiple aggregation functions
-    rolling_agg_variants = {
-        'count': False,
-        'count_last_window_half': True
-    }
     # this generates all basic rolling sum columns for both full and second half of the window
     rolling_agg_columns = rolling_agg_columns + [
         create_rolling_agg_function(
@@ -659,9 +665,32 @@ def create_rolling_window_columns_config(
             column_source,
             joined_queries.c['browser_id'],
             joined_queries.c['date']
-        ).cast(Float).label(f'{column_name}_{suffix}')
+        ).cast(Float).label(f'{column_name}_{suffix}' if column_name != 'days_active' else 'days_active_count')
         for column_name, column_source in column_source_to_name_mapping.items()
-        for suffix, is_half_window in rolling_agg_variants.items()
+        for aggregation_function_alias, aggregation_function in feature_aggregation_functions.items()
+        for suffix, is_half_window in get_rolling_agg_window_variants(aggregation_function_alias).items()
+    ]
+
+    # It only makes sense to aggregate active days by summing, all other aggregations would end up with a value
+    # of 1 after we eventually filter out windows with no active days in them, this is why we separate this feature
+    # out from the loop with all remaining features
+    rolling_agg_columns = rolling_agg_columns + [
+        create_rolling_agg_function(
+            moving_window_length,
+            is_half_window,
+            func.sum,
+            case(
+                [
+                    (
+                        joined_queries.c['date_w_gaps'] == None,
+                        0
+                    )
+                ],
+                else_=1),
+            joined_queries.c['browser_id'],
+            joined_queries.c['date']
+        ).cast(Float).label(f'days_active_{suffix}')
+        for suffix, is_half_window in get_rolling_agg_window_variants('count').items()
     ]
 
     return rolling_agg_columns
@@ -670,19 +699,27 @@ def create_rolling_window_columns_config(
 def filter_joined_queries_adding_derived_metrics(
     joined_partial_queries,
     start_time: datetime,
-    retrieving_past_positives
+    retrieving_past_positives,
+    feature_aggregation_functions
 ):
+    # We will only check the first requested aggregation as we want to make sure there was at least 1 PV during the
+    # time window, which works for any aggregation type result for number of pageviews being higher than 0
+    first_aggregation_function_alias = next(iter(feature_aggregation_functions.keys()))
 
     finalizing_filter = [
-        joined_partial_queries.c['pageview_count'] > 0,
+        joined_partial_queries.c[f'pageview_{first_aggregation_function_alias}'] > 0,
         joined_partial_queries.c['row_number'] == 1
     ]
 
     if not retrieving_past_positives:
         finalizing_filter.append(joined_partial_queries.c['date'] >= start_time)
 
+    derived_metrics_config = {}
+    for feature_aggregation_function_alias in feature_aggregation_functions.keys():
+        derived_metrics_config.update(build_derived_metrics_config(feature_aggregation_function_alias))
+
     filtered_w_derived_metrics = postgres_session.query(
-        *[column.label(re.sub('timespent_count', 'timespent_sum', column.name))
+        *[column.label(column.name)
           for column in joined_partial_queries.columns
           if not re.search('outcome', column.name)
           and column.name != 'row_number'],
@@ -697,10 +734,10 @@ def filter_joined_queries_adding_derived_metrics(
         ).label('outcome'),
         *[
             func.coalesce((
-                joined_partial_queries.c[DERIVED_METRICS_CONFIG[key]['nominator'] + suffix] /
-                joined_partial_queries.c[DERIVED_METRICS_CONFIG[key]['denominator'] + suffix]
+                joined_partial_queries.c[derived_metrics_config[key]['nominator'] + suffix] /
+                joined_partial_queries.c[derived_metrics_config[key]['denominator'] + suffix]
             ), 0.0).label(key + suffix)
-            for key in DERIVED_METRICS_CONFIG.keys()
+            for key in derived_metrics_config.keys()
             for suffix in ['', '_last_window_half']
         ]
     ).filter(and_(*finalizing_filter)).subquery()
@@ -743,6 +780,16 @@ def add_all_time_delta_columns(
 
 
 def get_payment_history_features(end_time: datetime):
+    predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
+        'MYSQL_CONNECTION_STRING',
+        'predplatne',
+        ['payments', 'subscriptions']
+    )
+
+    mysql_predplatne_session = predplatne_mysql_mappings['session']
+    payments = predplatne_mysql_mappings['payments']
+    subscriptions = predplatne_mysql_mappings['subscriptions']
+
     clv = mysql_predplatne_session.query(
         func.sum(payments.c['amount']).label('clv'),
         payments.c['user_id']
@@ -785,10 +832,29 @@ def get_payment_history_features(end_time: datetime):
         'days_since_last_subscription'
     ].astype(float)
 
+    mysql_predplatne_session.close()
+
     return user_payment_history
 
 
 def get_global_context(start_time, end_time):
+    beam_mysql_mappings = get_sqlalchemy_tables_w_session(
+        'MYSQL_CONNECTION_STRING',
+        'remp_beam',
+        ['article_pageviews']
+    )
+    mysql_beam_session = beam_mysql_mappings['session']
+    article_pageviews = beam_mysql_mappings['article_pageviews']
+
+    predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
+        'MYSQL_CONNECTION_STRING',
+        'predplatne',
+        ['payments']
+    )
+
+    mysql_predplatne_session = predplatne_mysql_mappings['session']
+    payments = predplatne_mysql_mappings['payments']
+
     # We create two subqueries using the same data to merge twice in order to get rolling sum in mysql
     def get_payments_filtered():
         payments_filtered = mysql_predplatne_session.query(
@@ -864,6 +930,9 @@ def get_global_context(start_time, end_time):
         context_query.session.bind
     )
 
+    mysql_predplatne_session.close()
+    mysql_beam_session.close()
+    
     return context
 
 

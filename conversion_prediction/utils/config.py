@@ -1,21 +1,26 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
+from sqlalchemy import func
 
 
 CATEGORICAL_COLUMNS = ['device', 'browser', 'os', 'day_of_week']
 
-NUMERIC_COLUMNS_BASE = [
-    'pageview_count',
-    'visit_count',
-    'direct_visit_count',
-    'days_active_count',
-    'pageviews_per_visit',
-    'timespent_sum',
-    'visits_per_day_active',
-    'direct_visits_share',
-    'timespent_per_visit',
-    'timespent_per_pageview',
-    'days_since_last_active'
-]
+
+def build_numeric_columns_base(aggregation_function_alias: str) -> List:
+    numeric_columns_base = (
+        f'pageview_{aggregation_function_alias}',
+        f'visit_{aggregation_function_alias}',
+        f'direct_visit_{aggregation_function_alias}',
+        'days_active_count',
+        f'pageviews_per_visit_{aggregation_function_alias}',
+        f'timespent_{aggregation_function_alias}',
+        f'visits_per_day_active_{aggregation_function_alias}',
+        f'direct_visits_share_{aggregation_function_alias}',
+        f'timespent_per_visit_{aggregation_function_alias}',
+        f'timespent_per_pageview_{aggregation_function_alias}',
+        'days_since_last_active'
+    )
+
+    return numeric_columns_base
 
 
 SUPPORTED_JSON_FIELDS_KEYS = {
@@ -76,34 +81,40 @@ LABELS = {'no_conversion': 'negative', 'shared_account_login': 'positive', 'conv
 
 CURRENT_MODEL_VERSION = '1.0'
 
-DERIVED_METRICS_CONFIG = {
-    'pageviews_per_visit': {
-        'nominator': 'pageview_count',
-        'denominator': 'visit_count'
-    },
-    'visits_per_day_active': {
-        'nominator': 'visit_count',
-        'denominator': 'days_active_count'
-    },
-    'direct_visits_share': {
-        'nominator': 'direct_visit_count',
-        'denominator': 'visit_count'
-    },
-    'timespent_per_visit': {
-        'nominator': 'timespent_count',
-        'denominator': 'visit_count'
-    },
-    'timespent_per_pageview': {
-        'nominator': 'timespent_count',
-        'denominator': 'pageview_count'
-    },
-}
+
+def build_derived_metrics_config(aggregation_function_alias: str) -> Dict:
+    derived_metrics_config = {
+        f'pageviews_per_visit_{aggregation_function_alias}': {
+            'nominator': f'pageview_{aggregation_function_alias}',
+            'denominator': f'visit_{aggregation_function_alias}'
+        },
+        f'visits_per_day_active_{aggregation_function_alias}': {
+            'nominator': f'visit_{aggregation_function_alias}',
+            'denominator': f'days_active_count'
+        },
+        f'direct_visits_share_{aggregation_function_alias}': {
+            'nominator': f'direct_visit_{aggregation_function_alias}',
+            'denominator': f'visit_{aggregation_function_alias}'
+        },
+        f'timespent_per_visit_{aggregation_function_alias}': {
+            'nominator': f'timespent_{aggregation_function_alias}',
+            'denominator': f'visit_{aggregation_function_alias}'
+        },
+        f'timespent_per_pageview_{aggregation_function_alias}': {
+            'nominator': f'timespent_{aggregation_function_alias}',
+            'denominator': f'pageview_{aggregation_function_alias}'
+        },
+    }
+
+    return derived_metrics_config
+
 
 JSON_COLUMNS = ['referer_medium_pageviews', 'hour_interval_pageviews', 'article_category_pageviews']
 
 
 def build_out_profile_based_column_names(
-        normalized: bool = False
+        normalized: bool = False,
+        aggregation_function_aliases: str = 'count'
 ):
     if normalized is True:
         suffix = '_normalized'
@@ -112,23 +123,24 @@ def build_out_profile_based_column_names(
     profile_numeric_columns_from_json_fields = {
         # Referral features
         'referer_medium_pageviews': [
-            [f'referer_medium_pageviews_{referral_category}_count{suffix}'
+            [f'referer_medium_pageviews_{referral_category}_{aggregation_function_aliases}{suffix}'
              for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium_pageviews']]
         ],
         # Article category (section) features
         'article_category_pageviews': [
-            [f'article_category_pageviews_{article_category}_count{suffix}'
+            [f'article_category_pageviews_{article_category}_{aggregation_function_aliases}{suffix}'
              for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']]
         ],
         # Time based features combining day_of_week with hour interval
         'hour_interval_pageviews': [
-            [f'dow_{dow}_hours_{hours}_count{suffix}'
+            [f'dow_{dow}_hours_{hours}_{aggregation_function_aliases}{suffix}'
              for dow in range(0, 7)
              for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']
              ],
-            [f'dow_{dow}_count{suffix}' for dow in range(0, 7)
+            [f'dow_{dow}_{aggregation_function_aliases}{suffix}' for dow in range(0, 7)
              ],
-            [f'hours_{hours}_count{suffix}' for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
+            [f'hours_{hours}_{aggregation_function_aliases}{suffix}'
+             for hours in SUPPORTED_JSON_FIELDS_KEYS['hour_interval_pageviews']]
         ]
     }
 
@@ -159,13 +171,21 @@ def unpack_profile_based_fields(
 
 
 class FeatureColumns(object):
-    def __init__(self):
-        self.categorical_columns = CATEGORICAL_COLUMNS
-        self.base_numeric_columns = NUMERIC_COLUMNS_BASE
-        self.profile_numeric_columns_from_json_fields = build_out_profile_based_column_names(False)
+    def __init__(self, aggregation_function_aliases):
+        # Add one version for each aggregation whenever available
+        base_numeric_columns = set()
+        for aggregation_function_alias in aggregation_function_aliases:
+            base_numeric_columns.update(build_numeric_columns_base(aggregation_function_alias))
 
-        self.numeric_columns = NUMERIC_COLUMNS_BASE + \
-            unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields)
+        self.categorical_columns = CATEGORICAL_COLUMNS
+        self.base_numeric_columns = list(base_numeric_columns)
+        self.profile_numeric_columns_from_json_fields = build_out_profile_based_column_names(
+            False,
+            aggregation_function_aliases
+        )
+
+        self.numeric_columns = self.base_numeric_columns + \
+                               unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields)
 
         self.numeric_columns_with_window_variants = create_window_variant_permuations(self.base_numeric_columns) + \
             self.base_numeric_columns
@@ -219,3 +239,12 @@ LOGGING = {
         'handlers': ['console']
     }
 }
+
+AGGREGATION_FUNCTIONS_w_ALIASES = {
+    'count': func.sum,
+    'avg': func.avg,
+    'min': func.min,
+    'max': func.max
+}
+
+MIN_TRAINING_DAYS = 7
