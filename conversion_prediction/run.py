@@ -27,7 +27,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
 from utils.db_utils import create_predictions_table, create_predictions_job_log
-from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES
+from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
+    MIN_TRAINING_DAYS
 from utils.enums import SplitType, NormalizedFeatureHandling
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
@@ -111,7 +112,6 @@ class ConversionPredictionModel(object):
         A function that handles model artifacts that we don't need as an output currently by either
         storing and dumping or by straight up dumping them
         '''
-        print()
         if self.artifact_retention_mode == ArtifactRetentionMode.DUMP:
             if artifact == ModelArtifacts.MODEL:
                 joblib.dump(
@@ -142,6 +142,9 @@ class ConversionPredictionModel(object):
         self.user_profiles = pd.DataFrame()
         self.min_date = self.min_date.replace(hour=0, minute=0, second=0, microsecond=0)
         self.max_date = self.max_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        if (self.max_date - self.min_date).days < MIN_TRAINING_DAYS:
+            raise ValueError(f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data')
 
         self.user_profiles = get_feature_frame_via_sqlalchemy(
             self.min_date,
