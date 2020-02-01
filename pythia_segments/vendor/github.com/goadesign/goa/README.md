@@ -6,10 +6,8 @@ unique design-first approach.
 [![Build Status](https://travis-ci.org/goadesign/goa.svg?branch=master)](https://travis-ci.org/goadesign/goa)
 [![Windows Build status](https://ci.appveyor.com/api/projects/status/vixp37loj5i6qmaf/branch/master?svg=true)](https://ci.appveyor.com/project/RaphaelSimon/goa-oqtis/branch/master)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/goadesign/goa/blob/master/LICENSE)
-[![Godoc](https://godoc.org/github.com/goadesign/goa?status.svg)](http://godoc.org/github.com/goadesign/goa)
+[![Godoc](https://godoc.org/github.com/goadesign/goa?status.svg)](https://godoc.org/gopkg.in/goadesign/goa.v1)
 [![Slack](https://img.shields.io/badge/slack-gophers-orange.svg?style=flat)](https://gophers.slack.com/messages/goa/)
-
-*goa v1.4.0 released! [Release Notes](https://goa.design/blog/007-v_1_4_0/)*
 
 ## Why goa?
 
@@ -62,9 +60,23 @@ the same pattern and was an inspiration to goa.
 
 ## Installation
 
-Assuming you have a working [Go](https://golang.org) setup:
+Goa v1 can be used with Go modules:
+
+```bash
+export GO111MODULE=on
+go mod init <my project>
+go get github.com/goadesign/goa/...@v1
 ```
-go get github.com/goadesign/goa/...
+
+Or without Go modules by cloning the repo first:
+
+```bash
+cd $GOPATH/src
+mkdir -p github.com/goadesign
+cd github.com/goadesign
+git clone https://github.com/goadesign/goa
+cd goa; git checkout v1
+go get -v github.com/goadesign/goa/...
 ```
 
 ### Stable Versions
@@ -76,7 +88,7 @@ versions with the same `X` component without having to make changes.
 Releases are tagged with the corresponding version number. There is also a branch for each major
 version (only `v1` at the moment). The recommended practice is to vendor the stable branch.
 
-Current Release: `v1.3.1`
+Current Release: `v1.4.3`
 Stable Branch: `v1`
 
 ## Teaser

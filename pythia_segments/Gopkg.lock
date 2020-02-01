@@ -26,7 +26,7 @@
   version = "v5.0.1"
 
 [[projects]]
-  digest = "1:5d27536185b056af355df2dce6d1d63898b24285400b8cb41886a3c9b8bd9ccc"
+  digest = "1:cabe065e40b96aa606cfcb5dc2dd0b2efafd712c98ea582acb2aedc6aa1317ab"
   name = "github.com/goadesign/goa"
   packages = [
     ".",
@@ -48,8 +48,16 @@
     "version",
   ]
   pruneopts = "UT"
-  revision = "e01bb31dd9403fa9d40747e1f93345bc96ea675e"
-  version = "v1.4.0"
+  revision = "1951ab4f8e8cb229fb3187fa3e02ea4326e38a7a"
+  version = "v1.4.3"
+
+[[projects]]
+  digest = "1:bed9d72d596f94e65fff37f4d6c01398074a6bb1c3f3ceff963516bd01db6ff5"
+  name = "github.com/gofrs/uuid"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6b08a5c5172ba18946672b49749cde22873dd7c2"
+  version = "v3.2.0"
 
 [[projects]]
   branch = "master"
@@ -128,14 +136,6 @@
   pruneopts = "UT"
   revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
   version = "v0.8.0"
-
-[[projects]]
-  branch = "master"
-  digest = "1:ff6b0586c0621a76832cf783eee58cbb9d9795d2ce8acbc199a4131db11c42a9"
-  name = "github.com/satori/go.uuid"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "36e9d2ebbde5e3f13ab2e25625fd453271d6522e"
 
 [[projects]]
   digest = "1:645cabccbb4fa8aab25a956cbcbdf6a6845ca736b2c64e197ca7cbb9d210b939"

@@ -9,7 +9,7 @@ import (
 
 	"github.com/goadesign/goa/design"
 	"github.com/goadesign/goa/dslengine"
-	"github.com/goadesign/goa/goagen/gen_schema"
+	genschema "github.com/goadesign/goa/goagen/gen_schema"
 )
 
 type (
@@ -722,6 +722,7 @@ func paramFor(at *design.AttributeDefinition, name, in string, required bool) *P
 	}
 	if at.Type.IsArray() {
 		p.Items = itemsFromDefinition(at.Type.ToArray().ElemType)
+		p.CollectionFormat = "multi"
 	}
 	p.Extensions = extensionsFromDefinition(at.Metadata)
 	initValidations(at, p)

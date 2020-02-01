@@ -87,7 +87,7 @@ class ConversionPredictionModel(object):
         self.artifact_retention_mode = artifact_retention_mode
         self.artifacts_to_retain = [artifact.value for artifact in artifacts_to_retain.value]
         self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', path_to_model_files)
-        self.path_to_csvs = os.getenv('PATH_TO_CSV_FILES')
+        self.path_to_commerce_csvs = os.getenv('PATH_TO_COMMERCE_CSV_FILES')
         self.negative_outcome_frame = pd.DataFrame()
         self.browser_day_combinations_original_set = pd.DataFrame()
         self.variable_importances = pd.Series()
@@ -151,6 +151,8 @@ class ConversionPredictionModel(object):
             data_retrieval_mode
         )
 
+        logger.info(f'  * Query finished, processing retrieved data')
+
         for column in [column for column in self.feature_columns.return_feature_list()
                        if column not in self.user_profiles.columns
                        and column not in [
@@ -191,7 +193,7 @@ class ConversionPredictionModel(object):
             # To make sure these columns are filled in case of failure to retrieve
             for column in ['checkout', 'payment', 'purchase']:
                 self.user_profiles[column] = 0.0
-        
+
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
 
         try:
@@ -224,7 +226,7 @@ class ConversionPredictionModel(object):
         dates = [date.date() for date in pd.date_range(self.user_profiles['date'].min() - timedelta(days=7), self.max_date)]
         dates = [re.sub('-', '', str(date)) for date in dates]
         for date in dates:
-            commerce_daily = pd.read_csv(f'{self.path_to_csvs}commerce_{date}.csv.gz')
+            commerce_daily = pd.read_csv(f'{self.path_to_commerce_csvs}commerce_{date}.csv.gz')
             commerce = commerce.append(
                     commerce_daily,
                     sort=False
@@ -654,7 +656,7 @@ class ConversionPredictionModel(object):
         else:
             suffix = 'json'
 
-        if self.path_to_model_files in os.listdir(None): 
+        if self.path_to_model_files in os.listdir(None):
             if f'scaler_{self.model_date}.pkl' in os.listdir(
                     None if self.path_to_model_files == '' else self.path_to_model_files):
                 os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
@@ -861,7 +863,7 @@ class ConversionPredictionModel(object):
                     )
 
             logging.info(f'''
-                            *  Collected negative outcome accuracies at 
+                            *  Collected negative outcome accuracies at
                             {str(100 * (i + browsers_expected / 5) / browsers_expected)} %
                          '''
                          )
@@ -1121,7 +1123,7 @@ class ConversionPredictionModel(object):
                 engine.dispose()
 
                 logging.info(
-                    f'''    *  Upserted predictions at 
+                    f'''    *  Upserted predictions at
                     {str(100 * (i + browsers_expected / 5) / browsers_expected)} %'''
                 )
 
@@ -1145,7 +1147,7 @@ class ConversionPredictionModel(object):
                     )
 
                 logging.info(f'''
-                                        *  Collected prediction accuracies at 
+                                        *  Collected prediction accuracies at
                                         {str(100 * (i + browsers_expected / 5) / browsers_expected)} %
                                      '''
                              )
@@ -1180,7 +1182,7 @@ if __name__ == "__main__":
     logger.info(f'CONVERSION PREDICTION')
     parser = argparse.ArgumentParser()
     parser.add_argument('--action',
-                        help='Should either be "train" for model training or "predict for prediction"',
+                        help='Should either be "train" for model training or "predict" for prediction',
                         type=str)
     parser.add_argument('--min-date',
                         help='Min date denoting from when to fetch data',
