@@ -25,6 +25,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from sqlalchemy import func
 
 from utils.db_utils import create_predictions_table, create_predictions_job_log
 from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
@@ -53,7 +54,6 @@ class ConversionPredictionModel(object):
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
             artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
-            feature_aggregation_functions: Dict[str, sqlalchemy.func] = AGGREGATION_FUNCTIONS_w_ALIASES,
             dry_run: bool = False,
             path_to_model_files: str = None
     ):
@@ -1022,13 +1022,7 @@ class ConversionPredictionModel(object):
 
         self.prediction_data = self.replace_dummy_columns_with_dummies(self.prediction_data)
 
-        self.prediction_data.drop(['outcome', 'user_ids'], axis=1, inplace=True)
-        # Sometimes we can have a json column key that appears in prediction data, but wasn't present in train
-        self.prediction_data.drop(
-            [column for column in self.prediction_data.columns if column not in self.variable_importances],
-            axis=1,
-            inplace=True
-        )
+        self.align_prediction_frame_with_train_columns()
 
         logger.info('  * Prediction data ready')
         self.prediction_data.fillna(0.0, inplace=True)
@@ -1053,6 +1047,25 @@ class ConversionPredictionModel(object):
             axis=1
         )
         self.predictions['predicted_outcome'] = self.le.inverse_transform(self.model.predict(self.prediction_data))
+
+    def align_prediction_frame_with_train_columns(self):
+        # Sometimes the columns used to train a model don't align with columns im prediction set
+        # 1. Drop columns that are in new data, but weren't used in training
+        self.prediction_data.drop(
+            [column for column in self.prediction_data.columns if column not in self.variable_importances.index],
+            axis=1,
+            inplace=True
+        )
+
+        # 2. Add 0 columns that were in train, but aren't in new data
+        for column in [column for column in self.variable_importances.index
+                       if column not in self.prediction_data.columns]:
+            self.prediction_data[column] = 0.0
+
+        # 3. Make sure the columns have the same order as original data, since sklearn ignores column names
+        self.prediction_data = self.prediction_data[list(self.variable_importances.index)]
+
+
 
     def generate_and_upload_prediction(self):
         '''
@@ -1156,9 +1169,6 @@ class ConversionPredictionModel(object):
 
                 self.outcome_frame.loc['support', 'no_conversion_test'] = \
                     self.outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
-
-        self.create_feature_frame(data_retrieval_mode=DataRetrievalMode.PREDICT_DATA)
-        self.batch_predict(self.user_profiles)
 
         logger.info('Predictions are now ready')
 

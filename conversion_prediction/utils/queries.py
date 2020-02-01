@@ -32,7 +32,7 @@ def get_feature_frame_via_sqlalchemy(
     data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
 ):
     if feature_aggregation_functions is None:
-        feature_aggregation_functions = {'count': func.sum}
+        feature_aggregation_functions = {'avg': func.avg}
     try:
         seed = postgres_session.query(func.setseed(0))
     except exc.InvalidRequestError:
