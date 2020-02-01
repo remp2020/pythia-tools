@@ -8,6 +8,7 @@ from sqlalchemy import and_, func, case
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session
+from .enums import DataRetrievalMode
 from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS
 from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, Tuple, Dict
@@ -28,7 +29,7 @@ def get_feature_frame_via_sqlalchemy(
     feature_aggregation_functions: Dict[str, func] = None,
     undersampling_factor: int = 1,
     offset_limit_tuple: Tuple = None,
-    train: bool = True
+    data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
@@ -40,26 +41,29 @@ def get_feature_frame_via_sqlalchemy(
 
     postgres_session.execute(seed)
 
+    retrieving_positives = False
     full_query_negatives = get_full_features_query(
         start_time,
         end_time,
         moving_window_length,
-        False,
+        retrieving_positives,
         feature_aggregation_functions,
         undersampling_factor,
-        offset_limit_tuple
+        offset_limit_tuple,
+        data_retrieval_mode
     )
 
-    if not offset_limit_tuple:
+    if data_retrieval_mode != DataRetrievalMode.MODEL_EVAL_DATA:
+        retrieving_positives = True
         full_query_positives = get_full_features_query(
             start_time,
             end_time,
             moving_window_length,
-            True,
+            retrieving_positives,
             feature_aggregation_functions,
             undersampling_factor,
             offset_limit_tuple,
-            train
+            data_retrieval_mode
         )
 
         column_names_current_data = [column.name for column in full_query_negatives.columns]
@@ -101,7 +105,7 @@ def get_full_features_query(
         feature_aggregation_functions: Dict[str, func] = None,
         undersampling_factor: int = 1,
         offset_limit_tuple: Tuple = None,
-        train: bool = True
+        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
@@ -119,12 +123,13 @@ def get_full_features_query(
     else:
         # The additional 90 days look back is to also retrieve past positives due to label imbalance, this only
         # happens with training
-        lookback_days = 90 if train else 0
+        lookback_days = 90 if data_retrieval_mode == DataRetrievalMode.MODEL_TRAIN_DATA else 0
         filtered_data = get_filtered_cte(
             start_time - timedelta(days=lookback_days) - timedelta(days=moving_window_length),
             end_time,
             True,
-            None
+            1,
+            offset_limit_tuple
         )
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
@@ -213,10 +218,13 @@ def get_filtered_cte(
         label_filter
     ).subquery()
 
-    if retrieving_positives:
+    # For model training, we want all positives. For batch prediction
+    if retrieving_positives and offset_limit_tuple is not None:
         filtered_data = postgres_session.query(filtered_data).cte(name='positives')
+    # For batch prediction (either for collecting full results, or for upserting prediction, we need to use the
+    # offset-limit tuple for chunking
     else:
-        negative_browser_filter = subset_negative_browsers(
+        browser_filter = subset_browsers(
             filtered_data,
             offset_limit_tuple,
             undersampling_factor
@@ -225,8 +233,8 @@ def get_filtered_cte(
         filtered_data = postgres_session.query(
             filtered_data
         ).filter(
-            filtered_data.c['browser_id'].in_(negative_browser_filter)
-        ).cte('negatives')
+            filtered_data.c['browser_id'].in_(browser_filter)
+        ).cte('positives' if retrieving_positives else 'negatives')
 
     return filtered_data
 
@@ -250,7 +258,7 @@ def remove_helper_lookback_rows(
     return final_query_for_outcome_category
 
 
-def subset_negative_browsers(
+def subset_browsers(
         filtered_data,
         # if None, we'll be sampling browsers for train, otherwise we want a offset-limit combination of browsers
         offset_limit_tuple: Tuple = None,
@@ -273,21 +281,37 @@ def subset_negative_browsers(
     return negative_browsers
 
 
-def get_negative_browser_count(
+def get_browser_count(
         start_time: datetime,
-        end_time: datetime
+        end_time: datetime,
+        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_EVAL_DATA
 ):
-    filtered_data = get_filtered_cte(start_time, end_time, False, 1, None)
+    retrieving_positives = False
+    filtered_data_negatives = get_filtered_cte(start_time, end_time, retrieving_positives, 1, None)
 
     negative_browsers = postgres_session.query(
-        filtered_data.c['browser_id'].label('browser_id')
+        filtered_data_negatives.c['browser_id'].label('browser_id')
     ).group_by(
-        filtered_data.c['browser_id'].label('browser_id')
+        filtered_data_negatives.c['browser_id'].label('browser_id')
     ).subquery()
 
-    negative_browsers_count = return_browser_count(negative_browsers)
+    negative_browsers_count = return_browser_count(negative_browsers)[0][0]
 
-    return negative_browsers_count[0][0]
+    if data_retrieval_mode != DataRetrievalMode.MODEL_EVAL_DATA:
+        retrieving_positives = True
+        filtered_data_positives = get_filtered_cte(start_time, end_time, retrieving_positives, 1, None)
+
+        positive_browsers = postgres_session.query(
+            filtered_data_positives.c['browser_id'].label('browser_id')
+        ).group_by(
+            filtered_data_positives.c['browser_id'].label('browser_id')
+        ).subquery()
+
+        positive_browsers_count = return_browser_count(positive_browsers)[0][0]
+    else:
+        positive_browsers_count = 0
+
+    return negative_browsers_count + positive_browsers_count
 
 
 def return_browser_count(unique_browser_query):
