@@ -1,9 +1,6 @@
-ua-parser==0.8.0
-psycopg2==2.7.5
-psycopg2-binary==2.7.5
+psycopg2-binary==2.8.4
 arrow==0.12.1
-pyyaml==3.13
-user-agents==1.1.0
+user-agents==2.0.0
 es2csv==5.5.2
 python-dotenv==0.9.1
 unidecode==1.0.23
