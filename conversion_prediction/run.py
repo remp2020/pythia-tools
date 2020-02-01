@@ -143,9 +143,6 @@ class ConversionPredictionModel(object):
         self.min_date = self.min_date.replace(hour=0, minute=0, second=0, microsecond=0)
         self.max_date = self.max_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        if (self.max_date - self.min_date).days < MIN_TRAINING_DAYS:
-            raise ValueError(f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data')
-
         self.user_profiles = get_feature_frame_via_sqlalchemy(
             self.min_date,
             self.max_date,
@@ -897,6 +894,12 @@ class ConversionPredictionModel(object):
         '''
         logger.info(f'Executing training pipeline')
         if self.user_profiles is None:
+
+            # Make sure we have enough days for training, this statement is behind the condition since sometimes
+            # we might be reusing training data from a previous run
+            if (self.max_date - self.min_date).days < MIN_TRAINING_DAYS:
+                raise ValueError(f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data')
+
             self.create_feature_frame(train=True)
 
         if self.overwrite_files:
