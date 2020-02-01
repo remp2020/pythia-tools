@@ -865,7 +865,7 @@ class ConversionPredictionModel(object):
 
             logging.info(f'''
                             *  Collected negative outcome accuracies at
-                            {str(100 * (i + browsers_expected / 5) / browsers_expected)} %
+                            {str(100 * (i + browsers_expected / 10) / browsers_expected)} %
                          '''
                          )
 
@@ -1067,7 +1067,6 @@ class ConversionPredictionModel(object):
         self.prediction_data = self.prediction_data[list(self.variable_importances.index)]
 
 
-
     def generate_and_upload_prediction(self):
         '''
         Requires:
@@ -1162,7 +1161,7 @@ class ConversionPredictionModel(object):
 
                 logging.info(f'''
                                         *  Collected prediction accuracies at
-                                        {str(100 * (i + browsers_expected / 5) / browsers_expected)} %
+                                        {str(100 * (i + browsers_expected / 10) / browsers_expected)} %
                                      '''
                              )
 
