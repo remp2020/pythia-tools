@@ -54,6 +54,7 @@ class ConversionPredictionModel(object):
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
             artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
+            feature_aggregation_functions: Dict[str, sqlalchemy.func] = {'avg': func.avg},
             dry_run: bool = False,
             path_to_model_files: str = None
     ):
