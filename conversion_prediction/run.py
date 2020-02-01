@@ -29,12 +29,12 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from utils.db_utils import create_predictions_table, create_predictions_job_log
 from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
     MIN_TRAINING_DAYS
-from utils.enums import SplitType, NormalizedFeatureHandling
+from utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
 from utils.queries import queries
 from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context, \
-    get_browser_days_count, get_negative_browser_count
+    get_browser_days_count, get_browser_count
 from utils.data_transformations import unique_list, row_wise_normalization
 
 
@@ -48,7 +48,6 @@ class ConversionPredictionModel(object):
             outcome_labels: List[str] = tuple(LABELS.keys()),
             overwrite_files: bool = True,
             training_split_parameters=None,
-            model_arguments=None,
             undersampling_factor=300,
             # This applies to all model artifacts that are not part of the flow output
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
@@ -83,7 +82,6 @@ class ConversionPredictionModel(object):
         self.model = None
         self.outcome_frame = None
         self.scoring_date = datetime.utcnow()
-        self.model = None
         self.prediction_data = pd.DataFrame()
         self.predictions = pd.DataFrame()
         self.artifact_retention_mode = artifact_retention_mode
@@ -128,7 +126,7 @@ class ConversionPredictionModel(object):
     def get_user_profiles_by_date(
             self,
             offset_limit_tuple: Tuple = None,
-            train: bool = True
+            data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
     ):
         '''
         Requires:
@@ -150,7 +148,7 @@ class ConversionPredictionModel(object):
             self.feature_aggregation_functions,
             self.undersampling_factor,
             offset_limit_tuple,
-            train
+            data_retrieval_mode
         )
 
         for column in [column for column in self.feature_columns.return_feature_list()
@@ -437,7 +435,7 @@ class ConversionPredictionModel(object):
     def create_feature_frame(
             self,
             offset_limit_tuple: Tuple = None,
-            train: bool = True
+            data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
     ):
         '''
         Requires:
@@ -450,7 +448,7 @@ class ConversionPredictionModel(object):
         that were active a day ago
         '''
         logger.info(f'  * Loading user profiles')
-        self.get_user_profiles_by_date(offset_limit_tuple, train)
+        self.get_user_profiles_by_date(offset_limit_tuple, data_retrieval_mode)
         logger.info(f'  * Processing user profiles')
         test_outcome = self.user_profiles['outcome'].fillna(
             self.user_profiles.groupby('browser_id')['outcome'].fillna(method='bfill')
@@ -816,9 +814,10 @@ class ConversionPredictionModel(object):
         :return:
         '''
         # TODO: Consider doing a sample, but a larger one (such as 10 % of all negatives)
-        browsers_expected = get_negative_browser_count(
+        browsers_expected = get_browser_count(
             self.min_date,
-            self.max_date
+            self.max_date,
+            data_retrieval_mode=DataRetrievalMode.MODEL_EVAL_DATA
         )
 
         logger.info(f'Test set contains {browsers_expected} browsers')
@@ -826,13 +825,16 @@ class ConversionPredictionModel(object):
         data_row_range = range(
             0,
             int(browsers_expected),
-            int(browsers_expected / 5)
+            int(browsers_expected / 10)
         )
     
         for i in data_row_range:
             logging.info('  * Fetching negatives chunk')
             logger.setLevel(logging.ERROR)
-            self.create_feature_frame((i, int(browsers_expected / 5)), train=False)
+            self.create_feature_frame(
+                (i, int(browsers_expected / 10)),
+                data_retrieval_mode=DataRetrievalMode.MODEL_EVAL_DATA
+            )
             logger.setLevel(logging.INFO)
             self.remove_rows_from_original_flow()
             logging.info('  * Removing negative outcomes from training set from negatives chunk')
@@ -900,7 +902,7 @@ class ConversionPredictionModel(object):
             if (self.max_date - self.min_date).days < MIN_TRAINING_DAYS:
                 raise ValueError(f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data')
 
-            self.create_feature_frame(train=True)
+            self.create_feature_frame(data_retrieval_mode=DataRetrievalMode.MODEL_TRAIN_DATA)
 
         if self.overwrite_files:
             for model_file in ['category_lists', 'scaler', 'model']:
@@ -1065,43 +1067,96 @@ class ConversionPredictionModel(object):
         Generates outcome prediction for conversion and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-        self.create_feature_frame(train=False)
+
+        browsers_expected = get_browser_count(
+            self.min_date,
+            self.max_date,
+            data_retrieval_mode=DataRetrievalMode.PREDICT_DATA
+        )
+
+        logger.info(f'Prediction set contains {browsers_expected} browsers')
+
+        data_row_range = range(
+            0,
+            int(browsers_expected),
+            int(browsers_expected / 10)
+        )
+
+        for i in data_row_range:
+            logging.info('  * Fetching negatives chunk')
+            logger.setLevel(logging.ERROR)
+            self.create_feature_frame(
+                (i, int(browsers_expected / 10)),
+                data_retrieval_mode=DataRetrievalMode.PREDICT_DATA
+            )
+
+            logger.setLevel(logging.INFO)
+
+            self.batch_predict(self.user_profiles)
+            logging.info('  * Generatincg predictions')
+
+            self.predictions['model_version'] = CURRENT_MODEL_VERSION
+            self.predictions['created_at'] = datetime.utcnow()
+            self.predictions['updated_at'] = datetime.utcnow()
+
+            # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
+            if not self.dry_run:
+                self.predictions.drop('outcome', axis=1, inplace=True)
+
+                logger.info(f'Storing predicted data')
+
+                engine, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
+                create_predictions_table(postgres)
+                create_predictions_job_log(postgres)
+                postgres.execute(
+                    sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
+                )
+
+                self.prediction_job_log = self.predictions[
+                    ['date', 'model_version', 'created_at', 'updated_at']].head(1).to_dict('records')[0]
+                self.prediction_job_log['rows_predicted'] = len(self.predictions)
+                postgres.execute(
+                    sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
+                )
+                engine.dispose()
+
+                logging.info(
+                    f'''    *  Upserted predictions at 
+                    {str(100 * (i + browsers_expected / 5) / browsers_expected)} %'''
+                )
+
+            else:
+                outcome_frame = pd.DataFrame()
+                actual_labels = {'test': self.predictions['outcome']}
+                predicted_labels = {'test': self.predictions['predicted_outcome']}
+                if i == 0:
+                    outcome_frame = self.create_outcome_frame(
+                        actual_labels,
+                        predicted_labels,
+                        self.outcome_labels,
+                        self.le
+                    )
+                else:
+                    outcome_frame = outcome_frame + self.create_outcome_frame(
+                        actual_labels,
+                        predicted_labels,
+                        self.outcome_labels,
+                        self.le
+                    )
+
+                logging.info(f'''
+                                        *  Collected prediction accuracies at 
+                                        {str(100 * (i + browsers_expected / 5) / browsers_expected)} %
+                                     '''
+                             )
+
+                self.outcome_frame = outcome_frame / len(data_row_range)
+
+                self.outcome_frame.loc['support', 'no_conversion_test'] = \
+                    self.outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
+
+        self.create_feature_frame(data_retrieval_mode=DataRetrievalMode.PREDICT_DATA)
         self.batch_predict(self.user_profiles)
-
-        self.predictions['model_version'] = CURRENT_MODEL_VERSION
-        self.predictions['created_at'] = datetime.utcnow()
-        self.predictions['updated_at'] = datetime.utcnow()
-        
-        # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
-        if not self.dry_run:
-            self.predictions.drop('outcome', axis=1, inplace=True)
-
-            logger.info(f'Storing predicted data')
-
-            _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
-            create_predictions_table(postgres)
-            create_predictions_job_log(postgres)
-            postgres.execute(
-                sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
-            )
-
-            self.prediction_job_log = self.predictions[
-                ['date', 'model_version', 'created_at', 'updated_at']].head(1).to_dict('records')[0]
-            self.prediction_job_log['rows_predicted'] = len(self.predictions)
-            postgres.execute(
-                sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
-            )
-        else:
-            self.outcome_frame = self.create_outcome_frame(
-                {
-                    'test': self.le.transform(self.predictions['outcome'])
-                },
-                {
-                    'test': self.le.transform(self.predictions['predicted_outcome'])
-                },
-                self.outcome_labels,
-                self.le
-            )
 
         logger.info('Predictions are now ready')
 
