@@ -42,6 +42,15 @@ class Parser:
                 "hour_interval_pageviews": {},
             }
 
+            # each hour has a separate column
+            for i in range(24):
+                self.data[browser_id]['pageviews_' + str(i) + 'h'] = 0
+
+            # each 4 hours have a separate column
+            for i in range(6):
+                h = i * 4
+                self.data[browser_id]['pageviews_' + str(h) + 'h_' + str(h + 4) + 'h'] = 0
+
     def parse_user_agent(self, browser_id, user_agent):
         user_agent = unidecode(user_agent.decode("utf8"))
         if user_agent not in ua_cache:
@@ -67,8 +76,16 @@ class Parser:
 
                 add_one(self.data[row['browser_id']]['referer_medium_pageviews'], row['derived_referer_medium'])
                 add_one(self.data[row['browser_id']]['article_category_pageviews'], row['category'])
-                hour = str(arrow.get(row['time']).to('utc').hour).zfill(2)
-                add_one(self.data[row['browser_id']]['hour_interval_pageviews'], hour + ":00-" + hour + ":59")
+
+                # Hour aggregations
+                hour = arrow.get(row['time']).to('utc').hour
+                hour_string = str(hour).zfill(2)
+                add_one(self.data[row['browser_id']]['hour_interval_pageviews'], hour_string + ':00-' + hour_string + ':59')
+                self.data[row['browser_id']]['pageviews_' + str(hour) + 'h'] += 1
+
+                # 4-hours aggregations
+                interval4h = (hour / 4) * 4   # round down to 4h interval start
+                self.data[row['browser_id']]['pageviews_' + str(interval4h) + 'h_' + str(interval4h + 4) + 'h'] += 1
 
                 if row['user_id']:
                     self.data[row['browser_id']]['user_ids'].add(row['user_id'])
@@ -117,9 +134,7 @@ class Parser:
 
         print("Storing data for date " + str(processed_date))
 
-        params = {
-            'pageviews': lambda d: d['pageviews'],
-            'timespent': lambda d: d['timespent'],
+        accessors = {
             'sessions': lambda d: len(d['sessions']),
             'sessions_without_ref': lambda d: len(d['sessions_without_ref']),
 
@@ -141,9 +156,22 @@ class Parser:
             'hour_interval_pageviews': lambda d: json.dumps(d['hour_interval_pageviews']),
         }
 
+        # This needs to be a function
+        # See: https://docs.python.org/3/faq/programming.html#why-do-lambdas-defined-in-a-loop-with-different-values-all-return-the-same-result
+        def lambda_accessor(name):
+            return lambda d: d[name]
+
+        # Parameters directly referenced using lambda
+        simple_accessors = ['pageviews', 'timespent'] + \
+                        ['pageviews_' + str(i) + 'h' for i in range(24)] + \
+                        ['pageviews_' + str(i * 4) + 'h_' + str(i * 4 + 4) + 'h' for i in range(6)]
+
+        for name in simple_accessors:
+            accessors.update({name: lambda_accessor(name)})
+
         # Create SQL
-        ordered_params = OrderedDict([(key, params[key]) for key in params])
-        keys = list(ordered_params.keys())
+        ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
+        keys = list(ordered_accessors.keys())
 
         concatenated_keys = string.join(keys, ', ')
         key_placeholders = string.join(['%s'] * len(keys), ', ')
@@ -157,7 +185,7 @@ class Parser:
         # Compute values
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
-            computed_values = tuple([func(browser_data) for key, func in ordered_params.items()])
+            computed_values = tuple([func(browser_data) for key, func in ordered_accessors.items()])
             data_to_insert.append((processed_date, browser_id) + computed_values)
 
         # Insert in batch

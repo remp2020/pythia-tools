@@ -47,3 +47,53 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
 ) WITH (oids = false);
 '''
     cur.execute(sql)
+
+    sql2 = '''
+ALTER TABLE "public"."aggregated_browser_days" 
+    ADD COLUMN IF NOT EXISTS "pageviews_0h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_1h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_2h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_3h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_4h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_5h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_6h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_7h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_8h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_9h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_10h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_11h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_12h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_13h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_14h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_15h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_16h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_17h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_18h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_19h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_20h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_21h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_22h" integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS "pageviews_23h" integer DEFAULT 0;
+    '''
+    cur.execute(sql2)
+
+    # Let's bundle the hourly data into 4 hour intervals (such as 00:00 - 03:59, ...) to avoid having too many columns.
+    # The division works with the following hypothesis:
+    # * 0-4: Night Owls
+    # * 4-8: Morning commute
+    # * 8-12: Working morning / coffee
+    # * 12-16: Early afternoon, browsing during lunch
+    # * 16-20: Evening commute
+    # * 20-24: Before bed browsing
+    sql3 = '''
+    ALTER TABLE "public"."aggregated_browser_days" 
+        ADD COLUMN IF NOT EXISTS "pageviews_0h_4h" integer DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "pageviews_4h_8h" integer DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "pageviews_8h_12h" integer DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "pageviews_12h_16h" integer DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "pageviews_16h_20h" integer DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "pageviews_20h_24h" integer DEFAULT 0;
+        '''
+    cur.execute(sql3)
+
+
