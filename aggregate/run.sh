@@ -150,6 +150,7 @@ while [ "$di" != "$end_on" ]; do
     if [ -z $dryrun ]; then
         python utils/aggregate.py ${file_date} --dir=$dir
         python utils/conversion_events.py ${file_date} --dir=$dir
+        python utils/subscriptions_churn_events.py ${file_date}
     fi
 
     # Delete csv files
