@@ -96,4 +96,53 @@ ALTER TABLE "public"."aggregated_browser_days"
         '''
     cur.execute(sql3)
 
+    sql_aggregated_browser_days = '''
+CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
+    "date" date NOT NULL,
+    "user_id" character varying NOT NULL,
+    "browser_ids" text[] NOT NULL DEFAULT '{}',
+    "pageviews" integer NOT NULL,
+    "timespent" integer,
+    "sessions" integer NOT NULL,
+    "sessions_without_ref" integer NOT NULL,    
+    "next_30_days" character varying NOT NULL DEFAULT 'ongoing',
+    "next_event_time" timestamp NULL,
+    "referer_medium_pageviews" jsonb,
+    "article_category_pageviews" jsonb,
+    "hour_interval_pageviews" jsonb,
+    "pageviews_0h" integer DEFAULT 0,
+    "pageviews_1h" integer DEFAULT 0,
+    "pageviews_2h" integer DEFAULT 0,
+    "pageviews_3h" integer DEFAULT 0,
+    "pageviews_4h" integer DEFAULT 0,
+    "pageviews_5h" integer DEFAULT 0,
+    "pageviews_6h" integer DEFAULT 0,
+    "pageviews_7h" integer DEFAULT 0,
+    "pageviews_8h" integer DEFAULT 0,
+    "pageviews_9h" integer DEFAULT 0,
+    "pageviews_10h" integer DEFAULT 0,
+    "pageviews_11h" integer DEFAULT 0,
+    "pageviews_12h" integer DEFAULT 0,
+    "pageviews_13h" integer DEFAULT 0,
+    "pageviews_14h" integer DEFAULT 0,
+    "pageviews_15h" integer DEFAULT 0,
+    "pageviews_16h" integer DEFAULT 0,
+    "pageviews_17h" integer DEFAULT 0,
+    "pageviews_18h" integer DEFAULT 0,
+    "pageviews_19h" integer DEFAULT 0,
+    "pageviews_20h" integer DEFAULT 0,
+    "pageviews_21h" integer DEFAULT 0,
+    "pageviews_22h" integer DEFAULT 0,
+    "pageviews_23h" integer DEFAULT 0,
+    "pageviews_0h_4h" integer DEFAULT 0,
+    "pageviews_4h_8h" integer DEFAULT 0,
+    "pageviews_8h_12h" integer DEFAULT 0,
+    "pageviews_12h_16h" integer DEFAULT 0,
+    "pageviews_16h_20h" integer DEFAULT 0,
+    "pageviews_20h_24h" integer DEFAULT 0,
+    PRIMARY KEY(date, user_id)
+) WITH (oids = false);
+'''
+    cur.execute(sql_aggregated_browser_days)
+
 
