@@ -69,7 +69,6 @@ def save_events(cursor, subscriptions_stop_date, churn_events, event_name):
         for day in arrow.Arrow.span_range('day', start, end)
     ])
 
-
 def run(churn_date):
     load_env()
 
@@ -103,10 +102,14 @@ def run(churn_date):
     )
 
     print("Saving churn events, count=" + str(len(churn_events_list)))
+    # if churn_events_list:
     save_events(postgre_cur, subscriptions_stop_date, churn_events_list, "churn")
+    postgre_conn.commit()
 
     print("Saving renewal events, count=" + str(len(renewal_events_list)))
+    # if renewal_events_list:
     save_events(postgre_cur, subscriptions_stop_date, renewal_events_list, "renewal")
+    postgre_conn.commit()
 
     postgre_cur.close()
     postgre_conn.close()
