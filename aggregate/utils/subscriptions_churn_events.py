@@ -36,9 +36,10 @@ LEFT JOIN subscriptions s2 ON
     s1.user_id = s2.user_id AND 
     s1.end_time <= s2.start_time AND
     DATE_ADD(s1.end_time, INTERVAL {} DAY) >= s2.start_time
+    DATE_ADD(s1.end_time, INTERVAL {} DAY) <= s2.end_time
 WHERE s1.end_time >= '{}' AND s1.end_time <= '{}'
     '''
-    sql = sql.format(churn_days_threshold, day_start, day_end)
+    sql = sql.format(churn_days_threshold, churn_days_threshold, day_start, day_end)
     cursor.execute(sql)
 
     churn_events_list = []
