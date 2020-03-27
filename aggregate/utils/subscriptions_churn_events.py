@@ -69,8 +69,13 @@ def save_events(cursor, subscriptions_stop_date, churn_events, event_name):
         for day in arrow.Arrow.span_range('day', start, end)
     ])
 
+
 def run(churn_date):
     load_env()
+
+    if os.getenv("CRM_DB_HOST") is None:
+        print('CRM database connection settings not set in .env file, skipping churn/renewal data aggregation')
+        exit()
 
     year = int(churn_date[0:4])
     month = int(churn_date[4:6])
