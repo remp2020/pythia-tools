@@ -4,4 +4,4 @@ user-agents==2.0.0
 es2csv==5.5.2
 python-dotenv==0.9.1
 unidecode==1.0.23
-mysql-connector-python=8.0.19
+mysql-connector-python==8.0.19
