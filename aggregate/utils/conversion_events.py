@@ -32,8 +32,7 @@ class CommerceParser:
         self.cur_date = cur_date
         self.cursor = cursor
 
-        # tuples that will be stored in conversion_events table
-        self.conversions_to_save = []
+        self.events_to_save = []
         pass
 
     def __load_data(self, commerce_file):
@@ -42,14 +41,14 @@ class CommerceParser:
             for row in r:
                 self.data.append(Commerce(row))
 
-    def __save_conversions(self):
+    def __save_events_to_separate_table(self):
         sql = '''
-            INSERT INTO conversion_events (user_id, browser_id, purchase_time, payment_time)
+            INSERT INTO events (user_id, browser_id, time, type)
             VALUES (%s, %s, %s, %s)
         '''
 
         psycopg2.extras.execute_batch(self.cursor, sql, [
-            (x["user_id"], x["browser_id"], x["purchase_time"], x["payment_time"]) for x in self.conversions_to_save
+            (x["user_id"], x["browser_id"], x["time"], x["type"]) for x in self.events_to_save
         ])
         self.cursor.connection.commit()
 
@@ -75,15 +74,15 @@ class CommerceParser:
                 if purchase_time_minus_5 <= payment_time:
                     browser_id = self.user_id_browser_id[c.user_id]
                     self.__mark_conversion_event(browser_id, purchase_time)
-                    self.conversions_to_save.append({
+                    self.events_to_save.append({
                         "user_id": c.user_id,
                         "browser_id": browser_id,
-                        "purchase_time": c.time,
-                        "payment_time": str(payment_time),
+                        "time": c.time,
+                        "type": "conversion",
                     })
 
         self.cursor.connection.commit()
-        self.__save_conversions()
+        self.__save_events_to_separate_table()
 
     def __mark_conversion_event(self, browser_id, purchase_time):
         # first delete that particular day
@@ -126,9 +125,25 @@ class PageViewsParser:
         self.not_logged_in_browsers = set()
         self.logged_in_browsers = set()
         self.logged_in_browsers_time = {}
+        self.browser_user_id = {}
         self.cur_date = cur_date
         self.cursor = cursor
-        pass
+
+    def __save_events_to_separate_table(self):
+        sql = '''
+            INSERT INTO events (user_id, browser_id, time, type)
+            VALUES (%s, %s, %s, %s)
+        '''
+        psycopg2.extras.execute_batch(self.cursor, sql, [
+            (
+                self.browser_user_id[browser_id],
+                browser_id,
+                self.logged_in_browsers_time[browser_id].isoformat(),
+                "shared_account_login"
+            )
+            for browser_id in self.logged_in_browsers
+        ])
+        self.cursor.connection.commit()
 
     def __load_data(self, f):
         with open(f) as csv_file:
@@ -150,9 +165,10 @@ class PageViewsParser:
                     # correct earlier timestamp event
                     if (p.browser_id in self.logged_in_browsers_time and logged_in_time < self.logged_in_browsers_time[p.browser_id]) or p.browser_id not in self.logged_in_browsers_time:
                         self.logged_in_browsers_time[p.browser_id] = logged_in_time
+                self.browser_user_id[p.browser_id] = p.user_id
 
     def __save_in_db(self):
-        print("Storing loggin data for date " + str(self.cur_date))
+        print("Storing login data for date " + str(self.cur_date))
 
         # first delete that particular day
         for browser_id in self.logged_in_browsers:
@@ -174,6 +190,7 @@ class PageViewsParser:
             for day in arrow.Arrow.span_range('day', start, end)
             for browser_id in self.logged_in_browsers
         ])
+        self.cursor.connection.commit()
 
     def process_file(self, pageviews_file):
         print("Processing file: " + pageviews_file)
@@ -181,6 +198,7 @@ class PageViewsParser:
         self.data.sort(key=lambda x: x.time)
         self.__find_login_events()
         self.__save_in_db()
+        self.__save_events_to_separate_table()
 
 
 def run(file_date, aggregate_folder):
@@ -203,6 +221,12 @@ def run(file_date, aggregate_folder):
 
     conn, cur = create_con(os.getenv("POSTGRES_USER"), os.getenv("POSTGRES_PASS"), os.getenv("POSTGRES_DB"),os.getenv("POSTGRES_HOST"))
     migrate(cur)
+    conn.commit()
+
+    # Delete events for particular day (so command can be safely run multiple times)
+    cur.execute('''
+        DELETE FROM events WHERE time::date = date %s
+    ''', (cur_date,))
     conn.commit()
 
     commerce_parser = CommerceParser(cur_date, cur)
