@@ -6,7 +6,6 @@ function usage {
     echo "Script exporting PostgreSQL aggregated data to BigQuery Google Cloud storage for further processing"
     echo "Usage: $0 --min_date=<DATE> --max_date=<DATE> | $0 --date=<DATE>" >&2
     echo "Optional arguments:"
-    echo "  --dir=<DIR>, where to save temporary CSV files (before they are uploaded to BigQuery)" >&2
     echo "  --env=<FILE>, specifying .env file for sourcing" >&2
     echo "Date format is YYYY-MM-DD" >&2
 }
