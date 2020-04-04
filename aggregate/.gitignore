@@ -1,0 +1,8 @@
+.env
+.virtualenv
+bin/*
+lib/*
+commerce/*
+events/*
+pageviews/*
+pageviews_time_spent/*
