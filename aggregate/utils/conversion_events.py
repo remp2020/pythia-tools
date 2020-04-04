@@ -31,6 +31,9 @@ class CommerceParser:
         self.data = []
         self.cur_date = cur_date
         self.cursor = cursor
+
+        # tuples that will be stored in conversion_events table
+        self.conversions_to_save = []
         pass
 
     def __load_data(self, commerce_file):
@@ -38,6 +41,17 @@ class CommerceParser:
             r = csv.DictReader(csv_file, delimiter=',')
             for row in r:
                 self.data.append(Commerce(row))
+
+    def __save_conversions(self):
+        sql = '''
+            INSERT INTO conversion_events (user_id, browser_id, purchase_time, payment_time)
+            VALUES (%s, %s, %s, %s)
+        '''
+
+        psycopg2.extras.execute_batch(self.cursor, sql, [
+            (x["user_id"], x["browser_id"], x["purchase_time"], x["payment_time"]) for x in self.conversions_to_save
+        ])
+        self.cursor.connection.commit()
 
     def process_file(self, commerce_file):
         print("Processing file: " + commerce_file)
@@ -61,12 +75,21 @@ class CommerceParser:
                 if purchase_time_minus_5 <= payment_time:
                     browser_id = self.user_id_browser_id[c.user_id]
                     self.__mark_conversion_event(browser_id, purchase_time)
+                    self.conversions_to_save.append({
+                        "user_id": c.user_id,
+                        "browser_id": browser_id,
+                        "purchase_time": c.time,
+                        "payment_time": str(payment_time),
+                    })
+
+        self.cursor.connection.commit()
+        self.__save_conversions()
 
     def __mark_conversion_event(self, browser_id, purchase_time):
         # first delete that particular day
         # we don't want conversion day to be included in aggregated data
         self.cursor.execute('''
-        DELETE FROM aggregated_browser_days WHERE browser_id = %s and date = %s
+            DELETE FROM aggregated_browser_days WHERE browser_id = %s and date = %s
         ''', (browser_id, self.cur_date))
 
         # then mark 7_days_event to 'conversion'
@@ -74,9 +97,9 @@ class CommerceParser:
         end = arrow.get(self.cur_date).shift(days=-1)
         start = end.shift(days=-6)
         sql = '''
-        UPDATE aggregated_browser_days 
-        SET next_7_days_event = 'conversion', next_event_time = %s
-        WHERE date = %s AND browser_id = %s AND next_7_days_event = 'no_conversion'
+            UPDATE aggregated_browser_days 
+            SET next_7_days_event = 'conversion', next_event_time = %s
+            WHERE date = %s AND browser_id = %s AND next_7_days_event = 'no_conversion'
         '''
         psycopg2.extras.execute_batch(self.cursor, sql, [
             (purchase_time.isoformat(), day[0].date(), browser_id) for day in arrow.Arrow.span_range('day', start, end)
@@ -129,7 +152,7 @@ class PageViewsParser:
                         self.logged_in_browsers_time[p.browser_id] = logged_in_time
 
     def __save_in_db(self):
-        print("Storing commerce data for date " + str(self.cur_date))
+        print("Storing loggin data for date " + str(self.cur_date))
 
         # first delete that particular day
         for browser_id in self.logged_in_browsers:
@@ -184,7 +207,6 @@ def run(file_date, aggregate_folder):
 
     commerce_parser = CommerceParser(cur_date, cur)
     commerce_parser.process_file(commerce_file)
-    conn.commit()
 
     pageviews_parser= PageViewsParser(cur_date, cur)
     pageviews_parser.process_file(pageviews_file)

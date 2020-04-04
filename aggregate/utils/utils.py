@@ -145,4 +145,16 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
 '''
     cur.execute(sql_aggregated_browser_days)
 
+    sql_conversion_events = '''
+    CREATE TABLE IF NOT EXISTS "public"."conversion_events" (
+        "id" SERIAL PRIMARY KEY,
+        "user_id" character varying NOT NULL,
+        "browser_id" character varying NOT NULL,
+        "purchase_time" timestamp NOT NULL,
+        "payment_time" timestamp NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversion_events_user_id ON "public"."conversion_events"(user_id);
+    '''
+    cur.execute(sql_conversion_events)
+
 
