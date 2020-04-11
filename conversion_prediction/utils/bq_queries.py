@@ -132,16 +132,11 @@ def filter_by_date(
         ).label('next_7_days_event')
     ).subquery()
 
-    label_filter = aggregated_browser_days_w_1_day_event_window.c['next_7_days_event'].in_(
-        [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
-    )
-
     filtered_data = bq_session.query(
         aggregated_browser_days_w_1_day_event_window
     ).filter(
         aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time, TIMESTAMP),
-        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, TIMESTAMP),
-        label_filter
+        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, TIMESTAMP)
     ).subquery()
 
     return filtered_data
