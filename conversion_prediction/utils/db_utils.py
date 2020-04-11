@@ -60,7 +60,7 @@ def get_sqlalchemy_tables_w_session(
         engine_kwargs: Dict[str, Any]
 ) -> Dict:
     table_mapping = {}
-    _, db_connection = create_connection(os.getenv(db_connection_string_name), **engine_kwargs)
+    _, db_connection = create_connection(os.getenv(db_connection_string_name), engine_kwargs)
 
     for table in table_names:
         table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=schema)
