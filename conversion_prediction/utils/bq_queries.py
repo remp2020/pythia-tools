@@ -16,7 +16,8 @@ bq_mappings = get_sqlalchemy_tables_w_session(
     'BQ_CONNECTION_STRING',
     schema='pythia',
     table_names=['aggregated_browser_days'],
-    engine_kwargs={'credentials_path': '../../client_secrets.json'}
+    engine_kwargs={'credentials_path': '../../client_secrets.json'},
+    database='dennik-n-269415'
 )
 
 bq_session = bq_mappings['session']
@@ -613,7 +614,8 @@ def get_payment_history_features(end_time: datetime):
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_CONNECTION_STRING',
         'predplatne',
-        ['payments', 'subscriptions']
+        ['payments', 'subscriptions'],
+        database='pythia'
     )
 
     mysql_predplatne_session = predplatne_mysql_mappings['session']
@@ -679,7 +681,8 @@ def get_global_context(start_time, end_time):
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_CONNECTION_STRING',
         'predplatne',
-        ['payments']
+        ['payments'],
+        database='pythia'
     )
 
     mysql_predplatne_session = predplatne_mysql_mappings['session']
