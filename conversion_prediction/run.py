@@ -391,9 +391,10 @@ class ConversionPredictionModel(object):
         Adds normalized profile based features (normalized always within group, either replacing the original profile based
         features in group, or adding them onto the original dataframe
         '''
-        merge_columns = ['date', 'browser_id']
         self.add_missing_json_columns()
-        for column_set_list in self.feature_columns.profile_numeric_columns_from_json_fields.values():
+        column_sets = list(self.feature_columns.profile_numeric_columns_from_json_fields.values()) + \
+            list(self.feature_columns.time_based_columns.values())
+        for column_set_list in column_sets:
             for column_set in column_set_list:
                 self.user_profiles[column_set] = self.user_profiles[column_set].astype(float)
                 normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
@@ -403,7 +404,9 @@ class ConversionPredictionModel(object):
                 if self.normalization_handling is NormalizedFeatureHandling.REPLACE_WITH:
                     self.user_profiles.drop(column_set, axis=1, inplace=True)
                 elif self.normalization_handling is NormalizedFeatureHandling.ADD:
-                    self.feature_columns.add_normalized_profile_features_version()
+                    self.feature_columns.add_normalized_profile_features_version(
+                        list(self.feature_aggregation_functions.keys())
+                    )
                 else:
                     raise ValueError('Unknown normalization handling parameter')
 
