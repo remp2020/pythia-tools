@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 # TODO: Look into unifying TEXT and Text
-from sqlalchemy import select
+from sqlalchemy import select, column
 from sqlalchemy.types import Float, DATE, String
 from sqlalchemy.sql.expression import extract
 from sqlalchemy import and_, func, case, text
@@ -192,14 +192,12 @@ def get_subqueries_for_non_gapped_time_series(
     #         func.generate_date_array(start_time, end_time)
     #     ).cast(DATE).label('date_gap_filler')
     # ).subquery()
-
-    generated_time_series = select(['*']).select_from(
+    
+    generated_time_series = bq_session.query(select([column('dates').label('date_gap_filler')]).select_from(
         func.unnest(
             func.generate_date_array(start_time, end_time)
-        ).cast(DATE).label('date_gap_filler')
-    ).subquery()
-
-    print(generated_time_series)
+            ).alias('dates')
+    )).subquery()
 
     browser_ids = bq_session.query(
         filtered_data.c['browser_id'],
