@@ -275,14 +275,23 @@ def create_rolling_agg_function(
 
 
 def get_unique_json_fields_query(filtered_data, column_name):
-    # TODO: Once the column type is unified in DB, we can get rid of this branching
     all_keys_query = bq_session.query(
-        func.jsonb_object_keys(filtered_data.c[column_name]).label(column_name)
+        func.regexp_replace(filtered_data.c[column_name], text('{|}|: [0-9]+|"'), text('')).label(column_name)
     ).subquery()
-    column_keys = bq_session.query(all_keys_query.c[column_name]).distinct(
-        all_keys_query.c[column_name]).all()
-    column_keys = [json_key[0] for json_key in column_keys]
 
+    all_keys_query = bq_session.query(
+        func.split(all_keys_query.c[column_name], '').label(column_name)
+    ).subquery()
+
+    column_keys = bq_session.query(
+        all_keys_query.c[column_name].offset(0).label(column_name)
+    ).filter(
+        func.array_length(all_keys_query.c[column_name]) == 1
+    ).group_by(
+        column_name
+    ).all()
+
+    print(column_keys)
     return column_keys
 
 
