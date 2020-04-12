@@ -1,15 +1,14 @@
 import re
 import pandas as pd
 # TODO: Look into unifying TEXT and Text
-from sqlalchemy import select, exc
-from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text, String
-from sqlalchemy.sql.expression import literal, extract
+from sqlalchemy import select
+from sqlalchemy.types import TIMESTAMP, Float, DATE,TEXT, Text
+from sqlalchemy.sql.expression import extract
 from sqlalchemy import and_, func, case, text
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session
 from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, generate_4_hour_interval_column_names
-from sqlalchemy.dialects.postgresql import ARRAY
 from typing import List, Dict
 
 bq_mappings = get_sqlalchemy_tables_w_session(
@@ -195,7 +194,9 @@ def get_subqueries_for_non_gapped_time_series(
                 [
                     (filtered_data.c['user_ids'] == None,
                      ''),
-                    (filtered_data.c['user_ids'] == literal([], ARRAY(String)),
+                    # This is an obvious hack, but while PG accepts a comparison with an empty array that is defined
+                    # as literal([], ARRAY[TEXT]), bigquery claims it doesn't know the type of the array
+                    (func.array_to_string(filtered_data.c['user_ids'], '') == '',
                      '')
                 ],
                 else_=filtered_data.c['user_ids'].cast(TEXT)
@@ -274,6 +275,10 @@ def create_rolling_agg_function(
 
 
 def get_unique_json_fields_query(filtered_data, column_name):
+    # This is a hacky workaround. Bigquery doesn't have a function to extract all keys from a json column flattening
+    # them. What we do here is remove everything but the keys from the json string, split on commas, keep only the ones
+    # with 1 key (assuming with enough data all keys occur along, especially since more visitors only tend to have
+    # 1 pageview, we than transform these single key arrays to string and group by to get unique ones
     all_keys_query = bq_session.query(
         func.regexp_replace(filtered_data.c[column_name], '{|}|: [0-9]+|"', '').label(column_name)
     ).subquery()
