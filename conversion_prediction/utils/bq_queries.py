@@ -187,7 +187,13 @@ def get_subqueries_for_non_gapped_time_series(
     #     func.unnest(generated_time_series.c['date_gap_filler']).cast(DATE).label('date_gap_filler')
     # ).subquery()
 
-    generated_time_series = bq_session.query(
+    # generated_time_series = bq_session.query(
+    #     func.unnest(
+    #         func.generate_date_array(start_time, end_time)
+    #     ).cast(DATE).label('date_gap_filler')
+    # ).subquery()
+
+    generated_time_series = select(['*']).select_from(
         func.unnest(
             func.generate_date_array(start_time, end_time)
         ).cast(DATE).label('date_gap_filler')
