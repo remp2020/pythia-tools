@@ -2,7 +2,7 @@ import re
 import pandas as pd
 # TODO: Look into unifying TEXT and Text
 from sqlalchemy import select, exc
-from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
+from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text, String
 from sqlalchemy.sql.expression import literal, extract
 from sqlalchemy import and_, func, case, text
 from sqlalchemy.sql.expression import cast
@@ -193,12 +193,9 @@ def get_subqueries_for_non_gapped_time_series(
         func.array_agg(
             case(
                 [
-                    # TODO: Return to original code once the user_ids fields is array again
                     (filtered_data.c['user_ids'] == None,
                      ''),
-                    # (filtered_data.c['user_ids'] == literal([], ARRAY(TEXT)),
-                    #  '')
-                    (filtered_data.c['user_ids'] == '',
+                    (filtered_data.c['user_ids'] == literal([], ARRAY(String)),
                      '')
                 ],
                 else_=filtered_data.c['user_ids'].cast(TEXT)
