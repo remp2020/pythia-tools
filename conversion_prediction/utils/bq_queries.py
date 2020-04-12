@@ -4,7 +4,7 @@ import pandas as pd
 from sqlalchemy import select, exc
 from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
 from sqlalchemy.sql.expression import literal, extract
-from sqlalchemy import and_, func, case
+from sqlalchemy import and_, func, case, text
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session
@@ -121,10 +121,10 @@ def filter_by_date(
                     aggregated_browser_days.c['next_7_days_event'].in_(
                         [label for label, label_type in LABELS.items() if label_type == 'positive']
                     ),
-                    func.datediff(
-                        aggregated_browser_days.c['next_event_time'],
+                    func.date_diff(
+                        aggregated_browser_days.c['next_event_time'].cast(DATE),
                         aggregated_browser_days.c['date'],
-                        'day'
+                        text('day')
                     ) >= 1
                 ),
                  aggregated_browser_days.c['next_7_days_event'])
@@ -134,20 +134,21 @@ def filter_by_date(
     ).subquery()
 
     current_data = bq_session.query(
-        aggregated_browser_days_w_1_day_event_window
+        *[aggregated_browser_days_w_1_day_event_window.c[column.name].label(column.name) for column in aggregated_browser_days_w_1_day_event_window.columns]
     ).filter(
-        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time, TIMESTAMP),
-        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, TIMESTAMP)
-    ).subquery()
+        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time, DATE),
+        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, DATE)
+    )
 
     past_positives = bq_session.query(
-        aggregated_browser_days_w_1_day_event_window
+        *[aggregated_browser_days_w_1_day_event_window.c[column.name].label(column.name) for column in aggregated_browser_days_w_1_day_event_window.columns]
     ).filter(
-        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time - timedelta(days=90), TIMESTAMP),
-        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(start_time, TIMESTAMP)
-    ).subquery()
+        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time - timedelta(days=90), DATE),
+        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(start_time, DATE)
+    )
 
-    filtered_data = current_data.union(past_positives).subquery()
+    filtered_data = current_data.union_all(past_positives).subquery()
+    filtered_data = bq_session.query(*[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns]).subquery()
 
     return filtered_data
 
