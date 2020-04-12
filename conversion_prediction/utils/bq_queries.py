@@ -32,12 +32,12 @@ def get_feature_frame_via_sqlalchemy(
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'avg': func.avg}
 
-    full_query = get_full_features_query(
+    full_query = bq_session.query(get_full_features_query(
         start_time,
         end_time,
         moving_window_length,
         feature_aggregation_functions,
-    )
+    ))
 
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
     feature_frame.columns = [re.sub('anon_1_', '', column) for column in feature_frame.columns]
