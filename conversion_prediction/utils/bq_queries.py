@@ -180,7 +180,11 @@ def get_subqueries_for_non_gapped_time_series(
     ).all()[0]
 
     generated_time_series = bq_session.query(
-        func.unnest(func.generate_date_array(start_time, end_time)).cast(DATE).label('date_gap_filler')
+        func.generate_date_array(start_time, end_time).labe('date_gap_filler')
+    ).subquery()
+
+    generated_time_series = bq_session.query(
+        func.unnest(generated_time_series.c['date_gap_filler']).cast(DATE).label('date_gap_filler')
     ).subquery()
 
     browser_ids = bq_session.query(
