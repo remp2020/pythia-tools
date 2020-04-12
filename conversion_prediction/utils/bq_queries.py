@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 # TODO: Look into unifying TEXT and Text
-from sqlalchemy import select
+from sqlalchemy import select, column
 from sqlalchemy.types import Float, DATE, String
 from sqlalchemy.sql.expression import extract
 from sqlalchemy import and_, func, case, text
@@ -193,13 +193,11 @@ def get_subqueries_for_non_gapped_time_series(
     #     ).cast(DATE).label('date_gap_filler')
     # ).subquery()
 
-    generated_time_series = select(['*']).select_from(
+    generated_time_series = select(column('date_gap_filler')).select_from(
         func.unnest(
-            func.generate_date_array(start_time, end_time)
-        ).cast(DATE).label('date_gap_filler')
-    ).subquery()
-
-    print(generated_time_series)
+            func.generate_date_array(start_time, end_time).label('date_gap_filler')
+        ).alias('dates')
+    )
 
     browser_ids = bq_session.query(
         filtered_data.c['browser_id'],
@@ -218,7 +216,7 @@ def get_subqueries_for_non_gapped_time_series(
     ).group_by(filtered_data.c['browser_id']).subquery(name='browser_ids')
 
     all_date_browser_combinations = bq_session.query(
-        select([browser_ids, generated_time_series]).alias('all_date_browser_combinations')).subquery()
+        select([browser_ids, generated_time_series.c['date_gap_filler']]).alias('all_date_browser_combinations')).subquery()
 
     return all_date_browser_combinations
 
@@ -405,8 +403,10 @@ def join_all_partial_queries(
         unique_events,
         and_(
             unique_events.c['event_browser_id'] == filtered_data_with_unpacked_json_fields.c['browser_id'],
-            unique_events.c['next_event_time_filled'] > filtered_data_with_unpacked_json_fields.c['date'] - timedelta(
-                days=7),
+            unique_events.c['next_event_time_filled'] > func.date_sub(
+                filtered_data_with_unpacked_json_fields.c['date'],
+                text(f'interval {1} day')
+            ),
             filtered_data_with_unpacked_json_fields.c['date'] <= unique_events.c['next_event_time_filled']
         )
     ).outerjoin(
