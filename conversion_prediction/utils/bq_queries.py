@@ -16,8 +16,7 @@ bq_mappings = get_sqlalchemy_tables_w_session(
     'BQ_CONNECTION_STRING',
     schema='pythia',
     table_names=['aggregated_browser_days'],
-    engine_kwargs={'credentials_path': '../../client_secrets.json'},
-    database='dennik-n-269415'
+    engine_kwargs={'credentials_path': '../../client_secrets.json'}
 )
 
 bq_session = bq_mappings['session']
