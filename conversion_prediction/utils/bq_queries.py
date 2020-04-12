@@ -2,7 +2,7 @@ import re
 import pandas as pd
 # TODO: Look into unifying TEXT and Text
 from sqlalchemy import select
-from sqlalchemy.types import TIMESTAMP, Float, DATE,TEXT, Text
+from sqlalchemy.types import Float, DATE, String
 from sqlalchemy.sql.expression import extract
 from sqlalchemy import and_, func, case, text
 from sqlalchemy.sql.expression import cast
@@ -199,7 +199,7 @@ def get_subqueries_for_non_gapped_time_series(
                     (func.array_to_string(filtered_data.c['user_ids'], '') == '',
                      '')
                 ],
-                else_=filtered_data.c['user_ids'].cast(TEXT)
+                else_=filtered_data.c['user_ids'].cast(String)
             )).label('user_ids')
     ).group_by(filtered_data.c['browser_id']).subquery(name='browser_ids')
 
@@ -309,7 +309,7 @@ def unpack_json_fields(filtered_data):
         json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
         if json_column != 'hour_interval_pageviews':
             json_key_based_columns[json_column] = {
-                f'{json_column}_{json_key}': func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(Text).cast(Float)
+                f'{json_column}_{json_key}': func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(String).cast(Float)
                 for json_key in json_column_keys[json_column]
             }
 
@@ -369,7 +369,7 @@ def join_all_partial_queries(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
-        func.weekday(all_date_browser_combinations.c['date_gap_filler']).cast(Text).label('day_of_week'),
+        func.weekday(all_date_browser_combinations.c['date_gap_filler']).cast(String).label('day_of_week'),
         filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
         (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
         unique_events.c['outcome_filled'],
@@ -791,21 +791,6 @@ def get_global_context(start_time, end_time):
     mysql_beam_session.close()
 
     return context
-
-
-def get_browser_days_count(
-        start_time: datetime,
-        end_time: datetime
-):
-    count_query = bq_session.query(
-        func.count(aggregated_browser_days.c['browser_id']).label('count')
-    ).filter(
-        aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
-        aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP),
-    )
-    count = pd.read_sql(count_query.statement, count_query.session.bind)
-
-    return int(count.loc[0, 'count'])
 
 
 queries = dict()
