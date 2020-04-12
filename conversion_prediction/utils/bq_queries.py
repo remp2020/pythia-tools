@@ -192,7 +192,7 @@ def get_subqueries_for_non_gapped_time_series(
     #         func.generate_date_array(start_time, end_time)
     #     ).cast(DATE).label('date_gap_filler')
     # ).subquery()
-    
+
     generated_time_series = bq_session.query(select([column('dates').label('date_gap_filler')]).select_from(
         func.unnest(
             func.generate_date_array(start_time, end_time)
@@ -216,7 +216,7 @@ def get_subqueries_for_non_gapped_time_series(
     ).group_by(filtered_data.c['browser_id']).subquery(name='browser_ids')
 
     all_date_browser_combinations = bq_session.query(
-        select([browser_ids, generated_time_series]).alias('all_date_browser_combinations')).subquery()
+        select([browser_ids, generated_time_series.c['date_gap_filler']]).alias('all_date_browser_combinations')).subquery()
 
     return all_date_browser_combinations
 
@@ -255,7 +255,8 @@ def get_device_information_subquery(
         filtered_data.c['is_tablet'],
         filtered_data.c['os_family'].label('os'),
         filtered_data.c['is_mobile'],
-        filtered_data.c['browser_id']
+        filtered_data.c['browser_id'],
+        filtered_data.c['date']
     ).order_by(
         filtered_data.c['browser_id'],
         filtered_data.c['date'].desc()
@@ -381,7 +382,7 @@ def join_all_partial_queries(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
-        func.weekday(all_date_browser_combinations.c['date_gap_filler']).cast(String).label('day_of_week'),
+        func.extract(text('DAYOFWEEK'), all_date_browser_combinations.c['date_gap_filler']).cast(String).label('day_of_week'),
         filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
         (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
         unique_events.c['outcome_filled'],
@@ -393,7 +394,7 @@ def join_all_partial_queries(
         # Add all columns created from json_fields
         *[filtered_data_with_unpacked_json_fields.c[json_key_column] for json_key_column in json_key_column_names],
         # Unpack all device information columns except ones already present in other queries
-        *[device_information.c[column.name] for column in device_information.columns if column.name != 'browser_id'],
+        *[device_information.c[column.name] for column in device_information.columns if column.name not in ['browser_id', 'date']],
     ).outerjoin(
         filtered_data_with_unpacked_json_fields,
         and_(
@@ -403,9 +404,11 @@ def join_all_partial_queries(
         unique_events,
         and_(
             unique_events.c['event_browser_id'] == filtered_data_with_unpacked_json_fields.c['browser_id'],
-            unique_events.c['next_event_time_filled'] > filtered_data_with_unpacked_json_fields.c['date'] - timedelta(
-                days=7),
-            filtered_data_with_unpacked_json_fields.c['date'] <= unique_events.c['next_event_time_filled']
+            unique_events.c['next_event_time_filled'].cast(DATE) > func.date_sub(
+                filtered_data_with_unpacked_json_fields.c['date'],
+                text(f'interval {1} day')
+            ),
+            filtered_data_with_unpacked_json_fields.c['date'] <= unique_events.c['next_event_time_filled'].cast(DATE)
         )
     ).outerjoin(
         device_information,
