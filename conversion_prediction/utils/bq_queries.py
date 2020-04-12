@@ -199,7 +199,7 @@ def get_subqueries_for_non_gapped_time_series(
                     (func.array_to_string(filtered_data.c['user_ids'], '') == '',
                      '')
                 ],
-                else_=filtered_data.c['user_ids'].cast(String)
+                else_=func.array_to_string(filtered_data.c['user_ids'], ',')
             )).label('user_ids')
     ).group_by(filtered_data.c['browser_id']).subquery(name='browser_ids')
 
