@@ -318,7 +318,7 @@ def unpack_json_fields(filtered_data):
     json_key_column_names = [
         key for json_keys in json_key_based_columns.values()
         for key in json_keys.keys()
-    ] + generate_4_hour_interval_column_names()
+    ]
 
     unpacked_time_fields_query = bq_session.query(
         filtered_data,
@@ -349,7 +349,7 @@ def add_4_hour_intervals(
     We need to use coalesce to avoid having almost all NULL columns
     '''
     hour_ranges = generate_4_hour_interval_column_names()
-    hour_based_columns = [filtered_data.c[column].label(column) for column in hour_ranges]
+    hour_based_columns = {column: filtered_data.c[column].label(column) for column in hour_ranges}
 
     return hour_based_columns
 
