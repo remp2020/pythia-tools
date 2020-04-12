@@ -132,12 +132,21 @@ def filter_by_date(
         ).label('next_7_days_event')
     ).subquery()
 
-    filtered_data = bq_session.query(
+    current_data = bq_session.query(
         aggregated_browser_days_w_1_day_event_window
     ).filter(
         aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time, TIMESTAMP),
         aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, TIMESTAMP)
     ).subquery()
+
+    past_positives = bq_session.query(
+        aggregated_browser_days_w_1_day_event_window
+    ).filter(
+        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time - timedelta(days=90), TIMESTAMP),
+        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(start_time, TIMESTAMP)
+    ).subquery()
+
+    filtered_data = current_data.union(past_positives).subquery()
 
     return filtered_data
 
