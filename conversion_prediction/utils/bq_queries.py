@@ -276,22 +276,25 @@ def create_rolling_agg_function(
 
 def get_unique_json_fields_query(filtered_data, column_name):
     all_keys_query = bq_session.query(
-        func.regexp_replace(filtered_data.c[column_name], text('{|}|: [0-9]+|"'), text('')).label(column_name)
+        func.regexp_replace(filtered_data.c[column_name], '{|}|: [0-9]+|"', '').label(column_name)
     ).subquery()
 
     all_keys_query = bq_session.query(
-        func.split(all_keys_query.c[column_name], '').label(column_name)
+        func.split(all_keys_query.c[column_name], ',').label(column_name)
+    ).subquery()
+
+    all_keys_query = bq_session.query(all_keys_query).filter(
+        func.array_length(all_keys_query.c[column_name]) == 1
     ).subquery()
 
     column_keys = bq_session.query(
-        all_keys_query.c[column_name].offset(0).label(column_name)
-    ).filter(
-        func.array_length(all_keys_query.c[column_name]) == 1
+        func.array_to_string(all_keys_query.c[column_name], '').label(column_name)
     ).group_by(
         column_name
     ).all()
+    
+    column_keys = [json_key[0] for json_key in column_keys]
 
-    print(column_keys)
     return column_keys
 
 
@@ -302,7 +305,7 @@ def unpack_json_fields(filtered_data):
         json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
         if json_column != 'hour_interval_pageviews':
             json_key_based_columns[json_column] = {
-                f'{json_column}_{json_key}': filtered_data.c[json_column][json_key].cast(Text).cast(Float)
+                f'{json_column}_{json_key}': func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(Text).cast(Float)
                 for json_key in json_column_keys[json_column]
             }
 
