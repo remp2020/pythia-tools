@@ -121,9 +121,10 @@ def filter_by_date(
                     aggregated_browser_days.c['next_7_days_event'].in_(
                         [label for label, label_type in LABELS.items() if label_type == 'positive']
                     ),
-                    func.extract(
-                        'day',
-                        aggregated_browser_days.c['next_event_time'] - aggregated_browser_days.c['date']
+                    func.datediff(
+                        aggregated_browser_days.c['next_event_time'],
+                        aggregated_browser_days.c['date'],
+                        'day'
                     ) >= 1
                 ),
                  aggregated_browser_days.c['next_7_days_event'])
@@ -351,7 +352,7 @@ def join_all_partial_queries(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
-        func.extract('dow', all_date_browser_combinations.c['date_gap_filler']).cast(Text).label('day_of_week'),
+        func.weekday(all_date_browser_combinations.c['date_gap_filler']).cast(Text).label('day_of_week'),
         filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
         (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
         unique_events.c['outcome_filled'],
