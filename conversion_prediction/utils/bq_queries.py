@@ -193,11 +193,13 @@ def get_subqueries_for_non_gapped_time_series(
         func.array_agg(
             case(
                 [
+                    # TODO: Return to original code once the user_ids fields is array again
                     (filtered_data.c['user_ids'] == None,
                      ''),
-                    (filtered_data.c['user_ids'] == literal([], ARRAY(TEXT)),
+                    # (filtered_data.c['user_ids'] == literal([], ARRAY(TEXT)),
+                    #  '')
+                    (filtered_data.c['user_ids'] == '',
                      '')
-
                 ],
                 else_=filtered_data.c['user_ids'].cast(TEXT)
             )).label('user_ids')
