@@ -186,8 +186,8 @@ def remove_helper_lookback_rows(
         start_time
 ):
     label_lookback_cause = filtered_w_derived_metrics_w_all_time_delta_columns.c['date'] >= (
-        start_time - timedelta(days=90)
-    )
+            (start_time - timedelta(days=90)).date()
+            )
 
     final_query_for_outcome_category = bq_session.query(
         # We re-alias since adding another layer causes sqlalchemy to abbreviate columns
@@ -468,21 +468,21 @@ def calculate_rolling_windows_features(
     queries_with_basic_window_columns = bq_session.query(
         joined_queries,
         *rolling_agg_columns_base,
-        extract('day',
-                # last day in the current window
-                joined_queries.c['date']
-                # last day active in current window
-                - func.coalesce(
-                    create_rolling_agg_function(
-                        moving_window_length,
-                        False,
-                        func.max,
-                        joined_queries.c['date_w_gaps'],
-                        joined_queries.c['browser_id'],
-                        joined_queries.c['date']),
-                        (start_time - timedelta(days=2)).date()
-                )
-                ).label('days_since_last_active'),
+        func.date_diff(
+            # last day in the current window
+            joined_queries.c['date'],
+            # last day active in current window
+            func.coalesce(
+                create_rolling_agg_function(
+                    moving_window_length,
+                    False,
+                    func.max,
+                    joined_queries.c['date_w_gaps'],
+                    joined_queries.c['browser_id'],
+                    joined_queries.c['date']),
+                (start_time - timedelta(days=2)).date()
+            ),
+            text('day')).label('days_since_last_active'),
         # row number in case deduplication is needed
         func.row_number().over(
             partition_by=[
@@ -896,3 +896,4 @@ queries['upsert_prediction_job_log'] = '''
                rows_predicted = :rows_predicted,
                updated_at = :updated_at
     '''
+
