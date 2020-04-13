@@ -108,7 +108,7 @@ JSON_COLUMNS = ['referer_medium_pageviews', 'hour_interval_pageviews', 'article_
 def generate_4_hour_interval_column_names():
     hour_ranges = []
     for i in range(0, 24, 4):
-        hour_ranges.append(f'pageviews_{i}h_{i + 4}h')
+        hour_ranges.append(f'pvs_{i}h_{i + 4}h')
 
     return hour_ranges
 

@@ -132,11 +132,11 @@ def filter_by_date(
         aggregated_browser_days.c['referer_medium_pageviews'].label('referer_medium_pageviews'),
         aggregated_browser_days.c['article_category_pageviews'].label('article_category_pageviews'),
         aggregated_browser_days.c['hour_interval_pageviews'].label('hour_interval_pageviews'),
-        aggregated_browser_days.c['pageviews_0h_4h'].label('pageviews_0h_4h'),
-        aggregated_browser_days.c['pageviews_4h_8h'].label('pageviews_4h_8h'),
-        aggregated_browser_days.c['pageviews_8h_12h'].label('pageviews_8h_12h'),
-        aggregated_browser_days.c['pageviews_12h_16h'].label('pageviews_12h_16h'),
-        aggregated_browser_days.c['pageviews_16h_20h'].label('pageviews_16h_20h')
+        aggregated_browser_days.c['pageviews_0h_4h'].label('pvs_0h_4h'),
+        aggregated_browser_days.c['pageviews_4h_8h'].label('pvs_4h_8h'),
+        aggregated_browser_days.c['pageviews_8h_12h'].label('pvs_8h_12h'),
+        aggregated_browser_days.c['pageviews_12h_16h'].label('pvs_12h_16h'),
+        aggregated_browser_days.c['pageviews_16h_20h'].label('pvs_16h_20h')
     ).subquery()
     
     # This transforms the 7 day event into 1 day event
