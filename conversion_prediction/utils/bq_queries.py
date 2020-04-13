@@ -351,7 +351,8 @@ def unpack_json_fields(filtered_data):
         if json_column != 'hour_interval_pageviews':
             json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
             json_key_based_columns[json_column] = {
-                f'{json_column}_{json_key}': func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(String).cast(Float)
+                f'{json_column}_{re.sub("-", "_" , json_key)}':
+                    func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(Float)
                 for json_key in json_column_keys[json_column]
             }
 
@@ -367,10 +368,13 @@ def unpack_json_fields(filtered_data):
     ]
 
     unpacked_time_fields_query = bq_session.query(
-        filtered_data,
+        *[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns if
+          column.name not in json_key_column_names],
+        *[column for column in json_key_based_columns['hour_interval_pageviews'].values()],
         *[value.label(key)
-          for json_keys in json_key_based_columns.values()
+          for original_column, json_keys in json_key_based_columns.items()
           for key, value in json_keys.items()
+          if original_column != 'hour_interval_pageviews'
           ]
     ).subquery()
 
