@@ -109,73 +109,73 @@ def filter_by_date(
         start_time: datetime,
         end_time: datetime
 ):
+    filtered_data = bq_session.query(
+        aggregated_browser_days.c['date'].label('date'),
+        aggregated_browser_days.c['browser_id'].label('browser_id'),
+        aggregated_browser_days.c['user_ids'].label('user_ids'),
+        aggregated_browser_days.c['pageviews'].label('pageviews'),
+        aggregated_browser_days.c['timespent'].label('timespent'),
+        aggregated_browser_days.c['sessions'].label('sessions'),
+        aggregated_browser_days.c['sessions_without_ref'].label('sessions_without_ref'),
+        aggregated_browser_days.c['browser_family'].label('browser_family'),
+        aggregated_browser_days.c['browser_version'].label('browser_version'),
+        aggregated_browser_days.c['os_family'].label('os_family'),
+        aggregated_browser_days.c['os_version'].label('os_version'),
+        aggregated_browser_days.c['device_family'].label('device_family'),
+        aggregated_browser_days.c['device_brand'].label('device_brand'),
+        aggregated_browser_days.c['device_model'].label('device_model'),
+        aggregated_browser_days.c['is_desktop'].label('is_desktop'),
+        aggregated_browser_days.c['is_mobile'].label('is_mobile'),
+        aggregated_browser_days.c['is_tablet'].label('is_tablet'),
+        aggregated_browser_days.c['next_7_days_event'].label('next_7_days_event'),
+        aggregated_browser_days.c['next_event_time'].label('next_event_time'),
+        aggregated_browser_days.c['referer_medium_pageviews'].label('referer_medium_pageviews'),
+        aggregated_browser_days.c['article_category_pageviews'].label('article_category_pageviews'),
+        aggregated_browser_days.c['hour_interval_pageviews'].label('hour_interval_pageviews'),
+        aggregated_browser_days.c['pageviews_0h_4h'].label('pageviews_0h_4h'),
+        aggregated_browser_days.c['pageviews_4h_8h'].label('pageviews_4h_8h'),
+        aggregated_browser_days.c['pageviews_8h_12h'].label('pageviews_8h_12h'),
+        aggregated_browser_days.c['pageviews_12h_16h'].label('pageviews_12h_16h'),
+        aggregated_browser_days.c['pageviews_16h_20h'].label('pageviews_16h_20h')
+    ).subquery()
+    
     # This transforms the 7 day event into 1 day event
-    aggregated_browser_days_w_1_day_event_window = bq_session.query(
-        *[aggregated_browser_days.c[column.name].label(column.name) for column in aggregated_browser_days.columns
+    filtered_data_w_1_day_event_window = bq_session.query(
+        *[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns
           if column.name != 'next_7_days_event'],
         case(
             [
                 (and_(
-                    aggregated_browser_days.c['next_7_days_event'].in_(
+                    filtered_data.c['next_7_days_event'].in_(
                         [label for label, label_type in LABELS.items() if label_type == 'positive']
                     ),
                     func.date_diff(
-                        aggregated_browser_days.c['next_event_time'].cast(DATE),
-                        aggregated_browser_days.c['date'],
+                        filtered_data.c['next_event_time'].cast(DATE),
+                        filtered_data.c['date'],
                         text('day')
                     ) >= 1
                 ),
-                 aggregated_browser_days.c['next_7_days_event'])
+                 filtered_data.c['next_7_days_event'])
             ],
             else_=[label for label, label_type in LABELS.items() if label_type == 'negative'][0]
         ).label('next_7_days_event')
     ).subquery()
 
     current_data = bq_session.query(
-        *[aggregated_browser_days_w_1_day_event_window.c[column.name].label(column.name) for column in aggregated_browser_days_w_1_day_event_window.columns]
+        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in filtered_data_w_1_day_event_window.columns]
     ).filter(
-        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time, DATE),
-        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, DATE)
+        filtered_data_w_1_day_event_window.c['date'] >= cast(start_time, DATE),
+        filtered_data_w_1_day_event_window.c['date'] <= cast(end_time, DATE)
     )
 
     past_positives = bq_session.query(
-        *[aggregated_browser_days_w_1_day_event_window.c[column.name].label(column.name) for column in aggregated_browser_days_w_1_day_event_window.columns]
+        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in filtered_data_w_1_day_event_window.columns]
     ).filter(
-        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time - timedelta(days=90), DATE),
-        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(start_time, DATE)
+        filtered_data_w_1_day_event_window.c['date'] >= cast(start_time - timedelta(days=90), DATE),
+        filtered_data_w_1_day_event_window.c['date'] <= cast(start_time, DATE)
     )
 
     filtered_data = current_data.union_all(past_positives).subquery()
-
-    filtered_data = bq_session.query(
-        filtered_data.c['date'].label('date'),
-        filtered_data.c['browser_id'].label('browser_id'),
-        filtered_data.c['user_ids'].label('user_ids'),
-        filtered_data.c['pageviews'].label('pageviews'),
-        filtered_data.c['timespent'].label('timespent'),
-        filtered_data.c['sessions'].label('sessions'),
-        filtered_data.c['sessions_without_ref'].label('sessions_without_ref'),
-        filtered_data.c['browser_family'].label('browser_family'),
-        filtered_data.c['browser_version'].label('browser_version'),
-        filtered_data.c['os_family'].label('os_family'),
-        filtered_data.c['os_version'].label('os_version'),
-        filtered_data.c['device_family'].label('device_family'),
-        filtered_data.c['device_brand'].label('device_brand'),
-        filtered_data.c['device_model'].label('device_model'),
-        filtered_data.c['is_desktop'].label('is_desktop'),
-        filtered_data.c['is_mobile'].label('is_mobile'),
-        filtered_data.c['is_tablet'].label('is_tablet'),
-        filtered_data.c['next_7_days_event'].label('next_7_days_event'),
-        filtered_data.c['next_event_time'].label('next_event_time'),
-        filtered_data.c['referer_medium_pageviews'].label('referer_medium_pageviews'),
-        filtered_data.c['article_category_pageviews'].label('article_category_pageviews'),
-        filtered_data.c['hour_interval_pageviews'].label('hour_interval_pageviews'),
-        filtered_data.c['pageviews_0h_4h'].label('pageviews_0h_4h'),
-        filtered_data.c['pageviews_4h_8h'].label('pageviews_4h_8h'),
-        filtered_data.c['pageviews_8h_12h'].label('pageviews_8h_12h'),
-        filtered_data.c['pageviews_12h_16h'].label('pageviews_12h_16h'),
-        filtered_data.c['pageviews_16h_20h'].label('pageviews_16h_20h'),
-    ).subquery()
 
     return filtered_data
 
