@@ -147,7 +147,36 @@ def filter_by_date(
     )
 
     filtered_data = current_data.union_all(past_positives).subquery()
-    filtered_data = bq_session.query(*[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns]).subquery()
+
+    filtered_data = bq_session.query(
+        filtered_data.c['date'],
+        filtered_data.c['browser_id'],
+        filtered_data.c['user_ids'],
+        filtered_data.c['pageviews'],
+        filtered_data.c['timespent'],
+        filtered_data.c['sessions'],
+        filtered_data.c['sessions_without_ref'],
+        filtered_data.c['browser_family'],
+        filtered_data.c['browser_version'],
+        filtered_data.c['os_family'],
+        filtered_data.c['os_version'],
+        filtered_data.c['device_family'],
+        filtered_data.c['device_brand'],
+        filtered_data.c['device_model'],
+        filtered_data.c['is_desktop'],
+        filtered_data.c['is_mobile'],
+        filtered_data.c['is_tablet'],
+        filtered_data.c['next_7_days_event'],
+        filtered_data.c['next_event_time'],
+        filtered_data.c['referer_medium_pageviews'],
+        filtered_data.c['article_category_pageviews'],
+        filtered_data.c['pageviews_0h_4h'],
+        filtered_data.c['pageviews_4h_8h'],
+        filtered_data.c['pageviews_8h_12h'],
+        filtered_data.c['pageviews_12h_16h'],
+        filtered_data.c['pageviews_16h_20h'],
+        filtered_data.c['pageviews_20h_24h']
+    ).subquery()
 
     return filtered_data
 
