@@ -480,7 +480,7 @@ def calculate_rolling_windows_features(
                         joined_queries.c['date_w_gaps'],
                         joined_queries.c['browser_id'],
                         joined_queries.c['date']),
-                    start_time - timedelta(days=2)
+                        (start_time - timedelta(days=2)).date()
                 )
                 ).label('days_since_last_active'),
         # row number in case deduplication is needed
