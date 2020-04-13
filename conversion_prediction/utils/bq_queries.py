@@ -463,6 +463,11 @@ def join_all_partial_queries(
         device_information.c['browser_id'] == all_date_browser_combinations.c['browser_id']
     ).subquery()
 
+    print(
+        'joined_queries, :',
+        [True for column in joined_queries.columns if 'pageviews_0h_4h' in column.name]
+    )
+
     return joined_queries
 
 
