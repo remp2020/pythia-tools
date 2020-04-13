@@ -348,8 +348,8 @@ def unpack_json_fields(filtered_data):
     json_key_based_columns = {}
     json_column_keys = {}
     for json_column in JSON_COLUMNS:
-        json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
         if json_column != 'hour_interval_pageviews':
+            json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
             json_key_based_columns[json_column] = {
                 f'{json_column}_{json_key}': func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(String).cast(Float)
                 for json_key in json_column_keys[json_column]
