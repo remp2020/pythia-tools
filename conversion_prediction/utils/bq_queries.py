@@ -1,6 +1,5 @@
 import re
 import pandas as pd
-# TODO: Look into unifying TEXT and Text
 from sqlalchemy import select, column
 from sqlalchemy.types import Float, DATE, String
 from sqlalchemy.sql.expression import extract
@@ -407,6 +406,26 @@ def join_all_partial_queries(
         device_information,
         json_key_column_names
 ):
+    print(
+        'all_date_browser_combinations, :',
+        [True for column in all_date_browser_combinations.columns if 'pageviews_0h_4h' in column.name]
+    )
+
+    print(
+        'filtered_data_with_unpacked_json_fields, :',
+        [True for column in filtered_data_with_unpacked_json_fields.columns if 'pageviews_0h_4h' in column.name]
+    )
+
+    print(
+        'device_information, :',
+        [True for column in device_information.columns if 'pageviews_0h_4h' in column.name]
+    )
+
+    print(
+        'unique_events, :',
+        [True for column in unique_events.columns if 'pageviews_0h_4h' in column.name]
+    )
+
     joined_queries = bq_session.query(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
