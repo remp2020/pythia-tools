@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
         "type" character varying NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_events_user_id ON "public"."events"(user_id);
+    CREATE INDEX IF NOT EXISTS idx_events_type ON "public"."events"(type);
     '''
     cur.execute(sql_events)
 
