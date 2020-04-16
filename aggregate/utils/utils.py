@@ -158,4 +158,82 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
     '''
     cur.execute(sql_events)
 
+    sql_add_tags_pageviews = '''
+            ALTER TABLE "public"."aggregated_browser_days" 
+                ADD COLUMN IF NOT EXISTS "article_tag_pageviews" jsonb;
+            ALTER TABLE "public"."aggregated_user_days" 
+                ADD COLUMN IF NOT EXISTS "article_tag_pageviews" jsonb;
+                '''
+    cur.execute(sql_add_tags_pageviews)
 
+    # aggregated_browser_days_tags
+    sql = '''
+            CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days_tags" (
+                "date" date NOT NULL,
+                "browser_id" character varying NOT NULL,
+                "tag" character varying NOT NULL,
+                "pageviews" integer NOT NULL,
+                PRIMARY KEY(date, browser_id, tag)
+            );
+            '''
+    cur.execute(sql)
+
+    # aggregated_browser_days_categories
+    sql = '''
+            CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days_categories" (
+                "date" date NOT NULL,
+                "browser_id" character varying NOT NULL,
+                "category" character varying NOT NULL,
+                "pageviews" integer NOT NULL,
+                PRIMARY KEY(date, browser_id, category)
+            );
+            '''
+    cur.execute(sql)
+
+    # aggregated_browser_days_referer_mediums
+    sql = '''
+            CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days_referer_mediums" (
+                "date" date NOT NULL,
+                "browser_id" character varying NOT NULL,
+                "referer_medium" character varying NOT NULL,
+                "pageviews" integer NOT NULL,
+                PRIMARY KEY(date, browser_id, referer_medium)
+            );
+            '''
+    cur.execute(sql)
+
+    # aggregated_user_days_tags
+    sql = '''
+            CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days_tags" (
+                "date" date NOT NULL,
+                "user_id" character varying NOT NULL,
+                "tag" character varying NOT NULL,
+                "pageviews" integer NOT NULL,
+                PRIMARY KEY(date, user_id, tag)
+            );
+            '''
+    cur.execute(sql)
+
+    # aggregated_user_days_categories
+    sql = '''
+            CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days_categories" (
+                "date" date NOT NULL,
+                "user_id" character varying NOT NULL,
+                "category" character varying NOT NULL,
+                "pageviews" integer NOT NULL,
+                PRIMARY KEY(date, user_id, category)
+            );
+            '''
+    cur.execute(sql)
+
+    # aggregated_user_days_referer_mediums
+    sql = '''
+            CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days_referer_mediums" (
+                "date" date NOT NULL,
+                "user_id" character varying NOT NULL,
+                "referer_medium" character varying NOT NULL,
+                "pageviews" integer NOT NULL,
+                PRIMARY KEY(date, user_id, referer_medium)
+            );
+            '''
+    cur.execute(sql)
