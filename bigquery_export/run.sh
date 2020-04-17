@@ -99,15 +99,23 @@ while [ "$di" != "$end_on" ]; do
 
     # Connection settings are passed automatically from .env file variables
     psql -c "\copy (SELECT * FROM aggregated_browser_days WHERE date = '$di') TO './csv/aggregated_browser_days_$file_date.csv' DELIMITER '|' csv HEADER"
+    psql -c "\copy (SELECT * FROM aggregated_browser_days_tags WHERE date = '$di') TO './csv/aggregated_browser_days_tags_$file_date.csv' DELIMITER '|' csv HEADER"
+    psql -c "\copy (SELECT * FROM aggregated_browser_days_categories WHERE date = '$di') TO './csv/aggregated_browser_days_categories_$file_date.csv' DELIMITER '|' csv HEADER"
+    psql -c "\copy (SELECT * FROM aggregated_browser_days_referer_mediums WHERE date = '$di') TO './csv/aggregated_browser_days_referer_mediums_$file_date.csv' DELIMITER '|' csv HEADER"
+
     psql -c "\copy (SELECT * FROM aggregated_user_days WHERE date = '$di') TO './csv/aggregated_user_days_$file_date.csv' DELIMITER '|' csv HEADER"
+    psql -c "\copy (SELECT * FROM aggregated_user_days_tags WHERE date = '$di') TO './csv/aggregated_user_days_tags_$file_date.csv' DELIMITER '|' csv HEADER"
+    psql -c "\copy (SELECT * FROM aggregated_user_days_categories WHERE date = '$di') TO './csv/aggregated_user_days_categories_$file_date.csv' DELIMITER '|' csv HEADER"
+    psql -c "\copy (SELECT * FROM aggregated_user_days_referer_mediums WHERE date = '$di') TO './csv/aggregated_user_days_referer_mediums_$file_date.csv' DELIMITER '|' csv HEADER"
+
+    psql -c "\copy (SELECT user_id, browser_id, time, type FROM events WHERE computed_for = '$di') TO './csv/events_$file_date.csv' DELIMITER '|' csv HEADER"
 
     echo "Running upload to BigQuery for $di"
 
     python upload.py ${file_date}
 
     # delete csv files
-    rm "./csv/aggregated_browser_days_$file_date.csv"
-    rm "./csv/aggregated_user_days_$file_date.csv"
+    rm csv/*.csv
 
     di=$(add_day $di)
 done

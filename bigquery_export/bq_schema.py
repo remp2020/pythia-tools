@@ -14,7 +14,7 @@ from google.cloud import bigquery
 # Possible values include NULLABLE, REQUIRED and REPEATED.
 # The default value is NULLABLE.
 
-def aggregated_browser_days_schema():
+def aggregated_browser_days():
     schema = [
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
@@ -41,6 +41,7 @@ def aggregated_browser_days_schema():
 
         bigquery.SchemaField("referer_medium_pageviews", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("article_category_pageviews", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("article_tag_pageviews", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("hour_interval_pageviews", "STRING", mode="NULLABLE"),
 
         bigquery.SchemaField("pageviews_0h", "INTEGER", mode="NULLABLE"),
@@ -77,7 +78,37 @@ def aggregated_browser_days_schema():
     return schema
 
 
-def aggregated_user_days_schema():
+def aggregated_browser_days_tags():
+    schema = [
+        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+        bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("tag", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
+    ]
+    return schema
+
+
+def aggregated_browser_days_categories():
+    schema = [
+        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+        bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("category", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
+    ]
+    return schema
+
+
+def aggregated_browser_days_referer_mediums():
+    schema = [
+        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+        bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("referer_medium", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
+    ]
+    return schema
+
+
+def aggregated_user_days():
     schema = [
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
@@ -92,6 +123,7 @@ def aggregated_user_days_schema():
 
         bigquery.SchemaField("referer_medium_pageviews", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("article_category_pageviews", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("article_tag_pageviews", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("hour_interval_pageviews", "STRING", mode="NULLABLE"),
 
         bigquery.SchemaField("pageviews_0h", "INTEGER", mode="NULLABLE"),
@@ -124,5 +156,45 @@ def aggregated_user_days_schema():
         bigquery.SchemaField("pageviews_12h_16h", "INTEGER", mode="NULLABLE"),
         bigquery.SchemaField("pageviews_16h_20h", "INTEGER", mode="NULLABLE"),
         bigquery.SchemaField("pageviews_20h_24h", "INTEGER", mode="NULLABLE"),
+    ]
+    return schema
+
+
+def aggregated_user_days_tags():
+    schema = [
+        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+        bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("tag", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
+    ]
+    return schema
+
+
+def aggregated_user_days_categories():
+    schema = [
+        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+        bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("category", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
+    ]
+    return schema
+
+
+def aggregated_user_days_referer_mediums():
+    schema = [
+        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+        bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("referer_medium", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
+    ]
+    return schema
+
+
+def events():
+    schema = [
+        bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("browser_id", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("time", "TIMESTAMP", mode="REQUIRED"),
+        bigquery.SchemaField("type", "STRING", mode="REQUIRED"),
     ]
     return schema
