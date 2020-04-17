@@ -149,12 +149,14 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
     CREATE TABLE IF NOT EXISTS "public"."events" (
         "id" SERIAL PRIMARY KEY,
         "user_id" character varying NOT NULL,
-        "browser_id" character varying NOT NULL,
+        "browser_id" character varying,
         "time" timestamp NOT NULL,
-        "type" character varying NOT NULL
+        "type" character varying NOT NULL,
+        "computed_for" date NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_events_user_id ON "public"."events"(user_id);
     CREATE INDEX IF NOT EXISTS idx_events_type ON "public"."events"(type);
+    CREATE INDEX IF NOT EXISTS idx_events_date ON "public"."events"(computed_for);
     '''
     cur.execute(sql_events)
 

@@ -24,7 +24,7 @@ class Commerce:
         return self.__str__()
 
 
-class CommerceParser:
+class ConversionsParser:
     def __init__(self, cur_date, cursor):
         self.user_id_payment_time = {}
         self.user_id_browser_id = {}
@@ -43,12 +43,12 @@ class CommerceParser:
 
     def __save_events_to_separate_table(self):
         sql = '''
-            INSERT INTO events (user_id, browser_id, time, type)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO events (user_id, browser_id, time, type, computed_for)
+            VALUES (%s, %s, %s, %s, %s)
         '''
 
         psycopg2.extras.execute_batch(self.cursor, sql, [
-            (x["user_id"], x["browser_id"], x["time"], x["type"]) for x in self.events_to_save
+            (x["user_id"], x["browser_id"], x["time"], x["type"], self.cur_date) for x in self.events_to_save
         ])
         self.cursor.connection.commit()
 
@@ -119,7 +119,7 @@ class PageView:
         return self.__str__()
 
 
-class PageViewsParser:
+class SharedLoginParser:
     def __init__(self, cur_date, cursor):
         self.data = []
         self.not_logged_in_browsers = set()
@@ -131,15 +131,16 @@ class PageViewsParser:
 
     def __save_events_to_separate_table(self):
         sql = '''
-            INSERT INTO events (user_id, browser_id, time, type)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO events (user_id, browser_id, time, type, computed_for)
+            VALUES (%s, %s, %s, %s, %s)
         '''
         psycopg2.extras.execute_batch(self.cursor, sql, [
             (
                 self.browser_user_id[browser_id],
                 browser_id,
                 self.logged_in_browsers_time[browser_id].isoformat(),
-                "shared_account_login"
+                "shared_account_login",
+                self.cur_date
             )
             for browser_id in self.logged_in_browsers
         ])
@@ -223,18 +224,18 @@ def run(file_date, aggregate_folder):
     migrate(cur)
     conn.commit()
 
+    event_types = ['conversion', 'shared_account_login']
     # Delete events for particular day (so command can be safely run multiple times)
     cur.execute('''
-        DELETE FROM events WHERE time::date = date %s
-    ''', (cur_date,))
+        DELETE FROM events WHERE computed_for = %s AND type = ANY(%s)
+    ''', (cur_date, event_types))
     conn.commit()
 
-    commerce_parser = CommerceParser(cur_date, cur)
+    commerce_parser = ConversionsParser(cur_date, cur)
     commerce_parser.process_file(commerce_file)
 
-    pageviews_parser= PageViewsParser(cur_date, cur)
+    pageviews_parser= SharedLoginParser(cur_date, cur)
     pageviews_parser.process_file(pageviews_file)
-    conn.commit()
 
     cur.close()
     conn.close()
