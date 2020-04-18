@@ -146,9 +146,6 @@ class ConversionPredictionModel(object):
             self.max_date,
             self.moving_window,
             self.feature_aggregation_functions,
-            self.undersampling_factor,
-            offset_limit_tuple,
-            data_retrieval_mode
         )
 
         logger.info(f'  * Query finished, processing retrieved data')
