@@ -835,8 +835,8 @@ class ConversionPredictionModel(object):
 
             # Make sure we have enough days for training, this statement is behind the condition since sometimes
             # we might be reusing training data from a previous run
-            if (self.max_date - self.min_date).days < MIN_TRAINING_DAYS:
-                raise ValueError(f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data')
+            #if (self.max_date - self.min_date).days < MIN_TRAINING_DAYS:
+            #    raise ValueError(f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data')
 
             self.create_feature_frame(data_retrieval_mode=DataRetrievalMode.MODEL_TRAIN_DATA)
 
