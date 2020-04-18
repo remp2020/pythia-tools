@@ -127,7 +127,10 @@ def generate_all_time_based_column_names(
     # Time based features combining day_of_week with hour interval
     suffix = return_normalized_suffix(normalized)
     time_based_columns = dict()
-    time_based_columns['hour_ranges'] = generate_4_hour_interval_column_names()
+    time_based_columns['hour_ranges'] = [
+        f'{column}_avg' for column in generate_4_hour_interval_column_names()
+        for aggregation_function_alias in aggregation_function_aliases
+    ]
     time_based_columns['days_of_week'] = [
         f'dow_{dow}_{aggregation_function_alias}{suffix}' for dow in range(0, 7)
         for aggregation_function_alias in aggregation_function_aliases
