@@ -515,8 +515,7 @@ def create_time_window_vs_day_of_week_combinations(
     #     for time_key_column in interval_names
     # }
     # Day of Week only
-    combinations.update(
-        {
+    combinations = {
             f'dow_{i}': case(
                 [
                     (joined_queries.c['day_of_week'] == None,
