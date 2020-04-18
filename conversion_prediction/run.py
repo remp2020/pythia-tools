@@ -33,9 +33,8 @@ from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGAT
 from utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
-from utils.queries import queries
-from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context, \
-    get_browser_days_count, get_browser_count
+from utils.bq_queries import queries
+from utils.bq_queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context
 from utils.data_transformations import unique_list, row_wise_normalization
 
 
@@ -811,77 +810,8 @@ class ConversionPredictionModel(object):
 
         self.user_profiles.drop('used_in_training', axis=1, inplace=True)
 
-    def collect_outcomes_for_all_negatives(self):
-        '''
-        Due to a potential memory constraint, we only pull a sample of data for training a model. For
-        the purpose of evaluating our algorithm we would however like to know how it would do on the full
-        dataset. This method iterates over the undersampled class returning a result for the full population.
-        In the future we might also make this a sample (although a larger one compared to the one used in train)
-        :return:
-        '''
-        # TODO: Consider doing a sample, but a larger one (such as 10 % of all negatives)
-        browsers_expected = get_browser_count(
-            self.min_date,
-            self.max_date,
-            data_retrieval_mode=DataRetrievalMode.MODEL_EVAL_DATA
-        )
-
-        logger.info(f'Test set contains {browsers_expected} browsers')
-
-        data_row_range = range(
-            0,
-            int(browsers_expected),
-            int(browsers_expected / 10)
-        )
-    
-        for i in data_row_range:
-            logging.info('  * Fetching negatives chunk')
-            logger.setLevel(logging.ERROR)
-            self.create_feature_frame(
-                (i, int(browsers_expected / 10)),
-                data_retrieval_mode=DataRetrievalMode.MODEL_EVAL_DATA
-            )
-            logger.setLevel(logging.INFO)
-            self.remove_rows_from_original_flow()
-            logging.info('  * Removing negative outcomes from training set from negatives chunk')
-            if not self.user_profiles.empty:
-                self.batch_predict(self.user_profiles)
-                logging.info('  * Generatincg predictions for negatives chunk')
-
-                actual_labels = {'test': self.predictions['outcome']}
-                predicted_labels = {'test': self.predictions['predicted_outcome']}
-
-                if i == 0:
-                    negative_outcome_frame = self.create_outcome_frame(
-                        actual_labels,
-                        predicted_labels,
-                        self.outcome_labels,
-                        self.le
-                    )
-                else:
-                    negative_outcome_frame = negative_outcome_frame + self.create_outcome_frame(
-                        actual_labels,
-                        predicted_labels,
-                        self.outcome_labels,
-                        self.le
-                    )
-
-            logging.info(f'''
-                            *  Collected negative outcome accuracies at
-                            {str(100 * (i + browsers_expected / 10) / browsers_expected)} %
-                         '''
-                         )
-
-        self.negative_outcome_frame = negative_outcome_frame / len(data_row_range)
-
-        self.negative_outcome_frame.loc['support', 'no_conversion_test'] = \
-            self.negative_outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
-        self.outcome_frame['no_conversion_test'] = self.negative_outcome_frame.loc[:, 'no_conversion_test']
-        logger.info('  * Finished accuracy metrics for negatives calculation')
-
     def model_training_pipeline(
             self,
-            sampled_negatives_results: bool = False,
             model_function=RandomForestClassifier,
             model_arguments={'n_estimators': 250}
     ):
@@ -928,8 +858,6 @@ class ConversionPredictionModel(object):
 
         logger.info(f'Saved to {self.path_to_model_files}model_{self.model_date}.pkl')
 
-        if not sampled_negatives_results:
-            self.collect_outcomes_for_all_negatives()
         self.remove_model_training_artefacts()
         # TODO: This would eventually be replaced with storing variable importances to DB
         self.variable_importances.to_csv(
@@ -1244,8 +1172,7 @@ if __name__ == "__main__":
             )
 
         conversion_prediction.model_training_pipeline(
-            sampled_negatives_results=True,
-            model_arguments={'n_estimators': 250},
+            model_arguments={'n_estimators': 250}
         )
 
         metrics = ['precision', 'recall', 'f1_score', 'suport']
