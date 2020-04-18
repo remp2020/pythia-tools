@@ -350,7 +350,7 @@ def unpack_json_fields(filtered_data):
         if json_column != 'hour_interval_pageviews':
             json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
             json_key_based_columns[json_column] = {
-                f'{json_column}_{re.sub("-", "_" , json_key)}':
+                f'{json_column}_{json_key.replace("-", "_")}':
                     func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(Float)
                 for json_key in json_column_keys[json_column]
             }
@@ -568,7 +568,7 @@ def create_rolling_window_columns_config(
             f'{aggregation_function_alias}': False,
             f'{aggregation_function_alias}_last_window_half': True
         }
-
+    print(json_key_column_names)
     rolling_agg_columns = []
     # this generates all basic rolling sum columns for both full and second half of the window
     rolling_agg_columns = rolling_agg_columns + [
@@ -584,7 +584,7 @@ def create_rolling_window_columns_config(
         for aggregation_function_alias, aggregation_function in feature_aggregation_functions.items()
         for suffix, is_half_window in get_rolling_agg_window_variants(aggregation_function_alias).items()
     ]
-
+    print(rolling_agg_columns)
     # It only makes sense to aggregate active days by summing, all other aggregations would end up with a value
     # of 1 after we eventually filter out windows with no active days in them, this is why we separate this feature
     # out from the loop with all remaining features
