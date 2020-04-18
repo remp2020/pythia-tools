@@ -2,7 +2,6 @@ import re
 import pandas as pd
 from sqlalchemy import select, column
 from sqlalchemy.types import Float, DATE, String
-from sqlalchemy.sql.expression import extract
 from sqlalchemy import and_, func, case, text
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
