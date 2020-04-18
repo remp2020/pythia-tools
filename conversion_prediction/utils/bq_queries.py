@@ -527,7 +527,7 @@ def create_time_window_vs_day_of_week_combinations(
             )
             for i in range(0, 7)
         }
-    )
+
     # 4-hour intervals
     combinations.update(
         {time_key_column_name: joined_queries.c[time_key_column_name]
@@ -543,6 +543,7 @@ def create_rolling_window_columns_config(
         moving_window_length,
         feature_aggregation_functions
 ):
+    print(json_key_column_names)
     # {name of the resulting column : source / calculation},
     column_source_to_name_mapping = {
         'pageview': joined_queries.c['pageviews'],
