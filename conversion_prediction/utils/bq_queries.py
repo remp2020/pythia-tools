@@ -515,25 +515,25 @@ def create_time_window_vs_day_of_week_combinations(
         for time_key_column in interval_names
     }
     # Day of Week only
-    combinations.update(
-        {
-            f'dow_{i}': case(
-                [
-                    (joined_queries.c['day_of_week'] == None,
-                     0),
-                    (joined_queries.c['day_of_week'] != str(i),
-                     0)
-                ],
-                else_=1
-            )
-            for i in range(0, 7)
-        }
-    )
+    # combinations.update(
+    #     {
+    #         f'dow_{i}': case(
+    #             [
+    #                 (joined_queries.c['day_of_week'] == None,
+    #                  0),
+    #                 (joined_queries.c['day_of_week'] != str(i),
+    #                  0)
+    #             ],
+    #             else_=1
+    #         )
+    #         for i in range(0, 7)
+    #     }
+    # )
     # 4-hour intervals
-    combinations.update(
-        {time_key_column_name: joined_queries.c[time_key_column_name]
-         for time_key_column_name in interval_names}
-    )
+    # combinations.update(
+    #     {time_key_column_name: joined_queries.c[time_key_column_name]
+    #      for time_key_column_name in interval_names}
+    # )
 
     return combinations
 
@@ -557,8 +557,7 @@ def create_rolling_window_columns_config(
     }
 
     time_column_config = create_time_window_vs_day_of_week_combinations(
-        joined_queries,
-        [column for column in json_key_column_names if 'hours_' in column]
+        joined_queries
     )
 
     column_source_to_name_mapping.update(time_column_config)
