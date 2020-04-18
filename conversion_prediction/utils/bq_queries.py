@@ -556,6 +556,13 @@ def create_rolling_window_columns_config(
         }
     }
 
+    time_column_config = create_time_window_vs_day_of_week_combinations(
+        joined_queries,
+        [column for column in json_key_column_names if 'hours_' in column]
+    )
+
+    column_source_to_name_mapping.update(time_column_config)
+
     def get_rolling_agg_window_variants(aggregation_function_alias):
         # {naming suffix : related parameter for determining part of full window}
         return {
