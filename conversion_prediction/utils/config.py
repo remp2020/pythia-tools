@@ -133,12 +133,12 @@ def generate_all_time_based_column_names(
         for aggregation_function_alias in aggregation_function_aliases
     ]
 
-    time_based_columns['hour_of_day_of_week'] = [
-        f'dow_{dow}_hours_{hours}_{aggregation_function_alias}{suffix}'
-        for dow in range(0, 7)
-        for hours in time_based_columns['hour_ranges']
-        for aggregation_function_alias in aggregation_function_aliases
-     ]
+    # time_based_columns['hour_of_day_of_week'] = [
+    #     f'dow_{dow}_hours_{hours}_{aggregation_function_alias}{suffix}'
+    #     for dow in range(0, 7)
+    #     for hours in time_based_columns['hour_ranges']
+    #     for aggregation_function_alias in aggregation_function_aliases
+    #  ]
 
     return time_based_columns
 
