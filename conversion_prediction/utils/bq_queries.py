@@ -543,7 +543,7 @@ def create_rolling_window_columns_config(
         moving_window_length,
         feature_aggregation_functions
 ):
-    print(json_key_column_names)
+
     # {name of the resulting column : source / calculation},
     column_source_to_name_mapping = {
         'pageview': joined_queries.c['pageviews'],

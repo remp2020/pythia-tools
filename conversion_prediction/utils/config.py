@@ -161,7 +161,7 @@ def build_out_profile_based_column_names(
         ],
         # Article category (section) features
         'article_category_pageviews': [
-            f'article_category_pageviews_{article_category}_{aggregation_function_alias}{suffix}'
+            f'article_category_pageviews_{article_category.replace("-", "_")}_{aggregation_function_alias}{suffix}'
             for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']
             for aggregation_function_alias in aggregation_function_aliases
         ]
