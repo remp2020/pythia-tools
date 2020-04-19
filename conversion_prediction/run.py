@@ -992,7 +992,6 @@ class ConversionPredictionModel(object):
         # 3. Make sure the columns have the same order as original data, since sklearn ignores column names
         self.prediction_data = self.prediction_data[list(self.variable_importances.index)]
 
-
     def generate_and_upload_prediction(self):
         '''
         Requires:
@@ -1009,92 +1008,48 @@ class ConversionPredictionModel(object):
         '''
         logger.info(f'Executing prediction generation')
 
-        browsers_expected = get_browser_count(
-            self.min_date,
-            self.max_date,
-            data_retrieval_mode=DataRetrievalMode.PREDICT_DATA
-        )
+        logging.info('  * Fetching negatives chunk')
+        logger.setLevel(logging.ERROR)
+        self.create_feature_frame()
 
-        logger.info(f'Prediction set contains {browsers_expected} browsers')
+        logger.setLevel(logging.INFO)
 
-        data_row_range = range(
-            0,
-            int(browsers_expected),
-            int(browsers_expected / 10)
-        )
+        self.batch_predict(self.user_profiles)
+        logging.info('  * Generatincg predictions')
 
-        for i in data_row_range:
-            logging.info('  * Fetching negatives chunk')
-            logger.setLevel(logging.ERROR)
-            self.create_feature_frame(
-                (i, int(browsers_expected / 10)),
-                data_retrieval_mode=DataRetrievalMode.PREDICT_DATA
+        self.predictions['model_version'] = CURRENT_MODEL_VERSION
+        self.predictions['created_at'] = datetime.utcnow()
+        self.predictions['updated_at'] = datetime.utcnow()
+
+        # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
+        if not self.dry_run:
+            self.predictions.drop('outcome', axis=1, inplace=True)
+
+            logger.info(f'Storing predicted data')
+
+            engine, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
+            create_predictions_table(postgres)
+            create_predictions_job_log(postgres)
+            postgres.execute(
+                sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
             )
 
-            logger.setLevel(logging.INFO)
-
-            self.batch_predict(self.user_profiles)
-            logging.info('  * Generatincg predictions')
-
-            self.predictions['model_version'] = CURRENT_MODEL_VERSION
-            self.predictions['created_at'] = datetime.utcnow()
-            self.predictions['updated_at'] = datetime.utcnow()
-
-            # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
-            if not self.dry_run:
-                self.predictions.drop('outcome', axis=1, inplace=True)
-
-                logger.info(f'Storing predicted data')
-
-                engine, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
-                create_predictions_table(postgres)
-                create_predictions_job_log(postgres)
-                postgres.execute(
-                    sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
-                )
-
-                self.prediction_job_log = self.predictions[
-                    ['date', 'model_version', 'created_at', 'updated_at']].head(1).to_dict('records')[0]
-                self.prediction_job_log['rows_predicted'] = len(self.predictions)
-                postgres.execute(
-                    sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
-                )
-                engine.dispose()
-
-                logging.info(
-                    f'''    *  Upserted predictions at
-                    {str(100 * (i + browsers_expected / 5) / browsers_expected)} %'''
-                )
-
-            else:
-                outcome_frame = pd.DataFrame()
-                actual_labels = {'test': self.predictions['outcome']}
-                predicted_labels = {'test': self.predictions['predicted_outcome']}
-                if i == 0:
-                    outcome_frame = self.create_outcome_frame(
-                        actual_labels,
-                        predicted_labels,
-                        self.outcome_labels,
-                        self.le
-                    )
-                else:
-                    outcome_frame = outcome_frame + self.create_outcome_frame(
-                        actual_labels,
-                        predicted_labels,
-                        self.outcome_labels,
-                        self.le
-                    )
-
-                logging.info(f'''
-                                        *  Collected prediction accuracies at
-                                        {str(100 * (i + browsers_expected / 10) / browsers_expected)} %
-                                     '''
-                             )
-
-                self.outcome_frame = outcome_frame / len(data_row_range)
-
-                self.outcome_frame.loc['support', 'no_conversion_test'] = \
-                    self.outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
+            self.prediction_job_log = self.predictions[
+                ['date', 'model_version', 'created_at', 'updated_at']].head(1).to_dict('records')[0]
+            self.prediction_job_log['rows_predicted'] = len(self.predictions)
+            postgres.execute(
+                sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
+            )
+            engine.dispose()
+        else:
+            actual_labels = {'test': self.predictions['outcome']}
+            predicted_labels = {'test': self.predictions['predicted_outcome']}
+            outcome_frame = self.create_outcome_frame(
+                actual_labels,
+                predicted_labels,
+                self.outcome_labels,
+                self.le
+            )
 
         logger.info('Predictions are now ready')
 
