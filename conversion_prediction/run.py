@@ -1018,6 +1018,9 @@ class ConversionPredictionModel(object):
 
         self.predictions['model_version'] = CURRENT_MODEL_VERSION
         self.predictions['created_at'] = datetime.utcnow()
+        self.predictions.loc[
+            self.predictions['user_ids'].astype(str) == '[]',
+            'users_ids'] = None
 
         # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
         if not self.dry_run:
@@ -1065,7 +1068,6 @@ class ConversionPredictionModel(object):
             #     if_exists='append',
             #     private_key='../../client_secrets.json'
             # )
-
 
             self.prediction_job_log = self.predictions[
                 ['date', 'model_version', 'created_at']].head(1).to_dict('records')[0]
