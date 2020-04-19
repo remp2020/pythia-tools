@@ -1009,9 +1009,6 @@ class ConversionPredictionModel(object):
         Generates outcome prediction for conversion and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-
-        logging.info('  * Fetching negatives chunk')
-        logger.setLevel(logging.ERROR)
         self.create_feature_frame()
 
         logger.setLevel(logging.INFO)
@@ -1021,7 +1018,6 @@ class ConversionPredictionModel(object):
 
         self.predictions['model_version'] = CURRENT_MODEL_VERSION
         self.predictions['created_at'] = datetime.utcnow()
-        self.predictions['updated_at'] = datetime.utcnow()
 
         # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
         if not self.dry_run:
@@ -1030,19 +1026,42 @@ class ConversionPredictionModel(object):
             logger.info(f'Storing predicted data')
 
             engine, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
-            create_predictions_table(postgres)
-            create_predictions_job_log(postgres)
-            postgres.execute(
-                sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
+            _, db_connection = create_connection(
+                os.getenv('BQ_CONNECTION_STRING'),
+                engine_kwargs={'credentials_path': '../../client_secrets.json'}
+            )
+            database = os.getenv('BQ_DATABASE')
+
+            # create_predictions_table(postgres)
+            # create_predictions_job_log(postgres)
+            # postgres.execute(
+            #     sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
+            # )
+
+            self.predictions.to_sql(
+                name=f'{database}.pythia.conversion_predictions_log',
+                con=db_connection,
+                schema='pythia',
+                if_exists='append',
+                index=False,
             )
 
             self.prediction_job_log = self.predictions[
-                ['date', 'model_version', 'created_at', 'updated_at']].head(1).to_dict('records')[0]
+                ['date', 'model_version', 'created_at']].head(1).to_dict('records')[0]
             self.prediction_job_log['rows_predicted'] = len(self.predictions)
-            postgres.execute(
-                sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
+
+            self.prediction_job_log.to_sql(
+                name=f'{database}.pythia.prediction_job_log',
+                con=db_connection,
+                schema='pythia',
+                if_exists='append',
+                index=False,
             )
-            engine.dispose()
+
+            # postgres.execute(
+            #     sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
+            # )
+            # engine.dispose()
         else:
             actual_labels = {'test': self.predictions['outcome']}
             predicted_labels = {'test': self.predictions['predicted_outcome']}
