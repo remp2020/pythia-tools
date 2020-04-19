@@ -394,7 +394,7 @@ class ConversionPredictionModel(object):
         '''
         self.add_missing_json_columns()
         column_sets = list(self.feature_columns.profile_numeric_columns_from_json_fields.values()) + \
-            [[time_column_variant] for time_column_variant in self.feature_columns.time_based_columns.values()]
+            [time_column_variant for time_column_variant in self.feature_columns.time_based_columns.values()]
         for column_set in column_sets:
             self.user_profiles[column_set] = self.user_profiles[column_set].astype(float)
             normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
