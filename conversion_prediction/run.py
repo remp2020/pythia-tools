@@ -1009,6 +1009,7 @@ class ConversionPredictionModel(object):
         '''
         logger.info(f'Executing prediction generation')
         self.create_feature_frame()
+        self.artifact_retention_mode = ArtifactRetentionMode.DROP
 
         logger.setLevel(logging.INFO)
 
