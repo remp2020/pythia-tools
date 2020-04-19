@@ -205,7 +205,12 @@ class ConversionPredictionModel(object):
             for column in ['clv', 'days_since_last_subscription']:
                 self.user_profiles[column] = 0.0
 
-        self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
+        self.user_profiles[
+            [
+                column for column in self.feature_columns.numeric_columns_with_window_variants
+                if column in self.user_profiles.columns
+            ]
+        ].fillna(0.0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
         logger.info('  * Initial data validation success')
 
