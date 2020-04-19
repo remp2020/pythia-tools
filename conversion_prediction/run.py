@@ -1041,11 +1041,16 @@ class ConversionPredictionModel(object):
             # )
 
             from sqlalchemy.types import Float, DATE, String, TIMESTAMP, ARRAY
+            from google.oauth2 import service_account
+
+            service_account.Credentials.from_service_account_file(
+                '../../client_secrets.json',
+            )
 
             self.predictions.to_gbq(
                 destination_table='pythia.conversion_predictions_log',
                 project_id=database,
-                credentials='../../client_secrets.json',
+                credentials=service_account,
                 if_exists='append',
                 table_schema={
                     'date': DATE,
