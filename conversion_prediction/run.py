@@ -480,7 +480,7 @@ class ConversionPredictionModel(object):
         Transform True / False columns into 0/1 columns
         '''
         for column in [column for column in self.feature_columns.bool_columns]:
-            self.user_profiles[column] = self.user_profiles[column].replace({'t': True, 'f': False}).astype(int)
+            self.user_profiles[column] = self.user_profiles[column].apply(lambda value: True if value = 't' else False).astype(int)
 
     def encode_uncommon_categories(self):
         '''
