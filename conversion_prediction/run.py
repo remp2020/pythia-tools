@@ -1038,13 +1038,22 @@ class ConversionPredictionModel(object):
             #     sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
             # )
 
-            self.predictions.to_sql(
-                name=f'{database}.pythia.conversion_predictions_log',
-                con=db_connection,
-                schema='pythia',
+            # self.predictions.to_sql(
+            #     name=f'{database}.pythia.conversion_predictions_log',
+            #     con=db_connection,
+            #     #schema='pythia',
+            #     if_exists='append',
+            #     index=False,
+            # )
+
+            self.predictions.to_gbq(
+                destination_table='pythia.conversion_predictions_log',
+                project_id=database,
+                # schema='pythia',
                 if_exists='append',
-                index=False,
+                private_key='../../client_secrets.json'
             )
+
 
             self.prediction_job_log = self.predictions[
                 ['date', 'model_version', 'created_at']].head(1).to_dict('records')[0]
@@ -1053,7 +1062,7 @@ class ConversionPredictionModel(object):
             self.prediction_job_log.to_sql(
                 name=f'{database}.pythia.prediction_job_log',
                 con=db_connection,
-                schema='pythia',
+                #schema='pythia',
                 if_exists='append',
                 index=False,
             )
