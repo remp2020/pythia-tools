@@ -87,6 +87,8 @@ class ConversionPredictionModel(object):
         self.artifact_retention_mode = artifact_retention_mode
         self.artifacts_to_retain = [artifact.value for artifact in artifacts_to_retain.value]
         self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', path_to_model_files)
+        if not os.path.exists(self.path_to_model_files):
+            os.mkdir(self.path_to_model_files)
         self.path_to_commerce_csvs = os.getenv('PATH_TO_COMMERCE_CSV_FILES')
         self.negative_outcome_frame = pd.DataFrame()
         self.browser_day_combinations_original_set = pd.DataFrame()
@@ -1044,7 +1046,7 @@ class ConversionPredictionModel(object):
         else:
             actual_labels = {'test': self.predictions['outcome']}
             predicted_labels = {'test': self.predictions['predicted_outcome']}
-            outcome_frame = self.create_outcome_frame(
+            self.outcome_frame = self.create_outcome_frame(
                 actual_labels,
                 predicted_labels,
                 self.outcome_labels,
