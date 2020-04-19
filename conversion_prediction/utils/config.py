@@ -136,6 +136,7 @@ def generate_all_time_based_column_names(
         for aggregation_function_alias in aggregation_function_aliases
     ]
 
+    # TODO: Bigquery has a limit on size of the pipeline requested via a query, this part creates too many combinations
     # time_based_columns['hour_of_day_of_week'] = [
     #     f'dow_{dow}_hours_{hours}_{aggregation_function_alias}{suffix}'
     #     for dow in range(0, 7)
