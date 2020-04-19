@@ -67,7 +67,7 @@ BOOL_COLUMNS = [
 CONFIG_COLUMNS = [
     'date',
     'browser_id',
-    'user_id'
+    'user_ids'
 ]
 
 LABELS = {'no_conversion': 'negative', 'shared_account_login': 'positive', 'conversion': 'positive'}
@@ -219,6 +219,8 @@ class FeatureColumns(object):
         self.numeric_columns_with_window_variants = create_window_variant_permuations(self.numeric_columns) + \
             self.numeric_columns
 
+        self.numeric_columns = self.numeric_columns + self.numeric_columns_with_window_variants
+
         self.bool_columns = BOOL_COLUMNS
         self.config_columns = CONFIG_COLUMNS
 
@@ -251,6 +253,24 @@ class FeatureColumns(object):
                 self.categorical_columns +
                 self.numeric_columns
         )
+
+    def remove_columns_missing_in_data(self, user_profile_columns: List[str]):
+        for key, column_set in self.__dict__.items():
+            if isinstance(column_set, list):
+                for column in column_set:
+                    if column not in list(user_profile_columns):
+                        self.__dict__[key] = column_set.remove(column)
+            elif isinstance(column_set, dict):
+                for column_subset_key, column_subset in column_set.items():
+                    for column in column_subset:
+                        if column not in list(user_profile_columns):
+                            self.__dict__[key][
+                                column_subset_key] = column_subset.remove(column)
+            else:
+                raise ValueError(
+                    'Unknown feature set data struct encountered when removing columns not retrieved from data: '
+                    f'{column_set}'
+                )
 
 
 LOGGING = {
