@@ -1020,7 +1020,7 @@ class ConversionPredictionModel(object):
         self.predictions['created_at'] = datetime.utcnow()
         self.predictions.loc[
             self.predictions['user_ids'].astype(str) == '[]',
-            'users_ids'] = None
+            'user_ids'] = None
 
         # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
         if not self.dry_run:
@@ -1028,7 +1028,6 @@ class ConversionPredictionModel(object):
 
             logger.info(f'Storing predicted data')
 
-            engine, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
             _, db_connection = create_connection(
                 os.getenv('BQ_CONNECTION_STRING'),
                 engine_kwargs={'credentials_path': '../../client_secrets.json'}
@@ -1043,13 +1042,12 @@ class ConversionPredictionModel(object):
 
             from sqlalchemy.types import Float, DATE, String, TIMESTAMP, ARRAY
 
-            self.predictions.to_sql(
-                name=f'{database}.pythia.conversion_predictions_log',
-                con=db_connection,
-                #schema='pythia',
+            self.predictions.to_gbq(
+                destination_table='pythia.conversion_predictions_log',
+                project_id=database,
+                credentials='../../client_secrets.json',
                 if_exists='append',
-                index=False,
-                dtype={
+                table_schema={
                     'date': DATE,
                     'browser_id': String,
                     'user_ids': ARRAY(String),
@@ -1058,8 +1056,28 @@ class ConversionPredictionModel(object):
                     'shared_account_login_probability': Float,
                     'predicted_outcome': String,
                     'model_version': String,
-                    'created_at': TIMESTAMP}
+                    'created_at': TIMESTAMP
+                }
             )
+
+            # self.predictions.to_sql(
+            #     name=f'{database}.pythia.conversion_predictions_log',
+            #     con=db_connection,
+            #     #schema='pythia',
+            #     if_exists='append',
+            #     index=False,
+            #     dtype={
+            #         'date': DATE,
+            #         'browser_id': String,
+            #         'user_ids': ARRAY(String),
+            #         'conversion_probability': Float,
+            #         'no_conversion_probability': Float,
+            #         'shared_account_login_probability': Float,
+            #         'predicted_outcome': String,
+            #         'model_version': String,
+            #         'created_at': TIMESTAMP
+            #     }
+            # )
 
             # self.predictions.to_gbq(
             #     destination_table='pythia.conversion_predictions_log',
