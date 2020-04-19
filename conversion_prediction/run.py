@@ -394,34 +394,29 @@ class ConversionPredictionModel(object):
         '''
         self.add_missing_json_columns()
         column_sets = list(self.feature_columns.profile_numeric_columns_from_json_fields.values()) + \
-            list(self.feature_columns.time_based_columns.values())
-        for column_set_list in column_sets:
-            for column_set in column_set_list:
-                self.user_profiles[column_set] = self.user_profiles[column_set].astype(float)
-                print(column_set)
-                print(self.user_profiles[column_set].head())
-                print(self.user_profiles[column_set].dtypes)
-                print(self.user_profiles[column_set].shape)
-                normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
-                normalized_data.fillna(0.0, inplace=True)
-                normalized_data.columns = column_set
+            [[time_column_variant] for time_column_variant in self.feature_columns.time_based_columns.values()]
+        for column_set in column_sets:
+            self.user_profiles[column_set] = self.user_profiles[column_set].astype(float)
+            normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
+            normalized_data.fillna(0.0, inplace=True)
+            normalized_data.columns = column_set
 
-                if self.normalization_handling is NormalizedFeatureHandling.REPLACE_WITH:
-                    self.user_profiles.drop(column_set, axis=1, inplace=True)
-                elif self.normalization_handling is NormalizedFeatureHandling.ADD:
-                    self.feature_columns.add_normalized_profile_features_version(
-                        list(self.feature_aggregation_functions.keys())
-                    )
-                else:
-                    raise ValueError('Unknown normalization handling parameter')
-
-                self.user_profiles = pd.concat(
-                    [
-                        self.user_profiles,
-                        normalized_data
-                    ],
-                    axis=1
+            if self.normalization_handling is NormalizedFeatureHandling.REPLACE_WITH:
+                self.user_profiles.drop(column_set, axis=1, inplace=True)
+            elif self.normalization_handling is NormalizedFeatureHandling.ADD:
+                self.feature_columns.add_normalized_profile_features_version(
+                    list(self.feature_aggregation_functions.keys())
                 )
+            else:
+                raise ValueError('Unknown normalization handling parameter')
+
+            self.user_profiles = pd.concat(
+                [
+                    self.user_profiles,
+                    normalized_data
+                ],
+                axis=1
+            )
         logger.info('  * Feature normalization success')
 
     def add_missing_json_columns(self):
