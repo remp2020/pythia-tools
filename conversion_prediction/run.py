@@ -26,6 +26,8 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
+from sqlalchemy.types import Float, DATE, String, TIMESTAMP, ARRAY
+from google.oauth2 import service_account
 
 from utils.db_utils import create_predictions_table, create_predictions_job_log
 from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
@@ -1034,15 +1036,6 @@ class ConversionPredictionModel(object):
             )
             database = os.getenv('BQ_DATABASE')
 
-            # create_predictions_table(postgres)
-            # create_predictions_job_log(postgres)
-            # postgres.execute(
-            #     sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
-            # )
-
-            from sqlalchemy.types import Float, DATE, String, TIMESTAMP, ARRAY
-            from google.oauth2 import service_account
-
             service_account.Credentials.from_service_account_file(
                 '../../client_secrets.json',
             )
@@ -1065,49 +1058,16 @@ class ConversionPredictionModel(object):
                 }
             )
 
-            # self.predictions.to_sql(
-            #     name=f'{database}.pythia.conversion_predictions_log',
-            #     con=db_connection,
-            #     #schema='pythia',
-            #     if_exists='append',
-            #     index=False,
-            #     dtype={
-            #         'date': DATE,
-            #         'browser_id': String,
-            #         'user_ids': ARRAY(String),
-            #         'conversion_probability': Float,
-            #         'no_conversion_probability': Float,
-            #         'shared_account_login_probability': Float,
-            #         'predicted_outcome': String,
-            #         'model_version': String,
-            #         'created_at': TIMESTAMP
-            #     }
-            # )
-
-            # self.predictions.to_gbq(
-            #     destination_table='pythia.conversion_predictions_log',
-            #     project_id=database,
-            #     # schema='pythia',
-            #     if_exists='append',
-            #     private_key='../../client_secrets.json'
-            # )
-
             self.prediction_job_log = self.predictions[
-                ['date', 'model_version', 'created_at']].head(1).to_dict('records')[0]
+                ['date', 'model_version', 'created_at']].head(1)
             self.prediction_job_log['rows_predicted'] = len(self.predictions)
 
-            self.prediction_job_log.to_sql(
-                name=f'{database}.pythia.prediction_job_log',
-                con=db_connection,
-                #schema='pythia',
+            self.prediction_job_log.to_gbq(
+                destination_table='pythia.prediction_job_log',
+                project_id=database,
+                credentials=service_account,
                 if_exists='append',
-                index=False,
             )
-
-            # postgres.execute(
-            #     sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [self.prediction_job_log]
-            # )
-            # engine.dispose()
         else:
             actual_labels = {'test': self.predictions['outcome']}
             predicted_labels = {'test': self.predictions['predicted_outcome']}
