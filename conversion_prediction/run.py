@@ -1036,26 +1036,15 @@ class ConversionPredictionModel(object):
             )
             database = os.getenv('BQ_DATABASE')
 
-            service_account.Credentials.from_service_account_file(
+            credentials = service_account.Credentials.from_service_account_file(
                 '../../client_secrets.json',
             )
 
             self.predictions.to_gbq(
                 destination_table='pythia.conversion_predictions_log',
                 project_id=database,
-                credentials=service_account,
-                if_exists='append',
-                table_schema={
-                    'date': DATE,
-                    'browser_id': String,
-                    'user_ids': ARRAY(String),
-                    'conversion_probability': Float,
-                    'no_conversion_probability': Float,
-                    'shared_account_login_probability': Float,
-                    'predicted_outcome': String,
-                    'model_version': String,
-                    'created_at': TIMESTAMP
-                }
+                credentials=credentials,
+                if_exists='append'
             )
 
             self.prediction_job_log = self.predictions[
