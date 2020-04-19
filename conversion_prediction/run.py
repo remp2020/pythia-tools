@@ -1038,21 +1038,33 @@ class ConversionPredictionModel(object):
             #     sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
             # )
 
-            # self.predictions.to_sql(
-            #     name=f'{database}.pythia.conversion_predictions_log',
-            #     con=db_connection,
-            #     #schema='pythia',
-            #     if_exists='append',
-            #     index=False,
-            # )
+            from sqlalchemy.types import Float, DATE, String, TIMESTAMP, ARRAY
 
-            self.predictions.to_gbq(
-                destination_table='pythia.conversion_predictions_log',
-                project_id=database,
-                # schema='pythia',
+            self.predictions.to_sql(
+                name=f'{database}.pythia.conversion_predictions_log',
+                con=db_connection,
+                #schema='pythia',
                 if_exists='append',
-                private_key='../../client_secrets.json'
+                index=False,
+                dtype={
+                    'date': DATE,
+                    'browser_id': String,
+                    'user_ids': ARRAY(String),
+                    'conversion_probability': Float,
+                    'no_conversion_probability': Float,
+                    'shared_account_login_probability': Float,
+                    'predicted_outcome': String,
+                    'model_version': String,
+                    'created_at': TIMESTAMP}
             )
+
+            # self.predictions.to_gbq(
+            #     destination_table='pythia.conversion_predictions_log',
+            #     project_id=database,
+            #     # schema='pythia',
+            #     if_exists='append',
+            #     private_key='../../client_secrets.json'
+            # )
 
 
             self.prediction_job_log = self.predictions[
