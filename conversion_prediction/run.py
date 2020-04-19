@@ -398,6 +398,10 @@ class ConversionPredictionModel(object):
         for column_set_list in column_sets:
             for column_set in column_set_list:
                 self.user_profiles[column_set] = self.user_profiles[column_set].astype(float)
+                print(column_set)
+                print(self.user_profiles[column_set].head())
+                print(self.user_profiles[column_set].dtypes)
+                print(self.user_profiles[column_set].shape)
                 normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
                 normalized_data.fillna(0.0, inplace=True)
                 normalized_data.columns = column_set
@@ -961,7 +965,6 @@ class ConversionPredictionModel(object):
         logger.info('  * Prediction data ready')
         self.prediction_data.fillna(0.0, inplace=True)
         if not self.X_train.empty:
-            print(self.X_train.shape)
             for column in [column for column in self.X_train.columns if column not in self.prediction_data.columns]:
                 self.prediction_data[column] = 0.0
             self.prediction_data = self.prediction_data[list(self.X_train.columns)]
