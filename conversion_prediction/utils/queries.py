@@ -207,20 +207,6 @@ def get_subqueries_for_non_gapped_time_series(
         func.max(filtered_data.c['date']),
     ).all()[0]
 
-    # generated_time_series = bq_session.query(
-    #     func.generate_date_array(start_time, end_time).labe('date_gap_filler')
-    # ).subquery()
-    #
-    # generated_time_series = bq_session.query(
-    #     func.unnest(generated_time_series.c['date_gap_filler']).cast(DATE).label('date_gap_filler')
-    # ).subquery()
-
-    # generated_time_series = bq_session.query(
-    #     func.unnest(
-    #         func.generate_date_array(start_time, end_time)
-    #     ).cast(DATE).label('date_gap_filler')
-    # ).subquery()
-
     generated_time_series = bq_session.query(select([column('dates').label('date_gap_filler')]).select_from(
         func.unnest(
             func.generate_date_array(start_time, end_time)
@@ -500,21 +486,7 @@ def create_time_window_vs_day_of_week_combinations(
         joined_queries
 ):
     interval_names = generate_4_hour_interval_column_names()
-    # Day of Week with 4-hour intervals
-    # combinations = {
-    #     f'dow_{i}_{time_key_column}': case(
-    #         [
-    #             (joined_queries.c['day_of_week'] == None,
-    #              0),
-    #             (joined_queries.c['day_of_week'] != str(i),
-    #              0)
-    #         ],
-    #         else_=joined_queries.c[time_key_column]
-    #     )
-    #     for i in range(0, 7)
-    #     for time_key_column in interval_names
-    # }
-    # Day of Week only
+
     combinations = {
             f'dow_{i}': case(
                 [
