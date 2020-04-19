@@ -1009,8 +1009,6 @@ class ConversionPredictionModel(object):
         Generates outcome prediction for conversion and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-
-        logging.info('  * Fetching negatives chunk')
         self.create_feature_frame()
 
         logger.setLevel(logging.INFO)
