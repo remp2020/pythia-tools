@@ -46,7 +46,7 @@ def retrieve_data_for_query_key(
     return data
 
 
-def get_sqla_table(table_name, engine, database='pythia'):
+def get_sqla_table(table_name, engine):
     meta = MetaData(bind=engine)
     table = Table(table_name, meta, autoload=True, autoload_with=engine)
     return table
@@ -63,10 +63,12 @@ def get_sqlalchemy_tables_w_session(
     _, db_connection = create_connection(os.getenv(db_connection_string_name), engine_kwargs)
     if db_connection_string_name == 'BQ_CONNECTION_STRING':
         database = os.getenv('BQ_DATABASE')
+    elif db_connection_string_name == 'MYSQL_CONNECTION_SQL':
+        database = 'public'
 
     for table in table_names:
         table_mapping[table] = get_sqla_table(
-            table_name=f'{database}{"." if database != "" else ""}{schema}.{table}', engine=db_connection
+            table_name=f'{database}{schema}.{table}', engine=db_connection
         )
 
     table_mapping['session'] = sessionmaker(bind=db_connection)()
