@@ -1,94 +1,42 @@
 import re
 import pandas as pd
-# TODO: Look into unifying TEXT and Text
-from sqlalchemy import select, exc
-from sqlalchemy.types import TIMESTAMP, Float, DATE, ARRAY, TEXT, Text
-from sqlalchemy.sql.expression import literal, extract
-from sqlalchemy import and_, func, case
+from sqlalchemy import select, column
+from sqlalchemy.types import Float, DATE, String
+from sqlalchemy import and_, func, case, text
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
 from .db_utils import get_sqlalchemy_tables_w_session
-from .enums import DataRetrievalMode
-from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS
-from sqlalchemy.dialects.postgresql import ARRAY
-from typing import List, Tuple, Dict
+from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, generate_4_hour_interval_column_names
+from typing import List, Dict
 
-postgres_mappings = get_sqlalchemy_tables_w_session(
-    'POSTGRES_CONNECTION_STRING',
-    'public',
-    ['aggregated_browser_days']
+bq_mappings = get_sqlalchemy_tables_w_session(
+    'BQ_CONNECTION_STRING',
+    schema='pythia',
+    table_names=['aggregated_browser_days'],
+    engine_kwargs={'credentials_path': '../../client_secrets.json'}
 )
-postgres_session = postgres_mappings['session']
-aggregated_browser_days = postgres_mappings['aggregated_browser_days']
+
+bq_session = bq_mappings['session']
+aggregated_browser_days = bq_mappings['aggregated_browser_days']
 
 
 def get_feature_frame_via_sqlalchemy(
-    start_time: datetime,
-    end_time: datetime,
-    moving_window_length: int = 7,
-    feature_aggregation_functions: Dict[str, func] = None,
-    undersampling_factor: int = 1,
-    offset_limit_tuple: Tuple = None,
-    data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
+        start_time: datetime,
+        end_time: datetime,
+        moving_window_length: int = 7,
+        feature_aggregation_functions: Dict[str, func] = None
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'avg': func.avg}
-    try:
-        seed = postgres_session.query(func.setseed(0))
-    except exc.InvalidRequestError:
-        postgres_session.rollback()
-        seed = postgres_session.query(func.setseed(0))
 
-    postgres_session.execute(seed)
-
-    retrieving_positives = False
-    full_query_negatives = get_full_features_query(
+    full_query = bq_session.query(get_full_features_query(
         start_time,
         end_time,
         moving_window_length,
-        retrieving_positives,
         feature_aggregation_functions,
-        undersampling_factor,
-        offset_limit_tuple,
-        data_retrieval_mode
-    )
+    ))
 
-    if data_retrieval_mode != DataRetrievalMode.MODEL_EVAL_DATA:
-        retrieving_positives = True
-        full_query_positives = get_full_features_query(
-            start_time,
-            end_time,
-            moving_window_length,
-            retrieving_positives,
-            feature_aggregation_functions,
-            undersampling_factor,
-            offset_limit_tuple,
-            data_retrieval_mode
-        )
-
-        column_names_current_data = [column.name for column in full_query_negatives.columns]
-        column_names_past_positives = [column.name for column in full_query_positives.columns]
-        column_check = (
-            [column for column in column_names_current_data if column not in column_names_past_positives] +
-            [column for column in column_names_past_positives if column not in column_names_current_data]
-        )
-
-        # We're removing the misaligned columns, due to the fact that their absence / presence might be an indication
-        # for the past positives, in which case it would create a lookahead
-        full_query_negatives = postgres_session.query(
-                *[full_query_negatives.c[column].label(column) for column in column_names_current_data if column not in column_check]
-        )
-
-        full_query_positives = postgres_session.query(
-                *[full_query_positives.c[column].label(column) for column in column_names_past_positives if column not in column_check]
-        )
-    
-        full_query = full_query_negatives.union(full_query_positives)
-        feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
-    else:
-        full_query_negatives = postgres_session.query(full_query_negatives)
-        feature_frame = pd.read_sql(full_query_negatives.statement, full_query_negatives.session.bind)
-
+    feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
     feature_frame.columns = [re.sub('anon_1_', '', column) for column in feature_frame.columns]
     feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
     feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.tz_localize(None).dt.date
@@ -101,36 +49,17 @@ def get_full_features_query(
         start_time: datetime,
         end_time: datetime,
         moving_window_length: int = 7,
-        retrieving_positives: bool = False,
-        feature_aggregation_functions: Dict[str, func] = None,
-        undersampling_factor: int = 1,
-        offset_limit_tuple: Tuple = None,
-        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
+        feature_aggregation_functions: Dict[str, func] = None
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
 
-    if not retrieving_positives:
-        filtered_data = get_filtered_cte(
-            # We retrieve an additional window length lookback of records to correctly construct the rolling window
-            # for the records on the 1st day of the time period we intend to use
-            start_time - timedelta(days=moving_window_length),
-            end_time,
-            False,
-            undersampling_factor,
-            offset_limit_tuple
-        )
-    else:
-        # The additional 90 days look back is to also retrieve past positives due to label imbalance, this only
-        # happens with training
-        lookback_days = 90 if data_retrieval_mode == DataRetrievalMode.MODEL_TRAIN_DATA else 0
-        filtered_data = get_filtered_cte(
-            start_time - timedelta(days=lookback_days) - timedelta(days=moving_window_length),
-            end_time,
-            True,
-            1,
-            offset_limit_tuple
-        )
+    filtered_data = filter_by_date(
+        # We retrieve an additional window length lookback of records to correctly construct the rolling window
+        # for the records on the 1st day of the time period we intend to use
+        start_time - timedelta(days=moving_window_length),
+        end_time
+    )
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
         filtered_data
@@ -160,8 +89,6 @@ def get_full_features_query(
 
     filtered_w_derived_metrics = filter_joined_queries_adding_derived_metrics(
         data_with_rolling_windows,
-        start_time,
-        retrieving_positives,
         feature_aggregation_functions
     )
 
@@ -171,86 +98,100 @@ def get_full_features_query(
 
     final_query_for_outcome_category = remove_helper_lookback_rows(
         filtered_w_derived_metrics_w_all_time_delta_columns,
-        retrieving_positives,
         start_time
     )
 
     return final_query_for_outcome_category
 
 
-def get_filtered_cte(
-    start_time: datetime,
-    end_time: datetime,
-    retrieving_positives,
-    undersampling_factor: int = 1,
-    offset_limit_tuple: Tuple = None
+def filter_by_date(
+        start_time: datetime,
+        end_time: datetime
 ):
+    filtered_data = bq_session.query(
+        aggregated_browser_days.c['date'].label('date'),
+        aggregated_browser_days.c['browser_id'].label('browser_id'),
+        aggregated_browser_days.c['user_ids'].label('user_ids'),
+        aggregated_browser_days.c['pageviews'].label('pageviews'),
+        aggregated_browser_days.c['timespent'].label('timespent'),
+        aggregated_browser_days.c['sessions'].label('sessions'),
+        aggregated_browser_days.c['sessions_without_ref'].label('sessions_without_ref'),
+        aggregated_browser_days.c['browser_family'].label('browser_family'),
+        aggregated_browser_days.c['browser_version'].label('browser_version'),
+        aggregated_browser_days.c['os_family'].label('os_family'),
+        aggregated_browser_days.c['os_version'].label('os_version'),
+        aggregated_browser_days.c['device_family'].label('device_family'),
+        aggregated_browser_days.c['device_brand'].label('device_brand'),
+        aggregated_browser_days.c['device_model'].label('device_model'),
+        aggregated_browser_days.c['is_desktop'].label('is_desktop'),
+        aggregated_browser_days.c['is_mobile'].label('is_mobile'),
+        aggregated_browser_days.c['is_tablet'].label('is_tablet'),
+        aggregated_browser_days.c['next_7_days_event'].label('next_7_days_event'),
+        aggregated_browser_days.c['next_event_time'].label('next_event_time'),
+        aggregated_browser_days.c['referer_medium_pageviews'].label('referer_medium_pageviews'),
+        aggregated_browser_days.c['article_category_pageviews'].label('article_category_pageviews'),
+        aggregated_browser_days.c['hour_interval_pageviews'].label('hour_interval_pageviews'),
+        aggregated_browser_days.c['pageviews_0h_4h'].label('pvs_0h_4h'),
+        aggregated_browser_days.c['pageviews_4h_8h'].label('pvs_4h_8h'),
+        aggregated_browser_days.c['pageviews_8h_12h'].label('pvs_8h_12h'),
+        aggregated_browser_days.c['pageviews_12h_16h'].label('pvs_12h_16h'),
+        aggregated_browser_days.c['pageviews_16h_20h'].label('pvs_16h_20h'),
+        aggregated_browser_days.c['pageviews_20h_24h'].label('pvs_20h_24h')
+    ).subquery()
+    
     # This transforms the 7 day event into 1 day event
-    aggregated_browser_days_w_1_day_event_window = postgres_session.query(
-        *[aggregated_browser_days.c[column.name].label(column.name) for column in aggregated_browser_days.columns
+    filtered_data_w_1_day_event_window = bq_session.query(
+        *[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns
           if column.name != 'next_7_days_event'],
         case(
             [
                 (and_(
-                    aggregated_browser_days.c['next_7_days_event'].in_(
+                    filtered_data.c['next_7_days_event'].in_(
                         [label for label, label_type in LABELS.items() if label_type == 'positive']
                     ),
-                    func.extract(
-                        'day',
-                        aggregated_browser_days.c['next_event_time'] - aggregated_browser_days.c['date']
+                    func.date_diff(
+                        filtered_data.c['next_event_time'].cast(DATE),
+                        filtered_data.c['date'],
+                        text('day')
                     ) >= 1
                 ),
-                 aggregated_browser_days.c['next_7_days_event'])
+                 filtered_data.c['next_7_days_event'])
             ],
             else_=[label for label, label_type in LABELS.items() if label_type == 'negative'][0]
         ).label('next_7_days_event')
     ).subquery()
 
-    label_filter = aggregated_browser_days_w_1_day_event_window.c['next_7_days_event'].in_(
-        [label for label, label_type in LABELS.items() if (label_type == 'positive') is retrieving_positives]
+    current_data = bq_session.query(
+        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in filtered_data_w_1_day_event_window.columns]
+    ).filter(
+        filtered_data_w_1_day_event_window.c['date'] >= cast(start_time, DATE),
+        filtered_data_w_1_day_event_window.c['date'] <= cast(end_time, DATE)
     )
 
-    filtered_data = postgres_session.query(
-        aggregated_browser_days_w_1_day_event_window
+    past_positives = bq_session.query(
+        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in filtered_data_w_1_day_event_window.columns]
     ).filter(
-        aggregated_browser_days_w_1_day_event_window.c['date'] >= cast(start_time, TIMESTAMP),
-        aggregated_browser_days_w_1_day_event_window.c['date'] <= cast(end_time, TIMESTAMP),
-        label_filter
-    ).subquery()
+        filtered_data_w_1_day_event_window.c['date'] >= cast(start_time - timedelta(days=90), DATE),
+        filtered_data_w_1_day_event_window.c['date'] <= cast(start_time, DATE)
+    )
 
-    # For model training, we want all positives. For batch prediction
-    if retrieving_positives and offset_limit_tuple is not None:
-        filtered_data = postgres_session.query(filtered_data).cte(name='positives')
-    # For batch prediction (either for collecting full results, or for upserting prediction, we need to use the
-    # offset-limit tuple for chunking
-    else:
-        browser_filter = subset_browsers(
-            filtered_data,
-            offset_limit_tuple,
-            undersampling_factor
-        )
-
-        filtered_data = postgres_session.query(
-            filtered_data
-        ).filter(
-            filtered_data.c['browser_id'].in_(browser_filter)
-        ).cte('positives' if retrieving_positives else 'negatives')
+    filtered_data = current_data.union_all(past_positives).subquery()
 
     return filtered_data
 
 
 def remove_helper_lookback_rows(
-    filtered_w_derived_metrics_w_all_time_delta_columns,
-    retrieving_positives,
-    start_time
+        filtered_w_derived_metrics_w_all_time_delta_columns,
+        start_time
 ):
     label_lookback_cause = filtered_w_derived_metrics_w_all_time_delta_columns.c['date'] >= (
-        start_time - timedelta(days=90) if retrieving_positives else start_time
-    )
+            (start_time - timedelta(days=90)).date()
+            )
 
-    final_query_for_outcome_category = postgres_session.query(
+    final_query_for_outcome_category = bq_session.query(
         # We re-alias since adding another layer causes sqlalchemy to abbreviate columns
-        *[filtered_w_derived_metrics_w_all_time_delta_columns.c[column.name].label(column.name) for column in filtered_w_derived_metrics_w_all_time_delta_columns.columns]
+        *[filtered_w_derived_metrics_w_all_time_delta_columns.c[column.name].label(column.name) for column in
+          filtered_w_derived_metrics_w_all_time_delta_columns.columns]
     ).filter(
         label_lookback_cause
     ).subquery()
@@ -258,106 +199,38 @@ def remove_helper_lookback_rows(
     return final_query_for_outcome_category
 
 
-def subset_browsers(
-        filtered_data,
-        # if None, we'll be sampling browsers for train, otherwise we want a offset-limit combination of browsers
-        offset_limit_tuple: Tuple = None,
-        undersampling_factor: int = 500
-):
-    negative_browsers = postgres_session.query(
-        filtered_data.c['browser_id'].label('browser_id')
-    ).group_by(
-        filtered_data.c['browser_id'].label('browser_id')
-    ).subquery()
-
-    if offset_limit_tuple:
-        negative_browsers = postgres_session.query(
-            negative_browsers).offset(offset_limit_tuple[0]).limit(offset_limit_tuple[1]).subquery()
-    else:
-        negative_browsers = postgres_session.query(negative_browsers).filter(
-                1 / undersampling_factor >= func.random()
-        ).subquery()
-
-    return negative_browsers
-
-
-def get_browser_count(
-        start_time: datetime,
-        end_time: datetime,
-        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_EVAL_DATA
-):
-    retrieving_positives = False
-    filtered_data_negatives = get_filtered_cte(start_time, end_time, retrieving_positives, 1, None)
-
-    negative_browsers = postgres_session.query(
-        filtered_data_negatives.c['browser_id'].label('browser_id')
-    ).group_by(
-        filtered_data_negatives.c['browser_id'].label('browser_id')
-    ).subquery()
-
-    negative_browsers_count = return_browser_count(negative_browsers)[0][0]
-
-    if data_retrieval_mode != DataRetrievalMode.MODEL_EVAL_DATA:
-        retrieving_positives = True
-        filtered_data_positives = get_filtered_cte(start_time, end_time, retrieving_positives, 1, None)
-
-        positive_browsers = postgres_session.query(
-            filtered_data_positives.c['browser_id'].label('browser_id')
-        ).group_by(
-            filtered_data_positives.c['browser_id'].label('browser_id')
-        ).subquery()
-
-        positive_browsers_count = return_browser_count(positive_browsers)[0][0]
-    else:
-        positive_browsers_count = 0
-
-    return negative_browsers_count + positive_browsers_count
-
-
-def return_browser_count(unique_browser_query):
-    '''
-    Assumes the input query returns only unique browsers
-    :param unique_browser_query:
-    :return:
-    '''
-    return postgres_session.query(
-        func.count(unique_browser_query.c['browser_id'])
-    ).all()
-
-
 def get_subqueries_for_non_gapped_time_series(
         filtered_data
 ):
-    start_time, end_time = postgres_session.query(
+    start_time, end_time = bq_session.query(
         func.min(filtered_data.c['date']),
         func.max(filtered_data.c['date']),
     ).all()[0]
 
-    generated_time_series = postgres_session.query(
-        func.generate_series(
-            start_time,
-            end_time,
-            timedelta(days=1)
-        ).cast(DATE).label('date_gap_filler')
-    ).subquery(name='date_gap_filler')
+    generated_time_series = bq_session.query(select([column('dates').label('date_gap_filler')]).select_from(
+        func.unnest(
+            func.generate_date_array(start_time, end_time)
+            ).alias('dates')
+    )).subquery()
 
-    browser_ids = postgres_session.query(
+    browser_ids = bq_session.query(
         filtered_data.c['browser_id'],
         func.array_agg(
             case(
                 [
                     (filtered_data.c['user_ids'] == None,
                      ''),
-                    (filtered_data.c['user_ids'] == literal([], ARRAY(TEXT)),
+                    # This is an obvious hack, but while PG accepts a comparison with an empty array that is defined
+                    # as literal([], ARRAY[TEXT]), bigquery claims it doesn't know the type of the array
+                    (func.array_to_string(filtered_data.c['user_ids'], '') == '',
                      '')
-
                 ],
-                else_= filtered_data.c['user_ids'].cast(TEXT)
+                else_=func.array_to_string(filtered_data.c['user_ids'], ',')
             )).label('user_ids')
     ).group_by(filtered_data.c['browser_id']).subquery(name='browser_ids')
 
-    all_date_browser_combinations = postgres_session.query(
-        select([browser_ids, generated_time_series]).alias('all_date_browser_combinations')).subquery()
+    all_date_browser_combinations = bq_session.query(
+        select([browser_ids, generated_time_series.c['date_gap_filler']]).alias('all_date_browser_combinations')).subquery()
 
     return all_date_browser_combinations
 
@@ -365,16 +238,16 @@ def get_subqueries_for_non_gapped_time_series(
 def get_unique_events_subquery(
         filtered_data
 ):
-    unique_events = postgres_session.query(
-            filtered_data.c['browser_id'].label('event_browser_id'),
-            filtered_data.c['next_event_time'].label('next_event_time_filled'),
-            filtered_data.c['next_7_days_event'].label('outcome_filled')
-        ).filter(
-            filtered_data.c['next_event_time'] != None
-        ).group_by(
-            filtered_data.c['browser_id'],
-            filtered_data.c['next_event_time'],
-            filtered_data.c['next_7_days_event']).subquery('unique_events')
+    unique_events = bq_session.query(
+        filtered_data.c['browser_id'].label('event_browser_id'),
+        filtered_data.c['next_event_time'].label('next_event_time_filled'),
+        filtered_data.c['next_7_days_event'].label('outcome_filled')
+    ).filter(
+        filtered_data.c['next_event_time'] != None
+    ).group_by(
+        filtered_data.c['browser_id'],
+        filtered_data.c['next_event_time'],
+        filtered_data.c['next_7_days_event']).subquery('unique_events')
 
     return unique_events
 
@@ -382,13 +255,13 @@ def get_unique_events_subquery(
 def get_device_information_subquery(
         filtered_data
 ):
-    device_information = postgres_session.query(
+    device_information = bq_session.query(
         case(
             [
                 (filtered_data.c['device_brand'] == None,
                  'Desktop')
             ],
-            else_= filtered_data.c['device_brand']
+            else_=filtered_data.c['device_brand']
         ).label('device_brand').label('device'),
         filtered_data.c['browser_family'].label('browser'),
         filtered_data.c['is_desktop'],
@@ -396,7 +269,8 @@ def get_device_information_subquery(
         filtered_data.c['is_tablet'],
         filtered_data.c['os_family'].label('os'),
         filtered_data.c['is_mobile'],
-        filtered_data.c['browser_id']
+        filtered_data.c['browser_id'],
+        filtered_data.c['date']
     ).order_by(
         filtered_data.c['browser_id'],
         filtered_data.c['date'].desc()
@@ -408,12 +282,12 @@ def get_device_information_subquery(
 
 
 def create_rolling_agg_function(
-    moving_window_length: int,
-    half_window: bool,
-    agg_function,
-    column,
-    partitioning_column,
-    ordering_column
+        moving_window_length: int,
+        half_window: bool,
+        agg_function,
+        column,
+        partitioning_column,
+        ordering_column
 ):
     window_look_back_adjustment = 1 if moving_window_length % 2 > 0 or half_window is False else 0
     half_window_adjustment = 2 if half_window else 1
@@ -428,12 +302,28 @@ def create_rolling_agg_function(
 
 
 def get_unique_json_fields_query(filtered_data, column_name):
-    # TODO: Once the column type is unified in DB, we can get rid of this branching
-    all_keys_query = postgres_session.query(
-        func.jsonb_object_keys(filtered_data.c[column_name]).label(column_name)
+    # This is a hacky workaround. Bigquery doesn't have a function to extract all keys from a json column flattening
+    # them. What we do here is remove everything but the keys from the json string, split on commas, keep only the ones
+    # with 1 key (assuming with enough data all keys occur along, especially since more visitors only tend to have
+    # 1 pageview, we than transform these single key arrays to string and group by to get unique ones
+    all_keys_query = bq_session.query(
+        func.regexp_replace(filtered_data.c[column_name], '{|}|: [0-9]+|"', '').label(column_name)
     ).subquery()
-    column_keys = postgres_session.query(all_keys_query.c[column_name]).distinct(
-        all_keys_query.c[column_name]).all()
+
+    all_keys_query = bq_session.query(
+        func.split(all_keys_query.c[column_name], ',').label(column_name)
+    ).subquery()
+
+    all_keys_query = bq_session.query(all_keys_query).filter(
+        func.array_length(all_keys_query.c[column_name]) == 1
+    ).subquery()
+
+    column_keys = bq_session.query(
+        func.array_to_string(all_keys_query.c[column_name], '').label(column_name)
+    ).group_by(
+        column_name
+    ).all()
+    
     column_keys = [json_key[0] for json_key in column_keys]
 
     return column_keys
@@ -443,42 +333,44 @@ def unpack_json_fields(filtered_data):
     json_key_based_columns = {}
     json_column_keys = {}
     for json_column in JSON_COLUMNS:
-        json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
         if json_column != 'hour_interval_pageviews':
+            json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
             json_key_based_columns[json_column] = {
-                f'{json_column}_{json_key}': filtered_data.c[json_column][json_key].cast(Text).cast(Float)
+                f'{json_column}_{json_key.replace("-", "_")}':
+                    func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(Float)
                 for json_key in json_column_keys[json_column]
             }
 
         else:
-            json_key_based_columns[json_column] = sum_hourly_intervals_into_4_hour_ranges(
-                filtered_data,
-                json_column_keys['hour_interval_pageviews']
+            # TODO: This is now technically not a json column anymore
+            json_key_based_columns[json_column] = add_4_hour_intervals(
+                filtered_data
             )
-
-    unpacked_time_fields_query = postgres_session.query(
-        filtered_data,
-        *[value.label(key)
-            for json_keys in json_key_based_columns.values()
-            for key, value in json_keys.items()
-          ]
-    ).subquery()
 
     json_key_column_names = [
         key for json_keys in json_key_based_columns.values()
         for key in json_keys.keys()
     ]
 
+    unpacked_time_fields_query = bq_session.query(
+        *[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns if
+          column.name not in json_key_column_names],
+        *[column for column in json_key_based_columns['hour_interval_pageviews'].values()],
+        *[value.label(key)
+          for original_column, json_keys in json_key_based_columns.items()
+          for key, value in json_keys.items()
+          if original_column != 'hour_interval_pageviews'
+          ]
+    ).subquery()
+
     return unpacked_time_fields_query, json_key_column_names
 
 
-def sum_hourly_intervals_into_4_hour_ranges(
-        filtered_data,
-        json_column_keys
+def add_4_hour_intervals(
+        filtered_data
 ):
     '''
     :param filtered_data:
-    :param json_column_keys:
     :return:
     Let's bundle the hourly data into 4 hour intervals (such as 00:00 - 03:59, ...) to avoid having too many columns.
     The division works with the following hypothesis:
@@ -491,27 +383,10 @@ def sum_hourly_intervals_into_4_hour_ranges(
 
     We need to use coalesce to avoid having almost all NULL columns
     '''
-    range_sums = {}
-    for i in range(0, len(json_column_keys), 4):
-        column = 'hour_interval_pageviews'
-        hours_in_interval = json_column_keys[i:i + 4]
-        current_sum_name = (
-                            f"hours_{re.sub('-[0-9][0-9][0-9][0-9]$', '', hours_in_interval[0])}" +  
-                            f"_{re.sub('^[0-9][0-9][0-9][0-9]-', '', hours_in_interval[min(3, len(hours_in_interval) - 1)])}"
-                           )
+    hour_ranges = generate_4_hour_interval_column_names()
+    hour_based_columns = {column: filtered_data.c[column].label(column) for column in hour_ranges}
 
-        range_sums[current_sum_name] = func.coalesce(
-            filtered_data.c[column][hours_in_interval[0]].cast(Text).cast(Float),
-            0.0
-        )
-        
-        if len(hours_in_interval) > 1:
-            for hour in hours_in_interval[1:]:
-                range_sums[current_sum_name] = (
-                        range_sums[current_sum_name] +
-                        func.coalesce(filtered_data.c[column][hour].cast(Text).cast(Float), 0.0))
-
-    return range_sums
+    return hour_based_columns
 
 
 def join_all_partial_queries(
@@ -521,11 +396,11 @@ def join_all_partial_queries(
         device_information,
         json_key_column_names
 ):
-    joined_queries = postgres_session.query(
+    joined_queries = bq_session.query(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
-        func.extract('dow', all_date_browser_combinations.c['date_gap_filler']).cast(Text).label('day_of_week'),
+        func.extract(text('DAYOFWEEK'), all_date_browser_combinations.c['date_gap_filler']).cast(String).label('day_of_week'),
         filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
         (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
         unique_events.c['outcome_filled'],
@@ -535,9 +410,9 @@ def join_all_partial_queries(
         filtered_data_with_unpacked_json_fields.c['sessions_without_ref'],
         filtered_data_with_unpacked_json_fields.c['sessions'],
         # Add all columns created from json_fields
-        *[filtered_data_with_unpacked_json_fields.c[json_key_column] for json_key_column in json_key_column_names],
+        *[filtered_data_with_unpacked_json_fields.c[json_key_column].label(json_key_column) for json_key_column in json_key_column_names],
         # Unpack all device information columns except ones already present in other queries
-        *[device_information.c[column.name] for column in device_information.columns if column.name != 'browser_id'],
+        *[device_information.c[column.name] for column in device_information.columns if column.name not in ['browser_id', 'date']],
     ).outerjoin(
         filtered_data_with_unpacked_json_fields,
         and_(
@@ -547,8 +422,11 @@ def join_all_partial_queries(
         unique_events,
         and_(
             unique_events.c['event_browser_id'] == filtered_data_with_unpacked_json_fields.c['browser_id'],
-            unique_events.c['next_event_time_filled'] > filtered_data_with_unpacked_json_fields.c['date'] - timedelta(days=7),
-            filtered_data_with_unpacked_json_fields.c['date'] <= unique_events.c['next_event_time_filled']
+            unique_events.c['next_event_time_filled'].cast(DATE) > func.date_sub(
+                filtered_data_with_unpacked_json_fields.c['date'],
+                text(f'interval {1} day')
+            ),
+            filtered_data_with_unpacked_json_fields.c['date'] <= unique_events.c['next_event_time_filled'].cast(DATE)
         )
     ).outerjoin(
         device_information,
@@ -572,24 +450,24 @@ def calculate_rolling_windows_features(
         feature_aggregation_functions
     )
 
-    queries_with_basic_window_columns = postgres_session.query(
+    queries_with_basic_window_columns = bq_session.query(
         joined_queries,
         *rolling_agg_columns_base,
-        extract('day',
-                # last day in the current window
-                joined_queries.c['date']
-                # last day active in current window
-                - func.coalesce(
-                    create_rolling_agg_function(
-                        moving_window_length,
-                        False,
-                        func.max,
-                        joined_queries.c['date_w_gaps'],
-                        joined_queries.c['browser_id'],
-                        joined_queries.c['date']),
-                    start_time - timedelta(days=2)
-                )
-                ).label('days_since_last_active'),
+        func.date_diff(
+            # last day in the current window
+            joined_queries.c['date'],
+            # last day active in current window
+            func.coalesce(
+                create_rolling_agg_function(
+                    moving_window_length,
+                    False,
+                    func.max,
+                    joined_queries.c['date_w_gaps'],
+                    joined_queries.c['browser_id'],
+                    joined_queries.c['date']),
+                (start_time - timedelta(days=2)).date()
+            ),
+            text('day')).label('days_since_last_active'),
         # row number in case deduplication is needed
         func.row_number().over(
             partition_by=[
@@ -605,26 +483,11 @@ def calculate_rolling_windows_features(
 
 
 def create_time_window_vs_day_of_week_combinations(
-        joined_queries,
-        time_key_column_names
+        joined_queries
 ):
-    # Day of Week with 4-hour intervals
+    interval_names = generate_4_hour_interval_column_names()
+
     combinations = {
-        f'dow_{i}_{time_key_column}': case(
-            [
-                (joined_queries.c['day_of_week'] == None,
-                 0),
-                (joined_queries.c['day_of_week'] != str(i),
-                 0)
-            ],
-            else_=joined_queries.c[time_key_column]
-        )
-        for i in range(0, 7)
-        for time_key_column in time_key_column_names
-    }
-    # Day of Week only
-    combinations.update(
-        {
             f'dow_{i}': case(
                 [
                     (joined_queries.c['day_of_week'] == None,
@@ -636,11 +499,11 @@ def create_time_window_vs_day_of_week_combinations(
             )
             for i in range(0, 7)
         }
-    )
+
     # 4-hour intervals
     combinations.update(
         {time_key_column_name: joined_queries.c[time_key_column_name]
-         for time_key_column_name in time_key_column_names}
+         for time_key_column_name in interval_names}
     )
 
     return combinations
@@ -652,6 +515,7 @@ def create_rolling_window_columns_config(
         moving_window_length,
         feature_aggregation_functions
 ):
+
     # {name of the resulting column : source / calculation},
     column_source_to_name_mapping = {
         'pageview': joined_queries.c['pageviews'],
@@ -661,13 +525,11 @@ def create_rolling_window_columns_config(
         # All json key columns have their own rolling sums
         **{
             column: joined_queries.c[column] for column in json_key_column_names
-            if 'hours_' not in column
         }
     }
 
     time_column_config = create_time_window_vs_day_of_week_combinations(
-        joined_queries,
-        [column for column in json_key_column_names if 'hours_' in column]
+        joined_queries
     )
 
     column_source_to_name_mapping.update(time_column_config)
@@ -721,10 +583,8 @@ def create_rolling_window_columns_config(
 
 
 def filter_joined_queries_adding_derived_metrics(
-    joined_partial_queries,
-    start_time: datetime,
-    retrieving_past_positives,
-    feature_aggregation_functions
+        joined_partial_queries,
+        feature_aggregation_functions
 ):
     # We will only check the first requested aggregation as we want to make sure there was at least 1 PV during the
     # time window, which works for any aggregation type result for number of pageviews being higher than 0
@@ -735,14 +595,11 @@ def filter_joined_queries_adding_derived_metrics(
         joined_partial_queries.c['row_number'] == 1
     ]
 
-    if not retrieving_past_positives:
-        finalizing_filter.append(joined_partial_queries.c['date'] >= start_time)
-
     derived_metrics_config = {}
     for feature_aggregation_function_alias in feature_aggregation_functions.keys():
         derived_metrics_config.update(build_derived_metrics_config(feature_aggregation_function_alias))
 
-    filtered_w_derived_metrics = postgres_session.query(
+    filtered_w_derived_metrics = bq_session.query(
         *[column.label(column.name)
           for column in joined_partial_queries.columns
           if not re.search('outcome', column.name)
@@ -758,8 +615,8 @@ def filter_joined_queries_adding_derived_metrics(
         ).label('outcome'),
         *[
             func.coalesce((
-                joined_partial_queries.c[derived_metrics_config[key]['nominator'] + suffix] /
-                joined_partial_queries.c[derived_metrics_config[key]['denominator'] + suffix]
+                    joined_partial_queries.c[derived_metrics_config[key]['nominator'] + suffix] /
+                    joined_partial_queries.c[derived_metrics_config[key]['denominator'] + suffix]
             ), 0.0).label(key + suffix)
             for key in derived_metrics_config.keys()
             for suffix in ['', '_last_window_half']
@@ -772,32 +629,33 @@ def filter_joined_queries_adding_derived_metrics(
 def add_all_time_delta_columns(
         filtered_w_derived_metrics
 ):
-    filtered_w_derived_metrics_w_all_time_delta_columns = postgres_session.query(
+    filtered_w_derived_metrics_w_all_time_delta_columns = bq_session.query(
         filtered_w_derived_metrics,
         *[
             (
-                filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)] - filtered_w_derived_metrics.c[column.name]
+                    filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)] -
+                    filtered_w_derived_metrics.c[column.name]
             ).label(re.sub('_last_window_half', '_first_window_half', column.name))
             for column in filtered_w_derived_metrics.columns
             if re.search('_last_window_half', column.name)
         ],
         *[
             case(
-                    [
-                        # If the 2nd half of period has 0 for its value, we assign 100 % decline
-                        (filtered_w_derived_metrics.c[column.name] == 0, -1),
-                        # If the 1st half of period has 0 for its value, we assign 100 % growth
-                        (
-                            filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)]
-                            - filtered_w_derived_metrics.c[column.name] == 0, 1)
-                    ],
+                [
+                    # If the 2nd half of period has 0 for its value, we assign 100 % decline
+                    (filtered_w_derived_metrics.c[column.name] == 0, -1),
+                    # If the 1st half of period has 0 for its value, we assign 100 % growth
+                    (
+                        filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)]
+                        - filtered_w_derived_metrics.c[column.name] == 0, 1)
+                ],
                 else_=(filtered_w_derived_metrics.c[column.name] / (
-                    filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)] -
-                    filtered_w_derived_metrics.c[column.name]))
+                        filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)] -
+                        filtered_w_derived_metrics.c[column.name]))
             ).label(f'relative_{re.sub("_last_window_half", "", column.name)}_change_first_and_second_half')
             for column in filtered_w_derived_metrics.columns
             if re.search('_last_window_half', column.name)
-         ]
+        ]
     ).subquery()
 
     return filtered_w_derived_metrics_w_all_time_delta_columns
@@ -890,7 +748,7 @@ def get_global_context(start_time, end_time):
             payments.c['created_at'] <= end_time,
             payments.c['status'] == 'paid'
         ).group_by(
-                'date'
+            'date'
         ).subquery()
 
         return payments_filtered
@@ -903,7 +761,7 @@ def get_global_context(start_time, end_time):
             article_pageviews.c['time_from'] >= start_time,
             article_pageviews.c['time_from'] <= end_time
         ).group_by(
-                'date'
+            'date'
         ).subquery()
 
         return article_pageviews_filtered
@@ -956,77 +814,7 @@ def get_global_context(start_time, end_time):
 
     mysql_predplatne_session.close()
     mysql_beam_session.close()
-    
+
     return context
 
 
-def get_browser_days_count(
-        start_time: datetime,
-        end_time: datetime
-):
-    count_query = postgres_session.query(
-        func.count(aggregated_browser_days.c['browser_id']).label('count')
-    ).filter(
-        aggregated_browser_days.c['date'] >= cast(start_time, TIMESTAMP),
-        aggregated_browser_days.c['date'] <= cast(end_time, TIMESTAMP),
-    )
-    count = pd.read_sql(count_query.statement, count_query.session.bind)
-
-    return int(count.loc[0, 'count'])
-
-
-queries = dict()
-queries['upsert_predictions'] = '''
-        INSERT INTO
-               conversion_predictions_daily (
-                   date,
-                   browser_id,
-                   user_ids,
-                   predicted_outcome, 
-                   conversion_probability, 
-                   no_conversion_probability,
-                   shared_account_login_probability,
-                   model_version,
-                   created_at,
-                   updated_at)
-           VALUES (
-               :date,
-               :browser_id,
-               :user_ids,
-               :predicted_outcome, 
-               :conversion_probability, 
-               :no_conversion_probability,
-               :shared_account_login_probability,
-               :model_version,
-               :created_at,
-               :updated_at)
-           ON CONFLICT
-               (browser_id, date)
-           DO UPDATE SET
-               conversion_probability = :conversion_probability,
-               no_conversion_probability = :no_conversion_probability,
-               shared_account_login_probability = :shared_account_login_probability,
-               model_version = :model_version,
-               updated_at = :updated_at
-    '''
-
-queries['upsert_prediction_job_log'] = '''
-        INSERT INTO
-               prediction_job_log (
-                   date,
-                   rows_predicted,
-                   model_version,
-                   created_at,
-                   updated_at)
-           VALUES (
-               :date,
-               :rows_predicted,
-               :model_version,
-               :created_at,
-               :updated_at)
-           ON CONFLICT
-               (date, model_version)
-           DO UPDATE SET
-               rows_predicted = :rows_predicted,
-               updated_at = :updated_at
-    '''

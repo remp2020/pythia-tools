@@ -26,17 +26,14 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
-from sqlalchemy.types import Float, DATE, String, TIMESTAMP, ARRAY
 from google.oauth2 import service_account
 
-from utils.db_utils import create_predictions_table, create_predictions_job_log
 from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
     MIN_TRAINING_DAYS
 from utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
-from utils.bq_queries import queries
-from utils.bq_queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context
+from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context
 from utils.data_transformations import unique_list, row_wise_normalization
 
 
@@ -1012,6 +1009,7 @@ class ConversionPredictionModel(object):
         '''
         logger.info(f'Executing prediction generation')
         self.create_feature_frame()
+        self.artifact_retention_mode = ArtifactRetentionMode.DROP
 
         logger.setLevel(logging.INFO)
 
