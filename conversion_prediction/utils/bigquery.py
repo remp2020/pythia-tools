@@ -5,9 +5,38 @@ from sqlalchemy.types import Float, DATE, String
 from sqlalchemy import and_, func, case, text
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
-from .db_utils import get_sqlalchemy_tables_w_session
 from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, generate_4_hour_interval_column_names
-from typing import List, Dict
+from typing import List, Dict, Any
+import os
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import MetaData, Table
+from .db_utils import create_connection
+
+
+def get_sqla_table(table_name, engine):
+    meta = MetaData(bind=engine)
+    table = Table(table_name, meta, autoload=True, autoload_with=engine)
+    return table
+
+
+def get_sqlalchemy_tables_w_session(
+        db_connection_string_name: str,
+        schema: str,
+        table_names: List[str],
+        engine_kwargs: Dict[str, Any] = None,
+) -> Dict:
+    table_mapping = {}
+    _, db_connection = create_connection(os.getenv(db_connection_string_name), engine_kwargs)
+    database = os.getenv('BQ_DATABASE')
+    for table in table_names:
+        table_mapping[table] = get_sqla_table(
+            table_name=f'{database}.{schema}.{table}', engine=db_connection,
+        )
+
+    table_mapping['session'] = sessionmaker(bind=db_connection)()
+
+    return table_mapping
+
 
 bq_mappings = get_sqlalchemy_tables_w_session(
     'BQ_CONNECTION_STRING',
@@ -138,7 +167,7 @@ def filter_by_date(
         aggregated_browser_days.c['pageviews_16h_20h'].label('pvs_16h_20h'),
         aggregated_browser_days.c['pageviews_20h_24h'].label('pvs_20h_24h')
     ).subquery()
-    
+
     # This transforms the 7 day event into 1 day event
     filtered_data_w_1_day_event_window = bq_session.query(
         *[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns
@@ -162,14 +191,16 @@ def filter_by_date(
     ).subquery()
 
     current_data = bq_session.query(
-        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in filtered_data_w_1_day_event_window.columns]
+        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in
+          filtered_data_w_1_day_event_window.columns]
     ).filter(
         filtered_data_w_1_day_event_window.c['date'] >= cast(start_time, DATE),
         filtered_data_w_1_day_event_window.c['date'] <= cast(end_time, DATE)
     )
 
     past_positives = bq_session.query(
-        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in filtered_data_w_1_day_event_window.columns]
+        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in
+          filtered_data_w_1_day_event_window.columns]
     ).filter(
         filtered_data_w_1_day_event_window.c['date'] >= cast(start_time - timedelta(days=90), DATE),
         filtered_data_w_1_day_event_window.c['date'] <= cast(start_time, DATE)
@@ -185,8 +216,8 @@ def remove_helper_lookback_rows(
         start_time
 ):
     label_lookback_cause = filtered_w_derived_metrics_w_all_time_delta_columns.c['date'] >= (
-            (start_time - timedelta(days=90)).date()
-            )
+        (start_time - timedelta(days=90)).date()
+    )
 
     final_query_for_outcome_category = bq_session.query(
         # We re-alias since adding another layer causes sqlalchemy to abbreviate columns
@@ -210,7 +241,7 @@ def get_subqueries_for_non_gapped_time_series(
     generated_time_series = bq_session.query(select([column('dates').label('date_gap_filler')]).select_from(
         func.unnest(
             func.generate_date_array(start_time, end_time)
-            ).alias('dates')
+        ).alias('dates')
     )).subquery()
 
     browser_ids = bq_session.query(
@@ -230,7 +261,8 @@ def get_subqueries_for_non_gapped_time_series(
     ).group_by(filtered_data.c['browser_id']).subquery(name='browser_ids')
 
     all_date_browser_combinations = bq_session.query(
-        select([browser_ids, generated_time_series.c['date_gap_filler']]).alias('all_date_browser_combinations')).subquery()
+        select([browser_ids, generated_time_series.c['date_gap_filler']]).alias(
+            'all_date_browser_combinations')).subquery()
 
     return all_date_browser_combinations
 
@@ -323,7 +355,7 @@ def get_unique_json_fields_query(filtered_data, column_name):
     ).group_by(
         column_name
     ).all()
-    
+
     column_keys = [json_key[0] for json_key in column_keys]
 
     return column_keys
@@ -400,7 +432,8 @@ def join_all_partial_queries(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
         all_date_browser_combinations.c['user_ids'].label('user_ids'),
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
-        func.extract(text('DAYOFWEEK'), all_date_browser_combinations.c['date_gap_filler']).cast(String).label('day_of_week'),
+        func.extract(text('DAYOFWEEK'), all_date_browser_combinations.c['date_gap_filler']).cast(String).label(
+            'day_of_week'),
         filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
         (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
         unique_events.c['outcome_filled'],
@@ -410,9 +443,11 @@ def join_all_partial_queries(
         filtered_data_with_unpacked_json_fields.c['sessions_without_ref'],
         filtered_data_with_unpacked_json_fields.c['sessions'],
         # Add all columns created from json_fields
-        *[filtered_data_with_unpacked_json_fields.c[json_key_column].label(json_key_column) for json_key_column in json_key_column_names],
+        *[filtered_data_with_unpacked_json_fields.c[json_key_column].label(json_key_column) for json_key_column in
+          json_key_column_names],
         # Unpack all device information columns except ones already present in other queries
-        *[device_information.c[column.name] for column in device_information.columns if column.name not in ['browser_id', 'date']],
+        *[device_information.c[column.name] for column in device_information.columns if
+          column.name not in ['browser_id', 'date']],
     ).outerjoin(
         filtered_data_with_unpacked_json_fields,
         and_(
@@ -488,17 +523,17 @@ def create_time_window_vs_day_of_week_combinations(
     interval_names = generate_4_hour_interval_column_names()
 
     combinations = {
-            f'dow_{i}': case(
-                [
-                    (joined_queries.c['day_of_week'] == None,
-                     0),
-                    (joined_queries.c['day_of_week'] != str(i),
-                     0)
-                ],
-                else_=1
-            )
-            for i in range(0, 7)
-        }
+        f'dow_{i}': case(
+            [
+                (joined_queries.c['day_of_week'] == None,
+                 0),
+                (joined_queries.c['day_of_week'] != str(i),
+                 0)
+            ],
+            else_=1
+        )
+        for i in range(0, 7)
+    }
 
     # 4-hour intervals
     combinations.update(
@@ -515,7 +550,6 @@ def create_rolling_window_columns_config(
         moving_window_length,
         feature_aggregation_functions
 ):
-
     # {name of the resulting column : source / calculation},
     column_source_to_name_mapping = {
         'pageview': joined_queries.c['pageviews'],
@@ -659,162 +693,3 @@ def add_all_time_delta_columns(
     ).subquery()
 
     return filtered_w_derived_metrics_w_all_time_delta_columns
-
-
-def get_payment_history_features(end_time: datetime):
-    predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'predplatne',
-        ['payments', 'subscriptions']
-    )
-
-    mysql_predplatne_session = predplatne_mysql_mappings['session']
-    payments = predplatne_mysql_mappings['payments']
-    subscriptions = predplatne_mysql_mappings['subscriptions']
-
-    clv = mysql_predplatne_session.query(
-        func.sum(payments.c['amount']).label('clv'),
-        payments.c['user_id']
-    ).filter(
-        and_(
-            payments.c['created_at'] <= end_time,
-            payments.c['status'] == 'paid'
-        )
-    ).group_by(
-        payments.c['user_id']
-    ).subquery()
-
-    days_since_last_subscription = mysql_predplatne_session.query(
-        func.datediff(end_time, func.max(subscriptions.c['end_time'])).label('days_since_last_subscription'),
-        func.max(subscriptions.c['end_time']).label('last_subscription_end'),
-        subscriptions.c['user_id']
-    ).filter(
-        subscriptions.c['end_time'] <= end_time
-    ).group_by(
-        subscriptions.c['user_id']
-    ).subquery()
-
-    user_payment_history_query = mysql_predplatne_session.query(
-        clv.c['clv'],
-        clv.c['user_id'],
-        days_since_last_subscription.c['days_since_last_subscription'],
-        days_since_last_subscription.c['last_subscription_end']
-    ).outerjoin(
-        days_since_last_subscription,
-        clv.c['user_id'] == days_since_last_subscription.c['user_id']
-    )
-
-    user_payment_history = pd.read_sql(
-        user_payment_history_query.statement,
-        user_payment_history_query.session.bind
-    )
-
-    user_payment_history['clv'] = user_payment_history['clv'].astype(float)
-    user_payment_history['days_since_last_subscription'] = user_payment_history[
-        'days_since_last_subscription'
-    ].astype(float)
-
-    mysql_predplatne_session.close()
-
-    return user_payment_history
-
-
-def get_global_context(start_time, end_time):
-    beam_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'remp_beam',
-        ['article_pageviews']
-    )
-    mysql_beam_session = beam_mysql_mappings['session']
-    article_pageviews = beam_mysql_mappings['article_pageviews']
-
-    predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'predplatne',
-        ['payments']
-    )
-
-    mysql_predplatne_session = predplatne_mysql_mappings['session']
-    payments = predplatne_mysql_mappings['payments']
-
-    # We create two subqueries using the same data to merge twice in order to get rolling sum in mysql
-    def get_payments_filtered():
-        payments_filtered = mysql_predplatne_session.query(
-            payments.c['created_at'].cast(DATE).label('date'),
-            func.count(payments.c['id']).label('payment_count'),
-            func.sum(payments.c['amount']).label('sum_paid')
-        ).filter(
-            payments.c['created_at'] >= start_time,
-            payments.c['created_at'] <= end_time,
-            payments.c['status'] == 'paid'
-        ).group_by(
-            'date'
-        ).subquery()
-
-        return payments_filtered
-
-    def get_article_pageviews_filtered():
-        article_pageviews_filtered = mysql_beam_session.query(
-            article_pageviews.c['time_from'].cast(DATE).label('date'),
-            func.sum(article_pageviews.c['sum']).label('article_pageviews'),
-        ).filter(
-            article_pageviews.c['time_from'] >= start_time,
-            article_pageviews.c['time_from'] <= end_time
-        ).group_by(
-            'date'
-        ).subquery()
-
-        return article_pageviews_filtered
-
-    payments_filtered_1 = get_payments_filtered()
-    payments_filtered_2 = get_payments_filtered()
-
-    payments_context = mysql_predplatne_session.query(
-        payments_filtered_1.c['date'].label('date'),
-        func.sum(payments_filtered_2.c['payment_count']).label('payment_count'),
-        func.sum(payments_filtered_2.c['sum_paid']).label('sum_paid')
-    ).join(
-        payments_filtered_2,
-        func.datediff(payments_filtered_1.c['date'], payments_filtered_2.c['date']).between(0, 7)
-    ).group_by(
-        payments_filtered_1.c['date']
-    ).order_by(
-        payments_filtered_1.c['date']
-    ).subquery()
-
-    article_pageviews_filtered_1 = get_article_pageviews_filtered()
-    article_pageviews_filtered_2 = get_article_pageviews_filtered()
-
-    article_pageviews_context = mysql_beam_session.query(
-        article_pageviews_filtered_1.c['date'].label('date'),
-        func.sum(article_pageviews_filtered_2.c['article_pageviews']).label('article_pageviews_count'),
-    ).join(
-        article_pageviews_filtered_2,
-        func.datediff(article_pageviews_filtered_1.c['date'], article_pageviews_filtered_2.c['date']).between(0, 7)
-    ).group_by(
-        article_pageviews_filtered_1.c['date']
-    ).order_by(
-        article_pageviews_filtered_1.c['date']
-    ).subquery()
-
-    context_query = mysql_predplatne_session.query(
-        payments_context.c['date'],
-        payments_context.c['payment_count'],
-        payments_context.c['sum_paid'],
-        article_pageviews_context.c['article_pageviews_count']
-    ).join(
-        article_pageviews_context,
-        article_pageviews_context.c['date'] == payments_context.c['date']
-    )
-
-    context = pd.read_sql(
-        context_query.statement,
-        context_query.session.bind
-    )
-
-    mysql_predplatne_session.close()
-    mysql_beam_session.close()
-
-    return context
-
-
