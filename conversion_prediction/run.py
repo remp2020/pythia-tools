@@ -33,7 +33,8 @@ from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGAT
 from utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
-from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context
+from utils.bigquery import get_feature_frame_via_sqlalchemy
+from utils.mysql import get_payment_history_features, get_global_context
 from utils.data_transformations import unique_list, row_wise_normalization
 
 

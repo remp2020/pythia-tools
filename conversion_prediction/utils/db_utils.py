@@ -59,7 +59,6 @@ def get_sqlalchemy_tables_w_session(
         schema: str,
         table_names: List[str],
         engine_kwargs: Dict[str, Any] = None,
-        database: str = ''
 ) -> Dict:
     if not engine_kwargs:
         engine_kwargs = {}
@@ -72,7 +71,6 @@ def get_sqlalchemy_tables_w_session(
                 table_name=f'{database}.{schema}.{table}', engine=db_connection,
             )
     elif db_connection_string_name == 'MYSQL_CONNECTION_SQL':
-        database = 'public'
         for table in table_names:
             table_mapping[table] = get_sqla_table(
                 table_name=f'{schema}.{table}', engine=db_connection,
