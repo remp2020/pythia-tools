@@ -46,9 +46,11 @@ def retrieve_data_for_query_key(
     return data
 
 
-def get_sqla_table(table_name, engine):
+def get_sqla_table(table_name, engine, kwargs: Dict[str, str] = None):
+    if not kwargs:
+        kwargs = {}
     meta = MetaData(bind=engine)
-    table = Table(table_name, meta, autoload=True, autoload_with=engine)
+    table = Table(table_name, meta, autoload=True, autoload_with=engine, **kwargs)
     return table
 
 
@@ -65,13 +67,17 @@ def get_sqlalchemy_tables_w_session(
     _, db_connection = create_connection(os.getenv(db_connection_string_name), engine_kwargs)
     if db_connection_string_name == 'BQ_CONNECTION_STRING':
         database = os.getenv('BQ_DATABASE')
+        for table in table_names:
+            table_mapping[table] = get_sqla_table(
+                table_name=f'{database}.{schema}.{table}', engine=db_connection,
+            )
     elif db_connection_string_name == 'MYSQL_CONNECTION_SQL':
         database = 'public'
-
-    for table in table_names:
-        table_mapping[table] = get_sqla_table(
-            table_name=f'{database}{schema}.{table}', engine=db_connection
-        )
+        for table in table_names:
+            table_mapping[table] = get_sqla_table(
+                table_name=f'{schema}.{table}', engine=db_connection,
+                kwargs={'schema': 'public'}
+            )
 
     table_mapping['session'] = sessionmaker(bind=db_connection)()
 
