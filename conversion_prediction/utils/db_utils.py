@@ -56,7 +56,7 @@ def get_sqlalchemy_tables_w_session(
         db_connection_string_name: str,
         schema: str,
         table_names: List[str],
-        engine_kwargs: Dict[str, Any],
+        engine_kwargs: Dict[str, Any] = None,
         database: str = ''
 ) -> Dict:
     table_mapping = {}
