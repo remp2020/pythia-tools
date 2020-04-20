@@ -165,19 +165,19 @@ class ConversionPredictionModel(object):
 
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
-        try:
-            self.get_contextual_features_from_mysql()
-            self.feature_columns.add_global_context_features()
-            logger.info('Successfully added global context features from mysql')
-        except Exception as e:
-            logger.info(
-                f'''Failed adding global context features from mysql with exception:
-                {e};
-                proceeding with remaining features''')
-            # To make sure these columns are filled in case of failure to retrieve
-            # We want them appearing in the same order to avoid having to reorder columns
-            for column in ['article_pageviews_count', 'sum_paid', 'pageviews_count', 'avg_price']:
-                self.user_profiles[column] = 0.0
+        # try:
+        self.get_contextual_features_from_mysql()
+        self.feature_columns.add_global_context_features()
+        logger.info('Successfully added global context features from mysql')
+        # except Exception as e:
+        #    logger.info(
+        #        f'''Failed adding global context features from mysql with exception:
+        #        {e};
+        #        proceeding with remaining features''')
+        #    # To make sure these columns are filled in case of failure to retrieve
+        #    # We want them appearing in the same order to avoid having to reorder columns
+        #    for column in ['article_pageviews_count', 'sum_paid', 'pageviews_count', 'avg_price']:
+        #        self.user_profiles[column] = 0.0
 
         try:
             self.get_payment_window_features_from_csvs()
