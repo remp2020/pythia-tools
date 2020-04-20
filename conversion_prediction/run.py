@@ -166,19 +166,19 @@ class ConversionPredictionModel(object):
 
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
-        # try:
-        self.get_contextual_features_from_mysql()
-        self.feature_columns.add_global_context_features()
-        logger.info('Successfully added global context features from mysql')
-        # except Exception as e:
-        #    logger.info(
-        #        f'''Failed adding global context features from mysql with exception:
-        #        {e};
-        #        proceeding with remaining features''')
-        #    # To make sure these columns are filled in case of failure to retrieve
-        #    # We want them appearing in the same order to avoid having to reorder columns
-        #    for column in ['article_pageviews_count', 'sum_paid', 'pageviews_count', 'avg_price']:
-        #        self.user_profiles[column] = 0.0
+        try:
+            self.get_contextual_features_from_mysql()
+            self.feature_columns.add_global_context_features()
+            logger.info('Successfully added global context features from mysql')
+        except Exception as e:
+           logger.info(
+               f'''Failed adding global context features from mysql with exception:
+               {e};
+               proceeding with remaining features''')
+           # To make sure these columns are filled in case of failure to retrieve
+           # We want them appearing in the same order to avoid having to reorder columns
+           for column in ['article_pageviews_count', 'sum_paid', 'pageviews_count', 'avg_price']:
+               self.user_profiles[column] = 0.0
 
         try:
             self.get_payment_window_features_from_csvs()
@@ -195,17 +195,17 @@ class ConversionPredictionModel(object):
 
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
 
-        try:
-            self.get_user_history_features_from_mysql()
-            self.feature_columns.add_payment_history_features()
-            logger.info('Successfully added user payment history features from mysql')
-        except Exception as e:
-            logger.info(
-                f'''Failed adding payment history features from mysql with exception: 
-                {e};
-                proceeding with remaining features''')
-            for column in ['clv', 'days_since_last_subscription']:
-                self.user_profiles[column] = 0.0
+        # try:
+        self.get_user_history_features_from_mysql()
+        self.feature_columns.add_payment_history_features()
+        logger.info('Successfully added user payment history features from mysql')
+        # except Exception as e:
+        #     logger.info(
+        #         f'''Failed adding payment history features from mysql with exception:
+        #         {e};
+        #         proceeding with remaining features''')
+        #     for column in ['clv', 'days_since_last_subscription']:
+        #         self.user_profiles[column] = 0.0
 
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0.0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
