@@ -1054,7 +1054,7 @@ class ConversionPredictionModel(object):
             self.prediction_job_log.to_gbq(
                 destination_table='pythia.prediction_job_log',
                 project_id=database,
-                credentials=service_account,
+                credentials=credentials,
                 if_exists='append',
             )
         else:
