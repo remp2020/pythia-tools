@@ -59,6 +59,8 @@ def get_sqlalchemy_tables_w_session(
         engine_kwargs: Dict[str, Any] = None,
         database: str = ''
 ) -> Dict:
+    if not engine_kwargs:
+        engine_kwargs = {}
     table_mapping = {}
     _, db_connection = create_connection(os.getenv(db_connection_string_name), engine_kwargs)
     if db_connection_string_name == 'BQ_CONNECTION_STRING':
