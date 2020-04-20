@@ -65,7 +65,9 @@ def get_sqlalchemy_tables_w_session(
         database = os.getenv('BQ_DATABASE')
 
     for table in table_names:
-        table_mapping[table] = get_sqla_table(table_name=f'{database}.{schema}.{table}', engine=db_connection)
+        table_mapping[table] = get_sqla_table(
+            table_name=f'{database}{"." if database != "" else ""}{schema}.{table}', engine=db_connection
+        )
 
     table_mapping['session'] = sessionmaker(bind=db_connection)()
 
