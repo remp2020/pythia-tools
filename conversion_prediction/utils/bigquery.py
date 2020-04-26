@@ -387,8 +387,8 @@ def get_profile_columns(
     breakdown_column = profile_feature_set_name.replace('ie', 'y')
 
     pivoted_profile_table = bq_session.query(
-        table.c['browser_id'],
-        table.c['date'],
+        table.c['browser_id'].label('browser_id'),
+        table.c['date'].label('date'),
         *[
             func.sum(case(
                 [
@@ -405,9 +405,14 @@ def get_profile_columns(
         table.c['date'] <= end_time
     ).subquery()
 
+    added_profile_columns = [
+        f'{profile_feature_set_name}_{profile_column}'
+        for profile_column in SUPPORTED_JSON_FIELDS_KEYS[profile_feature_set_name]
+    ]
+
     filtered_data_w_profile_columns = bq_session.query(
         filtered_data_w_profile_columns,
-        pivoted_profile_table
+        *[pivoted_profile_table.c[profile_column] for profile_column in added_profile_columns]
     ).outerjoin(
         pivoted_profile_table,
         and_(
@@ -416,11 +421,6 @@ def get_profile_columns(
         )
 
     ).subquery()
-
-    added_profile_columns = [
-        f'{profile_feature_set_name}_{profile_column}'
-        for profile_column in SUPPORTED_JSON_FIELDS_KEYS[profile_feature_set_name]
-    ]
 
     return filtered_data_w_profile_columns, added_profile_columns
 
