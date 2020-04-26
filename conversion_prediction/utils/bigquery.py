@@ -168,7 +168,8 @@ def add_outcomes(
             feature_query.c['date'] >= func.date_sub(
                 relevant_events.c['date'],
                 text(f'interval {positive_event_lookahead} day')
-            )
+            ),
+            feature_query.c['date'] < relevant_events.c['date']
         )
     ).subquery()
 
