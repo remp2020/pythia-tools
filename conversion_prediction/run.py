@@ -148,6 +148,8 @@ class ConversionPredictionModel(object):
             data_retrieval_mode
         )
 
+        print([column for column in self.user_profiles.columns if len(column) == 1])
+
         logger.info(f'  * Query finished, processing retrieved data')
 
         for column in [column for column in self.feature_columns.return_feature_list()
@@ -162,6 +164,7 @@ class ConversionPredictionModel(object):
                        ]:
             self.user_profiles[column] = 0.0
 
+        print([column for column in self.user_profiles.columns if len(column) == 1])
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
         try:
@@ -178,6 +181,8 @@ class ConversionPredictionModel(object):
            for column in ['article_pageviews_count', 'sum_paid', 'pageviews_count', 'avg_price']:
                self.user_profiles[column] = 0.0
 
+        print([column for column in self.user_profiles.columns if len(column) == 1])
+
         try:
             self.get_payment_window_features_from_csvs()
             self.feature_columns.add_commerce_csv_features()
@@ -191,6 +196,7 @@ class ConversionPredictionModel(object):
             for column in ['checkout', 'payment', 'purchase']:
                 self.user_profiles[column] = 0.0
 
+        print([column for column in self.user_profiles.columns if len(column) == 1])
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
 
         try:
@@ -205,9 +211,12 @@ class ConversionPredictionModel(object):
             for column in ['clv', 'days_since_last_subscription']:
                 self.user_profiles[column] = 0.0
 
+        print([column for column in self.user_profiles.columns if len(column) == 1])
+
         self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0.0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
         logger.info('  * Initial data validation success')
+        print([column for column in self.user_profiles.columns if len(column) == 1])
 
     def get_payment_window_features_from_csvs(self):
         '''

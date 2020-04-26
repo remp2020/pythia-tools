@@ -175,8 +175,7 @@ def add_outcomes(
                 )
             ],
             else_=negative_label()
-        ).label('outcome'),
-        relevant_events.c['date'].label('outcome_date')
+        ).label('outcome')
     ).outerjoin(
         relevant_events,
         and_(
