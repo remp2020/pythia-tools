@@ -409,7 +409,7 @@ def get_profile_columns(
     ).subquery()
 
     added_profile_columns = [
-        f'{profile_feature_set_name}_{profile_column}'
+        f'{profile_feature_set_name}_{profile_column}'.replace('-', '_')
         for profile_column in SUPPORTED_JSON_FIELDS_KEYS[profile_feature_set_name]
     ]
 
