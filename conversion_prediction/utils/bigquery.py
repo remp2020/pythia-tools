@@ -105,8 +105,6 @@ def get_full_features_query(
         filtered_data
     )
 
-    unique_events = get_unique_events_subquery(filtered_data)
-
     device_information = get_device_information_subquery(filtered_data)
 
     filtered_data_with_unpacked_json_fields, json_key_column_names = unpack_json_fields(filtered_data)
@@ -114,7 +112,6 @@ def get_full_features_query(
     joined_partial_queries = join_all_partial_queries(
         filtered_data_with_unpacked_json_fields,
         all_date_browser_combinations,
-        unique_events,
         device_information,
         json_key_column_names
     )
@@ -136,19 +133,47 @@ def get_full_features_query(
         filtered_w_derived_metrics
     )
 
-    final_query_for_outcome_category = remove_helper_lookback_rows(
+    feature_query = remove_helper_lookback_rows(
         filtered_w_derived_metrics_w_all_time_delta_columns,
         start_time
     )
 
-    return final_query_for_outcome_category
+    return feature_query
+
+
+def add_outcome(
+        feature_query,
+        positive_event_lookahead: int = 1
+):
+    # The events table holds all the events, not just conversion ones
+    relevant_events = bq_session.query(
+        events.c['time'].cast(DATE).label('date'),
+        events.c['type'].label('event'),
+        events.c['browser_id'].label('browser_id')
+    ).filter(
+        events.c['type'].in_(
+            list(LABELS.keys())
+        )
+    ).subquery()
+
+    feature_query_w_outcome = bq_session.query(
+        feature_query,
+        relevant_events.c['outcome'],
+        relevant_events.c['date'].label('outcome_date')
+    ).outerjoin(
+        feature_query.c['browser_id'] == events.c['browser_id'],
+        feature_query.c['date'] >= func.date_sub(
+        relevant_events.c['date'],
+        text(f'interval {positive_event_lookahead} day')
+    )
+
+    return feature_query_w_outcome
 
 
 def filter_by_date(
         start_time: datetime,
         end_time: datetime,
         data_retrieval_model: DataRetrievalMode,
-        positive_event_lookahead: int = 1
 ):
     filtered_data = bq_session.query(
         aggregated_browser_days.c['date'].label('date'),
@@ -181,32 +206,12 @@ def filter_by_date(
         aggregated_browser_days.c['pageviews_20h_24h'].label('pvs_20h_24h')
     ).subquery()
 
-    # This transforms the 7 day event into 1 day event
-    filtered_data_w_1_day_event_window = bq_session.query(
-        *[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns
-          if column.name != 'next_7_days_event'],
-        case(
-            [
-                (and_(
-                    filtered_data.c['next_7_days_event'].in_((positive_labels())),
-                    func.date_diff(
-                        filtered_data.c['next_event_time'].cast(DATE),
-                        filtered_data.c['date'],
-                        text('day')
-                    ) >= positive_event_lookahead
-                ),
-                 filtered_data.c['next_7_days_event'])
-            ],
-            else_=negative_label()
-        ).label('next_7_days_event')
-    ).subquery()
-
     current_data = bq_session.query(
-        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in
-          filtered_data_w_1_day_event_window.columns]
+        *[filtered_data.c[column.name].label(column.name) for column in
+          filtered_data.columns]
     ).filter(
-        filtered_data_w_1_day_event_window.c['date'] >= cast(start_time, DATE),
-        filtered_data_w_1_day_event_window.c['date'] <= cast(end_time, DATE)
+        filtered_data.c['date'] >= cast(start_time, DATE),
+        filtered_data.c['date'] <= cast(end_time, DATE)
     )
 
     if data_retrieval_model == DataRetrievalMode.MODEL_TRAIN_DATA:
@@ -257,7 +262,7 @@ def remove_helper_lookback_rows(
         (start_time - timedelta(days=90)).date()
     )
 
-    final_query_for_outcome_category = bq_session.query(
+    features_query = bq_session.query(
         # We re-alias since adding another layer causes sqlalchemy to abbreviate columns
         *[filtered_w_derived_metrics_w_all_time_delta_columns.c[column.name].label(column.name) for column in
           filtered_w_derived_metrics_w_all_time_delta_columns.columns]
@@ -265,7 +270,7 @@ def remove_helper_lookback_rows(
         label_lookback_cause
     ).subquery()
 
-    return final_query_for_outcome_category
+    return features_query
 
 
 def get_subqueries_for_non_gapped_time_series(
@@ -303,23 +308,6 @@ def get_subqueries_for_non_gapped_time_series(
             'all_date_browser_combinations')).subquery()
 
     return all_date_browser_combinations
-
-
-def get_unique_events_subquery(
-        filtered_data
-):
-    unique_events = bq_session.query(
-        filtered_data.c['browser_id'].label('event_browser_id'),
-        filtered_data.c['next_event_time'].label('next_event_time_filled'),
-        filtered_data.c['next_7_days_event'].label('outcome_filled')
-    ).filter(
-        filtered_data.c['next_event_time'] != None
-    ).group_by(
-        filtered_data.c['browser_id'],
-        filtered_data.c['next_event_time'],
-        filtered_data.c['next_7_days_event']).subquery('unique_events')
-
-    return unique_events
 
 
 def get_device_information_subquery(
@@ -462,7 +450,6 @@ def add_4_hour_intervals(
 def join_all_partial_queries(
         filtered_data_with_unpacked_json_fields,
         all_date_browser_combinations,
-        unique_events,
         device_information,
         json_key_column_names
 ):
@@ -474,8 +461,6 @@ def join_all_partial_queries(
             'day_of_week'),
         filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
         (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
-        unique_events.c['outcome_filled'],
-        filtered_data_with_unpacked_json_fields.c['next_7_days_event'].label('outcome_original'),
         filtered_data_with_unpacked_json_fields.c['pageviews'],
         filtered_data_with_unpacked_json_fields.c['timespent'],
         filtered_data_with_unpacked_json_fields.c['sessions_without_ref'],
@@ -491,16 +476,6 @@ def join_all_partial_queries(
         and_(
             all_date_browser_combinations.c['browser_id'] == filtered_data_with_unpacked_json_fields.c['browser_id'],
             all_date_browser_combinations.c['date_gap_filler'] == filtered_data_with_unpacked_json_fields.c['date'])
-    ).outerjoin(
-        unique_events,
-        and_(
-            unique_events.c['event_browser_id'] == filtered_data_with_unpacked_json_fields.c['browser_id'],
-            unique_events.c['next_event_time_filled'].cast(DATE) > func.date_sub(
-                filtered_data_with_unpacked_json_fields.c['date'],
-                text(f'interval {1} day')
-            ),
-            filtered_data_with_unpacked_json_fields.c['date'] <= unique_events.c['next_event_time_filled'].cast(DATE)
-        )
     ).outerjoin(
         device_information,
         device_information.c['browser_id'] == all_date_browser_combinations.c['browser_id']
