@@ -159,6 +159,13 @@ def add_outcomes(
 
     feature_query_w_outcome = bq_session.query(
         feature_query,
+        case(
+            [
+                (relevant_events.c['outcome'].in_(positive_labels())),
+                relevant_events.c['outcome']
+            ],
+            else_ = negative_label()
+        ).label('outcome'),
         relevant_events.c['outcome'],
         relevant_events.c['date'].label('outcome_date')
     ).outerjoin(
