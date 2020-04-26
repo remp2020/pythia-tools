@@ -219,7 +219,7 @@ class ConversionPredictionModel(object):
         commerce = pd.DataFrame()
         # TODO: remove commented out code in case testing the line below is a success
         dates = [date.date()
-                 for date in pd.date_range(self.user_profiles['date'].min() - timedelta(days=7), self.max_date.date)]
+                 for date in pd.date_range(self.user_profiles['date'].min() - timedelta(days=7), self.max_date.date())]
         dates = [re.sub('-', '', str(date)) for date in dates]
         for date in dates:
             commerce_daily = pd.read_csv(f'{self.path_to_commerce_csvs}commerce_{date}.csv.gz')
