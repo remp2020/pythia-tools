@@ -417,7 +417,7 @@ def get_profile_columns(
 
     filtered_data_w_profile_columns = bq_session.query(
         filtered_data_w_profile_columns,
-        *[pivoted_profile_table.c[profile_column].labels(profile_column)
+        *[pivoted_profile_table.c[profile_column].label(profile_column)
           for profile_column in added_profile_columns]
     ).outerjoin(
         pivoted_profile_table,

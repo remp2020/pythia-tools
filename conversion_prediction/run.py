@@ -449,7 +449,7 @@ class ConversionPredictionModel(object):
         that were active a day ago
         '''
         logger.info(f'  * Loading user profiles')
-        self.get_user_profiles_by_date(offset_limit_tuple, data_retrieval_mode)
+        self.get_user_profiles_by_date(data_retrieval_mode)
         logger.info(f'  * Processing user profiles')
         test_outcome = self.user_profiles['outcome'].fillna(
             self.user_profiles.groupby('browser_id')['outcome'].fillna(method='bfill')
@@ -520,7 +520,7 @@ class ConversionPredictionModel(object):
         :return:
         '''
         data = self.encode_unknown_categorie(data)
-        dummies = pd.get_dummies(pd.Categorical(data, categorie=self.category_list_dict[data.name]))
+        dummies = pd.get_dummies(pd.Categorical(data, categories=self.category_list_dict[data.name]))
         dummies.columns = [data.name + '_' + dummy_column for dummy_column in dummies.columns]
         dummies.drop(columns=data.name + '_Unknown', axis=1, inplace=True)
         dummies.index = data.index
