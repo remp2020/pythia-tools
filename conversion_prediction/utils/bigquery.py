@@ -649,17 +649,7 @@ def filter_joined_queries_adding_derived_metrics(
     filtered_w_derived_metrics = bq_session.query(
         *[column.label(column.name)
           for column in joined_partial_queries.columns
-          if not re.search('outcome', column.name)
           and column.name != 'row_number'],
-        case(
-            [
-                (joined_partial_queries.c['is_active_on_date'] == True,
-                 joined_partial_queries.c['outcome_original']),
-                (joined_partial_queries.c['is_active_on_date'] == False,
-                 joined_partial_queries.c['outcome_filled']),
-            ],
-            else_='no_conversion'
-        ).label('outcome'),
         *[
             func.coalesce((
                     joined_partial_queries.c[derived_metrics_config[key]['nominator'] + suffix] /
