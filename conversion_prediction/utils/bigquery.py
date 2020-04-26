@@ -193,8 +193,6 @@ def filter_by_date(
         aggregated_browser_days.c['is_desktop'].label('is_desktop'),
         aggregated_browser_days.c['is_mobile'].label('is_mobile'),
         aggregated_browser_days.c['is_tablet'].label('is_tablet'),
-        aggregated_browser_days.c['next_7_days_event'].label('next_7_days_event'),
-        aggregated_browser_days.c['next_event_time'].label('next_event_time'),
         aggregated_browser_days.c['referer_medium_pageviews'].label('referer_medium_pageviews'),
         aggregated_browser_days.c['article_category_pageviews'].label('article_category_pageviews'),
         aggregated_browser_days.c['hour_interval_pageviews'].label('hour_interval_pageviews'),
