@@ -434,18 +434,14 @@ def add_profile_based_features(filtered_data):
         filtered_data
     )
 
-    filtered_data_w_profile_columns = bq_session.query(
-        filtered_data,
-        *[filtered_data.c[hour_interval_column].label(hour_interval_column)
-          for hour_interval_column in profile_based_columns['hour_interval_pageviews'].keys()]
-    ).subquery()
-
     profile_columns = list(profile_based_columns['hour_interval_pageviews'].keys())
 
     start_time, end_time = bq_session.query(
-        func.min(filtered_data_w_profile_columns.c['date']),
-        func.max(filtered_data_w_profile_columns.c['date']),
+        func.min(filtered_data.c['date']),
+        func.max(filtered_data.c['date']),
     ).all()[0]
+
+    filtered_data_w_profile_columns = filtered_data
 
     for json_column in PROFILE_COLUMNS:
         if json_column != 'hour_interval_pageviews':
