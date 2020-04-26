@@ -458,7 +458,7 @@ class ConversionPredictionModel(object):
             self.user_profiles.groupby('browser_id')['outcome'].fillna(method='ffill')
         )
         self.user_profiles['outcome'] = test_outcome
-        self.encode_uncommon_categories()
+        self.encode_uncommon_categorie()
         self.transform_bool_columns_to_int()
         logger.info('  * Filtering user profiles')
         self.user_profiles = self.user_profiles[self.user_profiles['days_active_count'] >= 1].reset_index(drop=True)
@@ -476,11 +476,11 @@ class ConversionPredictionModel(object):
         for column in [column for column in self.feature_columns.bool_columns]:
             self.user_profiles[column] = self.user_profiles[column].apply(lambda value: True if value == 't' else False).astype(int)
 
-    def encode_uncommon_categories(self):
+    def encode_uncommon_categorie(self):
         '''
         Requires:
             - user_profiles
-        Categories for columns such as browser with less than 5 % frequency get lumped into 'Other'
+        categorie for columns such as browser with less than 5 % frequency get lumped into 'Other'
         '''
         self.user_profiles.loc[self.user_profiles['device'] == 0, 'device'] = 'Desktop'
         for column in self.feature_columns.categorical_columns:
@@ -499,9 +499,9 @@ class ConversionPredictionModel(object):
         for column in self.feature_columns.categorical_columns:
             self.category_list_dict[column] = list(self.user_profiles[column].unique()) + ['Unknown']
 
-    def encode_unknown_categories(self, data: pd.Series):
+    def encode_unknown_categorie(self, data: pd.Series):
         '''
-        In train and predictiom set, we mighr encounter categories that weren't present in the test set, in order
+        In train and predictiom set, we mighr encounter categorie that weren't present in the test set, in order
         to allow for the prediction algorithm to handle these, we create an Unknown category
         :param data:
         :return:
@@ -514,13 +514,13 @@ class ConversionPredictionModel(object):
         '''
         Requires:
             - category_lists_dict
-        Generate 0/1 columns from categorical columns handling the logic for Others and Unknown categories. Always drops
-        the Unknown columns (since we only need k-1 columns for k categories)
+        Generate 0/1 columns from categorical columns handling the logic for Others and Unknown categorie. Always drops
+        the Unknown columns (since we only need k-1 columns for k categorie)
         :param data: A column to encode
         :return:
         '''
-        data = self.encode_unknown_categories(data)
-        dummies = pd.get_dummies(pd.Categorical(data, categories=self.category_list_dict[data.name]))
+        data = self.encode_unknown_categorie(data)
+        dummies = pd.get_dummies(pd.Categorical(data, categorie=self.category_list_dict[data.name]))
         dummies.columns = [data.name + '_' + dummy_column for dummy_column in dummies.columns]
         dummies.drop(columns=data.name + '_Unknown', axis=1, inplace=True)
         dummies.index = data.index

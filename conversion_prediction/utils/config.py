@@ -24,7 +24,7 @@ def build_numeric_columns_base(aggregation_function_alias: str) -> List[str]:
 
 
 SUPPORTED_JSON_FIELDS_KEYS = {
-    'referer_medium_pageviews': [
+    'referer_medium': [
         'direct',
         'email',
         'external',
@@ -32,7 +32,7 @@ SUPPORTED_JSON_FIELDS_KEYS = {
         'search',
         'social'
     ],
-    'article_category_pageviews': [
+    'categorie': [
         '',
         'blog',
         'ekonomika',
@@ -102,7 +102,8 @@ def build_derived_metrics_config(aggregation_function_alias: str) -> Dict:
     return derived_metrics_config
 
 
-JSON_COLUMNS = ['referer_medium_pageviews', 'hour_interval_pageviews', 'article_category_pageviews']
+# TODO: Categorie is only there due to inconvenient table names, will hopefully get fixed later
+PROFILE_COLUMNS = ['referer_medium', 'hour_interval_pageviews', 'categorie']
 
 
 def generate_4_hour_interval_column_names():
@@ -155,15 +156,15 @@ def build_out_profile_based_column_names(
     suffix = return_normalized_suffix(normalized)
     profile_numeric_columns_from_json_fields = {
         # Referral features
-        'referer_medium_pageviews': [
-            f'referer_medium_pageviews_{referral_category}_{aggregation_function_alias}{suffix}'
-            for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium_pageviews']
+        'referer_medium': [
+            f'referer_medium_{referral_category}_{aggregation_function_alias}{suffix}'
+            for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium']
             for aggregation_function_alias in aggregation_function_aliases
         ],
         # Article category (section) features
-        'article_category_pageviews': [
-            f'article_category_pageviews_{article_category.replace("-", "_")}_{aggregation_function_alias}{suffix}'
-            for article_category in SUPPORTED_JSON_FIELDS_KEYS['article_category_pageviews']
+        'categorie': [
+            f'categorie_{article_category.replace("-", "_")}_{aggregation_function_alias}{suffix}'
+            for article_category in SUPPORTED_JSON_FIELDS_KEYS['categorie']
             for aggregation_function_alias in aggregation_function_aliases
         ]
     }

@@ -27,8 +27,8 @@ def empty_data_entry(data_to_merge=None):
         'timespent': 0,
         'sessions': set(),
         'sessions_without_ref': set(),
-        "referer_medium_pageviews": {},
-        "article_category_pageviews": {},
+        "referer_medium": {},
+        "categorie": {},
         "hour_interval_pageviews": {},
     }
 
@@ -51,8 +51,8 @@ def update_record_from_pageviews_row(record, row):
     record['pageviews'] += 1
     record['sessions'].add(row['remp_session_id'])
 
-    add_one(record['referer_medium_pageviews'], row['derived_referer_medium'])
-    add_one(record['article_category_pageviews'], row['category'])
+    add_one(record['referer_medium'], row['derived_referer_medium'])
+    add_one(record['categorie'], row['category'])
 
     # Hour aggregations
     hour = arrow.get(row['time']).to('utc').hour
@@ -72,8 +72,8 @@ def aggregated_pageviews_row_accessors(accessors_to_merge=None):
     accessors = {
         'sessions': lambda d: len(d['sessions']),
         'sessions_without_ref': lambda d: len(d['sessions_without_ref']),
-        'referer_medium_pageviews': lambda d: json.dumps(d['referer_medium_pageviews']),
-        'article_category_pageviews': lambda d: json.dumps(d['article_category_pageviews']),
+        'referer_medium': lambda d: json.dumps(d['referer_medium']),
+        'categorie': lambda d: json.dumps(d['categorie']),
         'hour_interval_pageviews': lambda d: json.dumps(d['hour_interval_pageviews']),
     }
 

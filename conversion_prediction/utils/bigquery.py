@@ -5,7 +5,8 @@ from sqlalchemy.types import Float, DATE, String
 from sqlalchemy import and_, func, case, text
 from sqlalchemy.sql.expression import cast
 from datetime import timedelta, datetime
-from .config import build_derived_metrics_config, JSON_COLUMNS, LABELS, generate_4_hour_interval_column_names
+from .config import build_derived_metrics_config, PROFILE_COLUMNS, LABELS, generate_4_hour_interval_column_names, \
+    SUPPORTED_JSON_FIELDS_KEYS
 from typing import List, Dict, Any
 import os
 from sqlalchemy.orm import sessionmaker
@@ -39,10 +40,17 @@ def get_sqlalchemy_tables_w_session(
     return table_mapping
 
 
+tables_to_map = (
+    ['aggregated_browser_days', 'events'] +
+    [f'aggregated_browser_days_{profile_feature_set_name}s' for profile_feature_set_name in PROFILE_COLUMNS
+     if profile_feature_set_name != 'hour_interval_pageviews']
+)
+
+
 bq_mappings = get_sqlalchemy_tables_w_session(
     'BQ_CONNECTION_STRING',
     schema='pythia',
-    table_names=['aggregated_browser_days', 'events'],
+    table_names=tables_to_map,
     engine_kwargs={'credentials_path': '../../client_secrets.json'}
 )
 
@@ -106,20 +114,20 @@ def get_full_features_query(
 
     device_information = get_device_information_subquery(filtered_data)
 
-    filtered_data_with_unpacked_json_fields, json_key_column_names = unpack_json_fields(filtered_data)
+    filtered_data_with_profile_fields, profile_column_names = add_profile_based_features(filtered_data)
 
     joined_partial_queries = join_all_partial_queries(
-        filtered_data_with_unpacked_json_fields,
+        filtered_data_with_profile_fields,
         all_date_browser_combinations,
         device_information,
-        json_key_column_names
+        profile_column_names
     )
 
     data_with_rolling_windows = calculate_rolling_windows_features(
         joined_partial_queries,
         moving_window_length,
         start_time,
-        json_key_column_names,
+        profile_column_names,
         feature_aggregation_functions
     )
 
@@ -207,8 +215,8 @@ def filter_by_date(
         aggregated_browser_days.c['is_desktop'].label('is_desktop'),
         aggregated_browser_days.c['is_mobile'].label('is_mobile'),
         aggregated_browser_days.c['is_tablet'].label('is_tablet'),
-        aggregated_browser_days.c['referer_medium_pageviews'].label('referer_medium_pageviews'),
-        aggregated_browser_days.c['article_category_pageviews'].label('article_category_pageviews'),
+        aggregated_browser_days.c['referer_medium'].label('referer_medium'),
+        aggregated_browser_days.c['categorie'].label('categorie'),
         aggregated_browser_days.c['hour_interval_pageviews'].label('hour_interval_pageviews'),
         aggregated_browser_days.c['pageviews_0h_4h'].label('pvs_0h_4h'),
         aggregated_browser_days.c['pageviews_4h_8h'].label('pvs_4h_8h'),
@@ -371,69 +379,81 @@ def create_rolling_agg_function(
     return result_function
 
 
-def get_unique_json_fields_query(filtered_data, column_name):
-    # This is a hacky workaround. Bigquery doesn't have a function to extract all keys from a json column flattening
-    # them. What we do here is remove everything but the keys from the json string, split on commas, keep only the ones
-    # with 1 key (assuming with enough data all keys occur along, especially since more visitors only tend to have
-    # 1 pageview, we than transform these single key arrays to string and group by to get unique ones
-    all_keys_query = bq_session.query(
-        func.regexp_replace(filtered_data.c[column_name], '{|}|: [0-9]+|"', '').label(column_name)
+def get_profile_columns(
+        filtered_data_w_profile_columns,
+        profile_feature_set_name
+):
+    table = bq_mappings[f'aggregated_browser_days_{profile_feature_set_name}s']
+    # TODO: This is only here because of the mismatched naming of tables and columns, hopefully we can unify this ASAP
+    breakdown_column = profile_feature_set_name.replace('ie', 'y')
+
+    start_time, end_time = bq_session.query(
+        func.min(filtered_data_w_profile_columns.c['date']),
+        func.max(filtered_data_w_profile_columns.c['date']),
+    ).all()[0]
+
+    pivoted_profile_table = bq_session.query(
+        table.c['browser_id'],
+        table.c['date'],
+        *[
+            func.sum(case(
+                [
+                    (
+                        table.c[breakdown_column] == profile_column,
+                        table.c['pageviews']
+                    )
+                ],
+                else_=0)).label(f'{profile_feature_set_name}_{profile_column}')
+            for profile_column in SUPPORTED_JSON_FIELDS_KEYS[profile_feature_set_name]
+        ]
+    ).filter(
+        table.c['date'] >= start_time,
+        table.c['date'] <= end_time
     ).subquery()
 
-    all_keys_query = bq_session.query(
-        func.split(all_keys_query.c[column_name], ',').label(column_name)
-    ).subquery()
+    filtered_data_w_profile_columns = bq_session.query(
+        filtered_data_w_profile_columns,
+        table
+    ).outerjoin(
+        pivoted_profile_table,
+        and_(
+            table.c['date'] == filtered_data_w_profile_columns.c['date'],
+            table.c['browser_id'] == filtered_data_w_profile_columns.c['browser_id']
+        )
 
-    all_keys_query = bq_session.query(all_keys_query).filter(
-        func.array_length(all_keys_query.c[column_name]) == 1
-    ).subquery()
+    )
 
-    column_keys = bq_session.query(
-        func.array_to_string(all_keys_query.c[column_name], '').label(column_name)
-    ).group_by(
-        column_name
-    ).all()
-
-    column_keys = [json_key[0] for json_key in column_keys]
-
-    return column_keys
-
-
-def unpack_json_fields(filtered_data):
-    json_key_based_columns = {}
-    json_column_keys = {}
-    for json_column in JSON_COLUMNS:
-        if json_column != 'hour_interval_pageviews':
-            json_column_keys[json_column] = get_unique_json_fields_query(filtered_data, json_column)
-            json_key_based_columns[json_column] = {
-                f'{json_column}_{json_key.replace("-", "_")}':
-                    func.json_extract(filtered_data.c[json_column], f'$.{json_key}').cast(Float)
-                for json_key in json_column_keys[json_column]
-            }
-
-        else:
-            # TODO: This is now technically not a json column anymore
-            json_key_based_columns[json_column] = add_4_hour_intervals(
-                filtered_data
-            )
-
-    json_key_column_names = [
-        key for json_keys in json_key_based_columns.values()
-        for key in json_keys.keys()
+    added_profile_columns = [
+        f'{profile_feature_set_name}_{profile_column}'
+        for profile_column in SUPPORTED_JSON_FIELDS_KEYS[profile_feature_set_name]
     ]
 
-    unpacked_time_fields_query = bq_session.query(
-        *[filtered_data.c[column.name].label(column.name) for column in filtered_data.columns if
-          column.name not in json_key_column_names],
-        *[column for column in json_key_based_columns['hour_interval_pageviews'].values()],
-        *[value.label(key)
-          for original_column, json_keys in json_key_based_columns.items()
-          for key, value in json_keys.items()
-          if original_column != 'hour_interval_pageviews'
-          ]
+    return filtered_data_w_profile_columns, added_profile_columns
+
+
+def add_profile_based_features(filtered_data):
+    profile_based_columns = dict()
+    profile_based_columns['hour_interval_pageviews'] = add_4_hour_intervals(
+        filtered_data
+    )
+
+    filtered_data_w_profile_columns = bq_session.query(
+        filtered_data,
+        *[filtered_data.c[hour_interval_column].label(hour_interval_column)
+          for hour_interval_column in profile_based_columns['hour_interval_pageviews'].keys()]
     ).subquery()
 
-    return unpacked_time_fields_query, json_key_column_names
+    profile_columns = list(profile_based_columns['hour_interval_pageviews'].values())
+
+    for json_column in PROFILE_COLUMNS:
+        if json_column != 'hour_interval_pageviews':
+            filtered_data_w_profile_columns, new_profile_columns = get_profile_columns(
+                filtered_data_w_profile_columns,
+                json_column
+            )
+            profile_columns = profile_columns + new_profile_columns
+
+    return filtered_data_w_profile_columns, profile_columns
 
 
 def add_4_hour_intervals(
@@ -460,10 +480,10 @@ def add_4_hour_intervals(
 
 
 def join_all_partial_queries(
-        filtered_data_with_unpacked_json_fields,
+        filtered_data_with_profile_fields,
         all_date_browser_combinations,
         device_information,
-        json_key_column_names
+        profile_column_names
 ):
     joined_queries = bq_session.query(
         all_date_browser_combinations.c['browser_id'].label('browser_id'),
@@ -471,23 +491,23 @@ def join_all_partial_queries(
         all_date_browser_combinations.c['date_gap_filler'].label('date'),
         func.extract(text('DAYOFWEEK'), all_date_browser_combinations.c['date_gap_filler']).cast(String).label(
             'day_of_week'),
-        filtered_data_with_unpacked_json_fields.c['date'].label('date_w_gaps'),
-        (filtered_data_with_unpacked_json_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
-        filtered_data_with_unpacked_json_fields.c['pageviews'],
-        filtered_data_with_unpacked_json_fields.c['timespent'],
-        filtered_data_with_unpacked_json_fields.c['sessions_without_ref'],
-        filtered_data_with_unpacked_json_fields.c['sessions'],
+        filtered_data_with_profile_fields.c['date'].label('date_w_gaps'),
+        (filtered_data_with_profile_fields.c['pageviews'] > 0.0).label('is_active_on_date'),
+        filtered_data_with_profile_fields.c['pageviews'],
+        filtered_data_with_profile_fields.c['timespent'],
+        filtered_data_with_profile_fields.c['sessions_without_ref'],
+        filtered_data_with_profile_fields.c['sessions'],
         # Add all columns created from json_fields
-        *[filtered_data_with_unpacked_json_fields.c[json_key_column].label(json_key_column) for json_key_column in
-          json_key_column_names],
+        *[filtered_data_with_profile_fields.c[json_key_column].label(json_key_column) for json_key_column in
+          profile_column_names],
         # Unpack all device information columns except ones already present in other queries
         *[device_information.c[column.name] for column in device_information.columns if
           column.name not in ['browser_id', 'date']],
     ).outerjoin(
-        filtered_data_with_unpacked_json_fields,
+        filtered_data_with_profile_fields,
         and_(
-            all_date_browser_combinations.c['browser_id'] == filtered_data_with_unpacked_json_fields.c['browser_id'],
-            all_date_browser_combinations.c['date_gap_filler'] == filtered_data_with_unpacked_json_fields.c['date'])
+            all_date_browser_combinations.c['browser_id'] == filtered_data_with_profile_fields.c['browser_id'],
+            all_date_browser_combinations.c['date_gap_filler'] == filtered_data_with_profile_fields.c['date'])
     ).outerjoin(
         device_information,
         device_information.c['browser_id'] == all_date_browser_combinations.c['browser_id']
@@ -500,12 +520,12 @@ def calculate_rolling_windows_features(
         joined_queries,
         moving_window_length: int,
         start_time: datetime,
-        json_key_column_names: List[str],
+        profile_column_names: List[str],
         feature_aggregation_functions
 ):
     rolling_agg_columns_base = create_rolling_window_columns_config(
         joined_queries,
-        json_key_column_names,
+        profile_column_names,
         moving_window_length,
         feature_aggregation_functions
     )
@@ -571,7 +591,7 @@ def create_time_window_vs_day_of_week_combinations(
 
 def create_rolling_window_columns_config(
         joined_queries,
-        json_key_column_names,
+        profile_column_names,
         moving_window_length,
         feature_aggregation_functions
 ):
@@ -583,7 +603,7 @@ def create_rolling_window_columns_config(
         'visit': joined_queries.c['sessions'],
         # All json key columns have their own rolling sums
         **{
-            column: joined_queries.c[column] for column in json_key_column_names
+            column: joined_queries.c[column] for column in profile_column_names
         }
     }
 
