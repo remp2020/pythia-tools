@@ -237,8 +237,8 @@ def past_positive_browser_ids(
     browser_ids_with_positive_outcomes = bq_session.query(
         events.c['browser_id']
     ).filter(
-        events.c['time'] >= cast(start_time - timedelta(days=90), DATE),
-        events.c['time'] <= cast(start_time, DATE),
+        events.c['time'].cast(DATE) >= cast(start_time - timedelta(days=90), DATE),
+        events.c['time'].cast(DATE) <= cast(start_time, DATE),
         events.c['type'].in_(positive_labels())
     )
 
