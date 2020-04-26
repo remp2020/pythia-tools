@@ -437,7 +437,7 @@ def add_profile_based_features(filtered_data):
           for hour_interval_column in profile_based_columns['hour_interval_pageviews'].keys()]
     ).subquery()
 
-    profile_columns = list(profile_based_columns['hour_interval_pageviews'].values())
+    profile_columns = list(profile_based_columns['hour_interval_pageviews'].keys())
 
     start_time, end_time = bq_session.query(
         func.min(filtered_data_w_profile_columns.c['date']),
@@ -499,7 +499,7 @@ def join_all_partial_queries(
         filtered_data_with_profile_fields.c['sessions_without_ref'],
         filtered_data_with_profile_fields.c['sessions'],
         # Add all columns created from json_fields
-        *[filtered_data_with_profile_fields.c[json_key_column].label(json_key_column) for json_key_column in
+        *[filtered_data_with_profile_fields.c[profile_column].label(profile_column) for profile_column in
           profile_column_names],
         # Unpack all device information columns except ones already present in other queries
         *[device_information.c[column.name] for column in device_information.columns if
