@@ -455,7 +455,7 @@ def add_profile_based_features(filtered_data):
                 start_time,
                 end_time
             )
-            profile_columns = profile_columns + new_profile_columns
+            profile_columns.extend(new_profile_columns)
 
     return filtered_data_w_profile_columns, profile_columns
 
