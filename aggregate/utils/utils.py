@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_browser_days" (
     "is_tablet" boolean,
     "next_7_days_event" character varying NOT NULL DEFAULT 'no_conversion',
     "next_event_time" timestamp,
-    "referer_medium_pageviews" jsonb,
-    "article_category_pageviews" jsonb,
+    "referer_medium" jsonb,
+    "categorie" jsonb,
     "hour_interval_pageviews" jsonb,
     PRIMARY KEY(date, browser_id)
 ) WITH (oids = false);
@@ -107,8 +107,8 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
     "sessions_without_ref" integer NOT NULL,    
     "next_30_days" character varying NOT NULL DEFAULT 'ongoing',
     "next_event_time" timestamp NULL,
-    "referer_medium_pageviews" jsonb,
-    "article_category_pageviews" jsonb,
+    "referer_medium" jsonb,
+    "categorie" jsonb,
     "hour_interval_pageviews" jsonb,
     "pageviews_0h" integer DEFAULT 0,
     "pageviews_1h" integer DEFAULT 0,
