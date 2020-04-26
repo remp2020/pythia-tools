@@ -162,10 +162,13 @@ def add_outcomes(
         relevant_events.c['outcome'],
         relevant_events.c['date'].label('outcome_date')
     ).outerjoin(
-        feature_query.c['browser_id'] == events.c['browser_id'],
-        feature_query.c['date'] >= func.date_sub(
-            relevant_events.c['date'],
-            text(f'interval {positive_event_lookahead} day')
+        relevant_events,
+        and_(
+            feature_query.c['browser_id'] == events.c['browser_id'],
+            feature_query.c['date'] >= func.date_sub(
+                relevant_events.c['date'],
+                text(f'interval {positive_event_lookahead} day')
+            )
         )
     )
 
