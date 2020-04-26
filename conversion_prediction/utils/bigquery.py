@@ -397,7 +397,7 @@ def get_profile_columns(
                         table.c['pageviews']
                     )
                 ],
-                else_=0)).label(f'{profile_feature_set_name}_{profile_column}')
+                else_=0)).label(f'{profile_feature_set_name}_{profile_column}'.replace('-', '_'))
             for profile_column in SUPPORTED_JSON_FIELDS_KEYS[profile_feature_set_name]
         ]
     ).filter(
@@ -409,20 +409,22 @@ def get_profile_columns(
     ).subquery()
 
     added_profile_columns = [
+        # This normalization deals with the fact, that some names might contain dashes which are not allowed in SQL
+        # this causes errors when sqlalchemy code gets translated into pure SQL
         f'{profile_feature_set_name}_{profile_column}'.replace('-', '_')
         for profile_column in SUPPORTED_JSON_FIELDS_KEYS[profile_feature_set_name]
     ]
 
     filtered_data_w_profile_columns = bq_session.query(
         filtered_data_w_profile_columns,
-        *[pivoted_profile_table.c[profile_column] for profile_column in added_profile_columns]
+        *[pivoted_profile_table.c[profile_column].labels(profile_column)
+          for profile_column in added_profile_columns]
     ).outerjoin(
         pivoted_profile_table,
         and_(
             pivoted_profile_table.c['date'] == filtered_data_w_profile_columns.c['date'],
             pivoted_profile_table.c['browser_id'] == filtered_data_w_profile_columns.c['browser_id']
         )
-
     ).subquery()
 
     return filtered_data_w_profile_columns, added_profile_columns
