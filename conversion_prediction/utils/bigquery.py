@@ -161,10 +161,12 @@ def add_outcomes(
         feature_query,
         case(
             [
-                (relevant_events.c['outcome'].in_(positive_labels())),
-                relevant_events.c['outcome']
+                (
+                    relevant_events.c['outcome'].in_(positive_labels()),
+                    relevant_events.c['outcome']
+                )
             ],
-            else_ = negative_label()
+            else_=negative_label()
         ).label('outcome'),
         relevant_events.c['outcome'],
         relevant_events.c['date'].label('outcome_date')
