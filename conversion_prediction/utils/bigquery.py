@@ -649,7 +649,7 @@ def filter_joined_queries_adding_derived_metrics(
     filtered_w_derived_metrics = bq_session.query(
         *[column.label(column.name)
           for column in joined_partial_queries.columns
-          and column.name != 'row_number'],
+          if column.name != 'row_number'],
         *[
             func.coalesce((
                     joined_partial_queries.c[derived_metrics_config[key]['nominator'] + suffix] /
