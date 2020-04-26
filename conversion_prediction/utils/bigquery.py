@@ -407,7 +407,7 @@ def get_profile_columns(
 
     filtered_data_w_profile_columns = bq_session.query(
         filtered_data_w_profile_columns,
-        table
+        pivoted_profile_table
     ).outerjoin(
         pivoted_profile_table,
         and_(
