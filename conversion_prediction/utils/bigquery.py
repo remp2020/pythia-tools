@@ -378,16 +378,13 @@ def create_rolling_agg_function(
 
 def get_profile_columns(
         filtered_data_w_profile_columns,
-        profile_feature_set_name
+        profile_feature_set_name,
+        start_time,
+        end_time
 ):
     table = bq_mappings[f'aggregated_browser_days_{profile_feature_set_name}s']
     # TODO: This is only here because of the mismatched naming of tables and columns, hopefully we can unify this ASAP
     breakdown_column = profile_feature_set_name.replace('ie', 'y')
-
-    start_time, end_time = bq_session.query(
-        func.min(filtered_data_w_profile_columns.c['date']),
-        func.max(filtered_data_w_profile_columns.c['date']),
-    ).all()[0]
 
     pivoted_profile_table = bq_session.query(
         table.c['browser_id'],
@@ -418,7 +415,7 @@ def get_profile_columns(
             pivoted_profile_table.c['browser_id'] == filtered_data_w_profile_columns.c['browser_id']
         )
 
-    )
+    ).subquery()
 
     added_profile_columns = [
         f'{profile_feature_set_name}_{profile_column}'
@@ -442,11 +439,18 @@ def add_profile_based_features(filtered_data):
 
     profile_columns = list(profile_based_columns['hour_interval_pageviews'].values())
 
+    start_time, end_time = bq_session.query(
+        func.min(filtered_data_w_profile_columns.c['date']),
+        func.max(filtered_data_w_profile_columns.c['date']),
+    ).all()[0]
+
     for json_column in PROFILE_COLUMNS:
         if json_column != 'hour_interval_pageviews':
             filtered_data_w_profile_columns, new_profile_columns = get_profile_columns(
                 filtered_data_w_profile_columns,
-                json_column
+                json_column,
+                start_time,
+                end_time
             )
             profile_columns = profile_columns + new_profile_columns
 
