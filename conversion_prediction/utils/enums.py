@@ -89,5 +89,4 @@ class ArtifactRetentionCollection(Enum):
 
 class DataRetrievalMode(Enum):
     MODEL_TRAIN_DATA = 'model_train_data'
-    MODEL_EVAL_DATA = 'model_eval_data'
     PREDICT_DATA = 'predict_data'

@@ -11,6 +11,7 @@ import os
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData, Table
 from .db_utils import create_connection
+from .enums import DataRetrievalMode
 
 
 def get_sqla_table(table_name, engine):
@@ -41,19 +42,22 @@ def get_sqlalchemy_tables_w_session(
 bq_mappings = get_sqlalchemy_tables_w_session(
     'BQ_CONNECTION_STRING',
     schema='pythia',
-    table_names=['aggregated_browser_days'],
+    table_names=['aggregated_browser_days', 'events'],
     engine_kwargs={'credentials_path': '../../client_secrets.json'}
 )
 
 bq_session = bq_mappings['session']
 aggregated_browser_days = bq_mappings['aggregated_browser_days']
+events = bq_mappings['events']
 
 
 def get_feature_frame_via_sqlalchemy(
         start_time: datetime,
         end_time: datetime,
         moving_window_length: int = 7,
-        feature_aggregation_functions: Dict[str, func] = None
+        feature_aggregation_functions: Dict[str, func] = None,
+        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA,
+        positive_event_lookahead: int = 1
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'avg': func.avg}
@@ -63,6 +67,8 @@ def get_feature_frame_via_sqlalchemy(
         end_time,
         moving_window_length,
         feature_aggregation_functions,
+        data_retrieval_mode,
+        positive_event_lookahead
     ))
 
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
@@ -78,7 +84,9 @@ def get_full_features_query(
         start_time: datetime,
         end_time: datetime,
         moving_window_length: int = 7,
-        feature_aggregation_functions: Dict[str, func] = None
+        feature_aggregation_functions: Dict[str, func] = None,
+        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA,
+        positive_event_lookahead: int = 1
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
@@ -87,7 +95,10 @@ def get_full_features_query(
         # We retrieve an additional window length lookback of records to correctly construct the rolling window
         # for the records on the 1st day of the time period we intend to use
         start_time - timedelta(days=moving_window_length),
-        end_time
+        end_time,
+        # These determine if we retrieve past positives or not
+        data_retrieval_mode,
+        positive_event_lookahead
     )
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
@@ -135,7 +146,9 @@ def get_full_features_query(
 
 def filter_by_date(
         start_time: datetime,
-        end_time: datetime
+        end_time: datetime,
+        data_retrieval_model: DataRetrievalMode,
+        positive_event_lookahead: int = 1
 ):
     filtered_data = bq_session.query(
         aggregated_browser_days.c['date'].label('date'),
@@ -175,18 +188,16 @@ def filter_by_date(
         case(
             [
                 (and_(
-                    filtered_data.c['next_7_days_event'].in_(
-                        [label for label, label_type in LABELS.items() if label_type == 'positive']
-                    ),
+                    filtered_data.c['next_7_days_event'].in_((positive_labels())),
                     func.date_diff(
                         filtered_data.c['next_event_time'].cast(DATE),
                         filtered_data.c['date'],
                         text('day')
-                    ) >= 1
+                    ) >= positive_event_lookahead
                 ),
                  filtered_data.c['next_7_days_event'])
             ],
-            else_=[label for label, label_type in LABELS.items() if label_type == 'negative'][0]
+            else_=negative_label()
         ).label('next_7_days_event')
     ).subquery()
 
@@ -198,17 +209,44 @@ def filter_by_date(
         filtered_data_w_1_day_event_window.c['date'] <= cast(end_time, DATE)
     )
 
-    past_positives = bq_session.query(
-        *[filtered_data_w_1_day_event_window.c[column.name].label(column.name) for column in
-          filtered_data_w_1_day_event_window.columns]
-    ).filter(
-        filtered_data_w_1_day_event_window.c['date'] >= cast(start_time - timedelta(days=90), DATE),
-        filtered_data_w_1_day_event_window.c['date'] <= cast(start_time, DATE)
-    )
-
-    filtered_data = current_data.union_all(past_positives).subquery()
+    if data_retrieval_model == DataRetrievalMode.MODEL_TRAIN_DATA:
+        filtered_data = current_data.union_all(past_positive_browser_ids(filtered_data, start_time)).subquery()
+    else:
+        filtered_data = current_data.subquery()
 
     return filtered_data
+
+
+def positive_labels():
+    return [label for label, label_type in LABELS.items() if label_type == 'positive']
+
+
+def negative_label():
+    return [label for label, label_type in LABELS.items() if label_type == 'negative'][0]
+
+
+def past_positive_browser_ids(
+        filtered_data,
+        start_time: datetime,
+):
+    browser_ids_with_positive_outcomes = bq_session.query(
+        events['browser_id']
+    ).filter(
+        events.c['date'] >= cast(start_time - timedelta(days=90), DATE),
+        events.c['date'] <= cast(start_time, DATE),
+        events.c['next_7_days_event'].in_(positive_labels())
+    )
+
+    past_positives = bq_session.query(
+        *[filtered_data.c[column.name].label(column.name) for column in
+          filtered_data.columns]
+    ).filter(
+        filtered_data.c['date'] >= cast(start_time - timedelta(days=90), DATE),
+        filtered_data.c['date'] <= cast(start_time, DATE),
+        filtered_data.c['browser_id'].in_(browser_ids_with_positive_outcomes)
+    )
+
+    return past_positives
 
 
 def remove_helper_lookback_rows(

@@ -64,8 +64,6 @@ class ConversionPredictionModel(object):
         self.user_profiles = None
         self.normalization_handling = normalization_handling
         self.feature_aggregation_functions = feature_aggregation_functions
-        # next(iter())) returns the first element (defined by the dict attribute specified), since our
-        # feature_aggregation_function is a one element dict, this way we get a single element
         self.feature_columns = FeatureColumns(self.feature_aggregation_functions.keys())
         self.category_list_dict = {}
         self.le = LabelEncoder()
@@ -127,7 +125,6 @@ class ConversionPredictionModel(object):
 
     def get_user_profiles_by_date(
             self,
-            offset_limit_tuple: Tuple = None,
             data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
     ):
         '''
@@ -148,6 +145,7 @@ class ConversionPredictionModel(object):
             self.max_date,
             self.moving_window,
             self.feature_aggregation_functions,
+            data_retrieval_mode
         )
 
         logger.info(f'  * Query finished, processing retrieved data')
@@ -1009,7 +1007,7 @@ class ConversionPredictionModel(object):
         Generates outcome prediction for conversion and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-        self.create_feature_frame()
+        self.create_feature_frame(data_retrieval_mode=DataRetrievalMode.PREDICT_DATA)
         self.artifact_retention_mode = ArtifactRetentionMode.DROP
 
         logger.setLevel(logging.INFO)
