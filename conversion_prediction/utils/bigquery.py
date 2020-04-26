@@ -97,8 +97,7 @@ def get_full_features_query(
         start_time - timedelta(days=moving_window_length),
         end_time,
         # These determine if we retrieve past positives or not
-        data_retrieval_mode,
-        positive_event_lookahead
+        data_retrieval_mode
     )
 
     all_date_browser_combinations = get_subqueries_for_non_gapped_time_series(
@@ -138,10 +137,12 @@ def get_full_features_query(
         start_time
     )
 
-    return feature_query
+    full_query = add_outcomes(feature_query)
+
+    return full_query
 
 
-def add_outcome(
+def add_outcomes(
         feature_query,
         positive_event_lookahead: int = 1
 ):
@@ -163,8 +164,9 @@ def add_outcome(
     ).outerjoin(
         feature_query.c['browser_id'] == events.c['browser_id'],
         feature_query.c['date'] >= func.date_sub(
-        relevant_events.c['date'],
-        text(f'interval {positive_event_lookahead} day')
+            relevant_events.c['date'],
+            text(f'interval {positive_event_lookahead} day')
+        )
     )
 
     return feature_query_w_outcome
