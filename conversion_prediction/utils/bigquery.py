@@ -414,8 +414,8 @@ def get_profile_columns(
     ).outerjoin(
         pivoted_profile_table,
         and_(
-            table.c['date'] == filtered_data_w_profile_columns.c['date'],
-            table.c['browser_id'] == filtered_data_w_profile_columns.c['browser_id']
+            pivoted_profile_table.c['date'] == filtered_data_w_profile_columns.c['date'],
+            pivoted_profile_table.c['browser_id'] == filtered_data_w_profile_columns.c['browser_id']
         )
 
     )
