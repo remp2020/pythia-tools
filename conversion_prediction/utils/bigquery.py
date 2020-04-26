@@ -149,7 +149,7 @@ def add_outcomes(
     # The events table holds all the events, not just conversion ones
     relevant_events = bq_session.query(
         events.c['time'].cast(DATE).label('date'),
-        events.c['type'].label('event'),
+        events.c['type'].label('outcome'),
         events.c['browser_id'].label('browser_id')
     ).filter(
         events.c['type'].in_(
