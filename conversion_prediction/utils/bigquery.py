@@ -403,6 +403,9 @@ def get_profile_columns(
     ).filter(
         table.c['date'] >= start_time,
         table.c['date'] <= end_time
+    ).group_by(
+        table.c['browser_id'],
+        table.c['date']
     ).subquery()
 
     added_profile_columns = [
