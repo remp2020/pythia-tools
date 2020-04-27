@@ -21,14 +21,21 @@ pattern = re.compile("(.*)pageviews_([0-9]+).csv")
 ua_cache = {}
 
 
+def add_one(arr, key):
+    if key not in arr:
+        arr[key] = 0
+    arr[key] += 1
+
+
 def empty_data_entry(data_to_merge=None):
     data = {
         'pageviews': 0,
         'timespent': 0,
         'sessions': set(),
         'sessions_without_ref': set(),
-        "referer_medium": {},
-        "categorie": {},
+        "referer_medium_pageviews": {},
+        "article_category_pageviews": {},
+        "article_tag_pageviews": {},
         "hour_interval_pageviews": {},
     }
 
@@ -51,8 +58,12 @@ def update_record_from_pageviews_row(record, row):
     record['pageviews'] += 1
     record['sessions'].add(row['remp_session_id'])
 
-    add_one(record['referer_medium'], row['derived_referer_medium'])
-    add_one(record['categorie'], row['category'])
+    add_one(record['referer_medium_pageviews'], row['derived_referer_medium'])
+    add_one(record['article_category_pageviews'], row['category'])
+
+    for tag in row['tags'].split(','):
+        if tag:
+            add_one(record['article_tag_pageviews'], tag)
 
     # Hour aggregations
     hour = arrow.get(row['time']).to('utc').hour
@@ -61,7 +72,7 @@ def update_record_from_pageviews_row(record, row):
     record['pageviews_' + str(hour) + 'h'] += 1
 
     # 4-hours aggregations
-    interval4h = (hour / 4) * 4  # round down to 4h interval start
+    interval4h = (hour / 4) * 4  # round to 4h interval start
     record['pageviews_' + str(interval4h) + 'h_' + str(interval4h + 4) + 'h'] += 1
 
     if row['derived_referer_medium'] == 'direct':
@@ -72,13 +83,14 @@ def aggregated_pageviews_row_accessors(accessors_to_merge=None):
     accessors = {
         'sessions': lambda d: len(d['sessions']),
         'sessions_without_ref': lambda d: len(d['sessions_without_ref']),
-        'referer_medium': lambda d: json.dumps(d['referer_medium']),
-        'categorie': lambda d: json.dumps(d['categorie']),
+        'referer_medium_pageviews': lambda d: json.dumps(d['referer_medium_pageviews']),
+        'article_category_pageviews': lambda d: json.dumps(d['article_category_pageviews']),
+        'article_tag_pageviews': lambda d: json.dumps(d['article_tag_pageviews']),
         'hour_interval_pageviews': lambda d: json.dumps(d['hour_interval_pageviews']),
     }
 
-    # This needs to be a function
-    # See: https://docs.python.org/3/faq/programming.html#why-do-lambdas-defined-in-a-loop-with-different-values-all-return-the-same-result
+    # This needs to be a function, see:
+    # https://docs.python.org/3/faq/programming.html#why-do-lambdas-defined-in-a-loop-with-different-values-all-return-the-same-result
     def lambda_accessor(name):
         return lambda d: d[name]
 
@@ -94,6 +106,19 @@ def aggregated_pageviews_row_accessors(accessors_to_merge=None):
         accessors.update(accessors_to_merge)
 
     return accessors
+
+
+def make_insert_update_sql(table, primary_keys, keys):
+    concatenated_primary_keys = string.join(primary_keys, ', ')
+    all_keys = string.join(primary_keys + keys, ', ')
+    all_key_placeholders = string.join(['%s'] * (len(primary_keys) + len(keys)), ', ')
+    update_keys = string.join(["{} = EXCLUDED.{}".format(key, key) for key in keys], ', ')
+
+    sql = '''INSERT INTO {} ({}) 
+                    VALUES ({}) 
+                    ON CONFLICT ({}) DO UPDATE SET {}
+                '''.format(table, all_keys, all_key_placeholders, concatenated_primary_keys, update_keys)
+    return sql
 
 
 class UserParser:
@@ -147,36 +172,73 @@ class UserParser:
     def store_in_db(self, conn, cur, processed_date):
         print("Deleting data for date " + str(processed_date))
 
-        cur.execute('DELETE FROM aggregated_user_days WHERE date = %s', (processed_date,))
-        conn.commit()
+        tables_to_del = [
+            'aggregated_user_days',
+            'aggregated_user_days_tags',
+            'aggregated_user_days_categories',
+            'aggregated_user_days_referer_mediums'
+        ]
+
+        for t in tables_to_del:
+            cur.execute('DELETE FROM ' + t + ' WHERE date = %s', (processed_date,))
+            conn.commit()
 
         print("Storing data for date " + str(processed_date))
 
+        self.__save_to_aggregated_user_days(conn, cur, processed_date)
+        self.__save_to_aggregated_user_days_tags(conn, cur, processed_date)
+        self.__save_to_aggregated_user_days_categories(conn, cur, processed_date)
+        self.__save_to_aggregated_user_days_referer_mediums(conn, cur, processed_date)
+
+    def __save_to_aggregated_user_days(self, conn, cur, processed_date):
         accessors = aggregated_pageviews_row_accessors({
             'browser_ids': lambda d: list(d['browser_ids'])
         })
 
-        # Create SQL
         ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
-        keys = list(ordered_accessors.keys())
+        sql = make_insert_update_sql('aggregated_user_days', ['date', 'user_id'], list(ordered_accessors.keys()))
 
-        concatenated_keys = string.join(keys, ', ')
-        key_placeholders = string.join(['%s'] * len(keys), ', ')
-        update_keys = string.join(["{} = EXCLUDED.{}".format(key, key) for key in keys], ', ')
-
-        sql = '''INSERT INTO aggregated_user_days (date, user_id, {}) 
-        VALUES (%s, %s, {}) 
-        ON CONFLICT (date, user_id) DO UPDATE SET {}
-        '''.format(concatenated_keys, key_placeholders, update_keys)
-
-        # Compute values
         data_to_insert = []
         for user_id, user_data in self.data.items():
             computed_values = tuple([func(user_data) for key, func in ordered_accessors.items()])
             data_to_insert.append((processed_date, user_id) + computed_values)
 
-        # Insert in batch
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
+    def __save_to_aggregated_user_days_tags(self, conn, cur, processed_date):
+        sql = make_insert_update_sql('aggregated_user_days_tags', ['date', 'user_id', 'tag'], ['pageviews'])
+
+        data_to_insert = []
+        for user_id, user_data in self.data.items():
+            for key in user_data['article_tag_pageviews']:
+                data_to_insert.append((processed_date, user_id, key, user_data['article_tag_pageviews'][key]))
+
+        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
+    def __save_to_aggregated_user_days_categories(self, conn, cur, processed_date):
+        sql = make_insert_update_sql('aggregated_user_days_categories', ['date', 'user_id', 'category'], ['pageviews'])
+
+        data_to_insert = []
+        for user_id, user_data in self.data.items():
+            for key in user_data['article_category_pageviews']:
+                data_to_insert.append((processed_date, user_id, key, user_data['article_category_pageviews'][key]))
+
+        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
+    def __save_to_aggregated_user_days_referer_mediums(self, conn, cur, processed_date):
+        sql = make_insert_update_sql('aggregated_user_days_referer_mediums', ['date', 'user_id', 'referer_medium'], ['pageviews'])
+
+        data_to_insert = []
+        for user_id, user_data in self.data.items():
+            for key in user_data['referer_medium_pageviews']:
+                data_to_insert.append((processed_date, user_id, key, user_data['referer_medium_pageviews'][key]))
+
+        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
 
 class BrowserParser:
     def __init__(self):
@@ -231,14 +293,7 @@ class BrowserParser:
         else:
             print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 
-    def store_in_db(self, conn, cur, processed_date):
-        print("Deleting data for date " + str(processed_date))
-
-        cur.execute('DELETE FROM aggregated_browser_days WHERE date = %s', (processed_date,))
-        conn.commit()
-
-        print("Storing data for date " + str(processed_date))
-
+    def __save_to_aggregated_browser_days(self, conn, cur, processed_date):
         accessors = aggregated_pageviews_row_accessors({
             'browser_family': lambda d: d['ua'].browser.family,
             'browser_version': lambda d: d['ua'].browser.version_string,
@@ -253,27 +308,70 @@ class BrowserParser:
             'user_ids': lambda d: list(d['user_ids'])
         })
 
-        # Create SQL
         ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
-        keys = list(ordered_accessors.keys())
+        sql = make_insert_update_sql('aggregated_browser_days', ['date', 'browser_id'], list(ordered_accessors.keys()))
 
-        concatenated_keys = string.join(keys, ', ')
-        key_placeholders = string.join(['%s'] * len(keys), ', ')
-        update_keys = string.join(["{} = EXCLUDED.{}".format(key, key) for key in keys], ', ')
-
-        sql = '''INSERT INTO aggregated_browser_days (date, browser_id, {}) 
-        VALUES (%s, %s, {}) 
-        ON CONFLICT (date, browser_id) DO UPDATE SET {}
-        '''.format(concatenated_keys, key_placeholders, update_keys)
-
-        # Compute values
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
             computed_values = tuple([func(browser_data) for key, func in ordered_accessors.items()])
             data_to_insert.append((processed_date, browser_id) + computed_values)
 
-        # Insert in batch
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
+    def __save_to_aggregated_browser_days_tags(self, conn, cur, processed_date):
+        sql = make_insert_update_sql('aggregated_browser_days_tags', ['date', 'browser_id', 'tag'], ['pageviews'])
+
+        data_to_insert = []
+        for browser_id, browser_data in self.data.items():
+            for key in browser_data['article_tag_pageviews']:
+                data_to_insert.append((processed_date, browser_id, key, browser_data['article_tag_pageviews'][key]))
+
+        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
+    def __save_to_aggregated_browser_days_categories(self, conn, cur, processed_date):
+        sql = make_insert_update_sql('aggregated_browser_days_categories', ['date', 'browser_id', 'category'], ['pageviews'])
+
+        data_to_insert = []
+        for browser_id, browser_data in self.data.items():
+            for key in browser_data['article_category_pageviews']:
+                data_to_insert.append((processed_date, browser_id, key, browser_data['article_category_pageviews'][key]))
+
+        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
+    def __save_to_aggregated_browser_days_referer_mediums(self, conn, cur, processed_date):
+        sql = make_insert_update_sql('aggregated_browser_days_referer_mediums', ['date', 'browser_id', 'referer_medium'], ['pageviews'])
+
+        data_to_insert = []
+        for browser_id, browser_data in self.data.items():
+            for key in browser_data['referer_medium_pageviews']:
+                data_to_insert.append((processed_date, browser_id, key, browser_data['referer_medium_pageviews'][key]))
+
+        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
+    def store_in_db(self, conn, cur, processed_date):
+        print("Deleting data for date " + str(processed_date))
+
+        tables_to_del = [
+            'aggregated_browser_days',
+            'aggregated_browser_days_tags',
+            'aggregated_browser_days_categories',
+            'aggregated_browser_days_referer_mediums'
+        ]
+
+        for t in tables_to_del:
+            cur.execute('DELETE FROM ' + t + ' WHERE date = %s', (processed_date,))
+            conn.commit()
+
+        print("Storing data for date " + str(processed_date))
+
+        self.__save_to_aggregated_browser_days(conn, cur, processed_date)
+        self.__save_to_aggregated_browser_days_tags(conn, cur, processed_date)
+        self.__save_to_aggregated_browser_days_categories(conn, cur, processed_date)
+        self.__save_to_aggregated_browser_days_referer_mediums(conn, cur, processed_date)
 
 
 def run(file_date, aggregate_folder):
@@ -295,12 +393,12 @@ def run(file_date, aggregate_folder):
     month = int(date_str[4:6])
     day = int(date_str[6:8])
 
-    print("Updating aggregated_browser_days")
+    print("Updating 'aggregated_browser_days' and related tables")
     browser_parser = BrowserParser()
     browser_parser.process_files(pageviews_file, pageviews_time_spent_file)
     browser_parser.store_in_db(conn, cur, date(year, month, day))
 
-    print("Updating aggregated_user_days")
+    print("Updating 'aggregated_user_days' and related tables")
     user_parser = UserParser()
     user_parser.process_files(pageviews_file, pageviews_time_spent_file)
     user_parser.store_in_db(conn, cur, date(year, month, day))
@@ -308,12 +406,6 @@ def run(file_date, aggregate_folder):
     conn.commit()
     cur.close()
     conn.close()
-
-
-def add_one(where, category):
-    if category not in where:
-        where[category] = 0
-    where[category] += 1
 
 
 def main():

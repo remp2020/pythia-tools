@@ -9,6 +9,7 @@ import json
 
 CSV_BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'csv')
 
+
 class BigQueryUploader:
     def __init__(self, project_id, dataset_id, tmp_folder=CSV_BASE_PATH):
         self.client = bigquery.Client()
@@ -52,7 +53,6 @@ class BigQueryUploader:
         with open(csv_path, 'r', newline='') as csvfile:
             reader = csv.DictReader(csvfile, delimiter='|')
             with open(tmpfile_path, 'w') as jsonfile:
-                i=0
                 for row in reader:
                     # convert string array columns to arrays
                     if array_columns:
@@ -64,9 +64,6 @@ class BigQueryUploader:
                             row[col] = content[1:-1].split(',')
 
                     jsonfile.write(json.dumps(row) + "\n")
-                    i += 1
-                    if i >= 100:
-                        break
         return tmpfile_path
 
     def upload_csv_to_table(self, table_id, csv_path, array_columns=None):
@@ -83,7 +80,8 @@ class BigQueryUploader:
             job_config = bigquery.LoadJobConfig(source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON)
 
             with open(json_path, "rb") as source_file:
-                load_job = self.client.load_table_from_file(source_file, self.get_table(table_id), job_config=job_config)
+                load_job = self.client.load_table_from_file(source_file, self.get_table(table_id),
+                                                            job_config=job_config)
 
             load_job.result()  # Waits for the job to complete.
             print ("CSV upload completed")
@@ -96,7 +94,7 @@ class BigQueryUploader:
             if os.path.exists(json_path):
                 os.remove(json_path)
 
-    def create_table(self, table_id, schema, time_partitioning = None):
+    def create_table(self, table_id, schema, time_partitioning=None):
         table = bigquery.Table(self.__tid(table_id), schema=schema)
 
         if time_partitioning:
@@ -119,36 +117,95 @@ def run(file_date, csv_folder):
         return
 
     # Create tables if not exist
-    aggregated_browser_days = 'aggregated_browser_days'
-    aggregated_user_days = 'aggregated_user_days'
-
-    time_partitioning = bigquery.TimePartitioning(
+    date_col_partitioning = bigquery.TimePartitioning(
         type_=bigquery.TimePartitioningType.DAY,
         field="date",
         expiration_ms=15552000000,  # 180 days
     )
 
+    # aggregated_browser_days tables
+    aggregated_browser_days = 'aggregated_browser_days'
+    aggregated_browser_days_tags = 'aggregated_browser_days_tags'
+    aggregated_browser_days_categories = 'aggregated_browser_days_categories'
+    aggregated_browser_days_referer_mediums = 'aggregated_browser_days_referer_mediums'
+
     if not uploader.table_exists(aggregated_browser_days):
-        uploader.create_table(aggregated_browser_days, bq_schema.aggregated_browser_days_schema(), time_partitioning)
+        uploader.create_table(aggregated_browser_days, bq_schema.aggregated_browser_days(), date_col_partitioning)
+
+    if not uploader.table_exists(aggregated_browser_days_tags):
+        uploader.create_table(aggregated_browser_days_tags, bq_schema.aggregated_browser_days_tags(),
+                              date_col_partitioning)
+
+    if not uploader.table_exists(aggregated_browser_days_categories):
+        uploader.create_table(aggregated_browser_days_categories, bq_schema.aggregated_browser_days_categories(),
+                              date_col_partitioning)
+
+    if not uploader.table_exists(aggregated_browser_days_referer_mediums):
+        uploader.create_table(aggregated_browser_days_referer_mediums,
+                              bq_schema.aggregated_browser_days_referer_mediums(), date_col_partitioning)
+
+    # aggregated_user_days tables
+    aggregated_user_days = 'aggregated_user_days'
+    aggregated_user_days_tags = 'aggregated_user_days_tags'
+    aggregated_user_days_categories = 'aggregated_user_days_categories'
+    aggregated_user_days_referer_mediums = 'aggregated_user_days_referer_mediums'
+
     if not uploader.table_exists(aggregated_user_days):
-        uploader.create_table(aggregated_user_days, bq_schema.aggregated_user_days_schema(), time_partitioning)
+        uploader.create_table(aggregated_user_days, bq_schema.aggregated_user_days(), date_col_partitioning)
+
+    if not uploader.table_exists(aggregated_user_days_tags):
+        uploader.create_table(aggregated_user_days_tags, bq_schema.aggregated_user_days_tags(), date_col_partitioning)
+
+    if not uploader.table_exists(aggregated_user_days_categories):
+        uploader.create_table(aggregated_user_days_categories, bq_schema.aggregated_user_days_categories(),
+                              date_col_partitioning)
+
+    if not uploader.table_exists(aggregated_user_days_referer_mediums):
+        uploader.create_table(aggregated_user_days_referer_mediums, bq_schema.aggregated_user_days_referer_mediums(),
+                              date_col_partitioning)
+
+    # event table
+    events = 'events'
+
+    if not uploader.table_exists(events):
+        uploader.create_table(events, bq_schema.events(), bigquery.TimePartitioning(
+            type_=bigquery.TimePartitioningType.DAY,
+            field="time",
+            expiration_ms=15552000000,  # 180 days
+        ))
 
     # Upload data
-    aggregated_browser_days_csv = os.path.join(csv_folder, "aggregated_browser_days_"+file_date+".csv")
-    uploader.upload_csv_to_table(aggregated_browser_days, aggregated_browser_days_csv, ["user_ids"])
+    csv_path = os.path.join(csv_folder, "aggregated_browser_days_" + file_date + ".csv")
+    uploader.upload_csv_to_table(aggregated_browser_days, csv_path, ["user_ids"])
+    csv_path = os.path.join(csv_folder, "aggregated_browser_days_tags_" + file_date + ".csv")
+    uploader.upload_csv_to_table(aggregated_browser_days_tags, csv_path)
+    csv_path = os.path.join(csv_folder, "aggregated_browser_days_categories_" + file_date + ".csv")
+    uploader.upload_csv_to_table(aggregated_browser_days_categories, csv_path)
+    csv_path = os.path.join(csv_folder, "aggregated_browser_days_referer_mediums_" + file_date + ".csv")
+    uploader.upload_csv_to_table(aggregated_browser_days_referer_mediums, csv_path)
 
-    aggregated_user_days_csv = os.path.join(csv_folder, "aggregated_user_days_" + file_date + ".csv")
-    uploader.upload_csv_to_table(aggregated_user_days, aggregated_user_days_csv, ["browser_ids"])
+    csv_path = os.path.join(csv_folder, "aggregated_user_days_" + file_date + ".csv")
+    uploader.upload_csv_to_table(aggregated_user_days, csv_path, ["browser_ids"])
+    csv_path = os.path.join(csv_folder, "aggregated_user_days_tags_" + file_date + ".csv")
+    uploader.upload_csv_to_table(aggregated_user_days_tags, csv_path)
+    csv_path = os.path.join(csv_folder, "aggregated_user_days_categories_" + file_date + ".csv")
+    uploader.upload_csv_to_table(aggregated_user_days_categories, csv_path)
+    csv_path = os.path.join(csv_folder, "aggregated_user_days_referer_mediums_" + file_date + ".csv")
+    uploader.upload_csv_to_table(aggregated_user_days_referer_mediums, csv_path)
+
+    csv_path = os.path.join(csv_folder, "events_" + file_date + ".csv")
+    uploader.upload_csv_to_table(events, csv_path)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Script to upload aggregated CSV (| separated) data from PostgreSQL to BigQuery')
+    parser = argparse.ArgumentParser(
+        description='Script to upload aggregated CSV (| separated) data from PostgreSQL to BigQuery')
     parser.add_argument('date', metavar='date', help='Date to export, format YYYYMMDD')
     parser.add_argument('--dir', metavar='CSV_DIRECTORY', dest='dir', default=CSV_BASE_PATH,
                         help='where to look for CSV files')
     args = parser.parse_args()
     run(args.date, args.dir)
 
+
 if __name__ == '__main__':
     main()
-

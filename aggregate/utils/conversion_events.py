@@ -24,13 +24,15 @@ class Commerce:
         return self.__str__()
 
 
-class CommerceParser:
+class ConversionsParser:
     def __init__(self, cur_date, cursor):
         self.user_id_payment_time = {}
         self.user_id_browser_id = {}
         self.data = []
         self.cur_date = cur_date
         self.cursor = cursor
+
+        self.events_to_save = []
         pass
 
     def __load_data(self, commerce_file):
@@ -38,6 +40,17 @@ class CommerceParser:
             r = csv.DictReader(csv_file, delimiter=',')
             for row in r:
                 self.data.append(Commerce(row))
+
+    def __save_events_to_separate_table(self):
+        sql = '''
+            INSERT INTO events (user_id, browser_id, time, type, computed_for)
+            VALUES (%s, %s, %s, %s, %s)
+        '''
+
+        psycopg2.extras.execute_batch(self.cursor, sql, [
+            (x["user_id"], x["browser_id"], x["time"], x["type"], self.cur_date) for x in self.events_to_save
+        ])
+        self.cursor.connection.commit()
 
     def process_file(self, commerce_file):
         print("Processing file: " + commerce_file)
@@ -61,12 +74,21 @@ class CommerceParser:
                 if purchase_time_minus_5 <= payment_time:
                     browser_id = self.user_id_browser_id[c.user_id]
                     self.__mark_conversion_event(browser_id, purchase_time)
+                    self.events_to_save.append({
+                        "user_id": c.user_id,
+                        "browser_id": browser_id,
+                        "time": c.time,
+                        "type": "conversion",
+                    })
+
+        self.cursor.connection.commit()
+        self.__save_events_to_separate_table()
 
     def __mark_conversion_event(self, browser_id, purchase_time):
         # first delete that particular day
         # we don't want conversion day to be included in aggregated data
         self.cursor.execute('''
-        DELETE FROM aggregated_browser_days WHERE browser_id = %s and date = %s
+            DELETE FROM aggregated_browser_days WHERE browser_id = %s and date = %s
         ''', (browser_id, self.cur_date))
 
         # then mark 7_days_event to 'conversion'
@@ -74,9 +96,9 @@ class CommerceParser:
         end = arrow.get(self.cur_date).shift(days=-1)
         start = end.shift(days=-6)
         sql = '''
-        UPDATE aggregated_browser_days 
-        SET next_7_days_event = 'conversion', next_event_time = %s
-        WHERE date = %s AND browser_id = %s AND next_7_days_event = 'no_conversion'
+            UPDATE aggregated_browser_days 
+            SET next_7_days_event = 'conversion', next_event_time = %s
+            WHERE date = %s AND browser_id = %s AND next_7_days_event = 'no_conversion'
         '''
         psycopg2.extras.execute_batch(self.cursor, sql, [
             (purchase_time.isoformat(), day[0].date(), browser_id) for day in arrow.Arrow.span_range('day', start, end)
@@ -97,15 +119,32 @@ class PageView:
         return self.__str__()
 
 
-class PageViewsParser:
+class SharedLoginParser:
     def __init__(self, cur_date, cursor):
         self.data = []
         self.not_logged_in_browsers = set()
         self.logged_in_browsers = set()
         self.logged_in_browsers_time = {}
+        self.browser_user_id = {}
         self.cur_date = cur_date
         self.cursor = cursor
-        pass
+
+    def __save_events_to_separate_table(self):
+        sql = '''
+            INSERT INTO events (user_id, browser_id, time, type, computed_for)
+            VALUES (%s, %s, %s, %s, %s)
+        '''
+        psycopg2.extras.execute_batch(self.cursor, sql, [
+            (
+                self.browser_user_id[browser_id],
+                browser_id,
+                self.logged_in_browsers_time[browser_id].isoformat(),
+                "shared_account_login",
+                self.cur_date
+            )
+            for browser_id in self.logged_in_browsers
+        ])
+        self.cursor.connection.commit()
 
     def __load_data(self, f):
         with open(f) as csv_file:
@@ -127,9 +166,10 @@ class PageViewsParser:
                     # correct earlier timestamp event
                     if (p.browser_id in self.logged_in_browsers_time and logged_in_time < self.logged_in_browsers_time[p.browser_id]) or p.browser_id not in self.logged_in_browsers_time:
                         self.logged_in_browsers_time[p.browser_id] = logged_in_time
+                self.browser_user_id[p.browser_id] = p.user_id
 
     def __save_in_db(self):
-        print("Storing commerce data for date " + str(self.cur_date))
+        print("Storing login data for date " + str(self.cur_date))
 
         # first delete that particular day
         for browser_id in self.logged_in_browsers:
@@ -151,6 +191,7 @@ class PageViewsParser:
             for day in arrow.Arrow.span_range('day', start, end)
             for browser_id in self.logged_in_browsers
         ])
+        self.cursor.connection.commit()
 
     def process_file(self, pageviews_file):
         print("Processing file: " + pageviews_file)
@@ -158,6 +199,7 @@ class PageViewsParser:
         self.data.sort(key=lambda x: x.time)
         self.__find_login_events()
         self.__save_in_db()
+        self.__save_events_to_separate_table()
 
 
 def run(file_date, aggregate_folder):
@@ -182,13 +224,18 @@ def run(file_date, aggregate_folder):
     migrate(cur)
     conn.commit()
 
-    commerce_parser = CommerceParser(cur_date, cur)
-    commerce_parser.process_file(commerce_file)
+    event_types = ['conversion', 'shared_account_login']
+    # Delete events for particular day (so command can be safely run multiple times)
+    cur.execute('''
+        DELETE FROM events WHERE computed_for = %s AND type = ANY(%s)
+    ''', (cur_date, event_types))
     conn.commit()
 
-    pageviews_parser= PageViewsParser(cur_date, cur)
+    commerce_parser = ConversionsParser(cur_date, cur)
+    commerce_parser.process_file(commerce_file)
+
+    pageviews_parser= SharedLoginParser(cur_date, cur)
     pageviews_parser.process_file(pageviews_file)
-    conn.commit()
 
     cur.close()
     conn.close()
