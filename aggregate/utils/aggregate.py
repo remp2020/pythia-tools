@@ -325,7 +325,7 @@ class BrowserParser:
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
             for key in browser_data['article_tags_pageviews']:
-                data_to_insert.append((processed_date, browser_id, key, browser_data['article_tag_pageviews'][key]))
+                data_to_insert.append((processed_date, browser_id, key, browser_data['article_tags_pageviews'][key]))
 
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
         conn.commit()
