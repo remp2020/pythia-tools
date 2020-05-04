@@ -33,9 +33,9 @@ def empty_data_entry(data_to_merge=None):
         'timespent': 0,
         'sessions': set(),
         'sessions_without_ref': set(),
-        "referer_medium_pageviews": {},
-        "article_category_pageviews": {},
-        "article_tag_pageviews": {},
+        "referer_mediums_pageviews": {},
+        "article_categories_pageviews": {},
+        "article_tags_pageviews": {},
         "hour_interval_pageviews": {},
     }
 
@@ -58,12 +58,12 @@ def update_record_from_pageviews_row(record, row):
     record['pageviews'] += 1
     record['sessions'].add(row['remp_session_id'])
 
-    add_one(record['referer_medium_pageviews'], row['derived_referer_medium'])
-    add_one(record['article_category_pageviews'], row['category'])
+    add_one(record['referer_mediums_pageviews'], row['derived_referer_medium'])
+    add_one(record['article_categories_pageviews'], row['category'])
 
     for tag in row['tags'].split(','):
         if tag:
-            add_one(record['article_tag_pageviews'], tag)
+            add_one(record['article_tags_pageviews'], tag)
 
     # Hour aggregations
     hour = arrow.get(row['time']).to('utc').hour
@@ -83,9 +83,9 @@ def aggregated_pageviews_row_accessors(accessors_to_merge=None):
     accessors = {
         'sessions': lambda d: len(d['sessions']),
         'sessions_without_ref': lambda d: len(d['sessions_without_ref']),
-        'referer_medium_pageviews': lambda d: json.dumps(d['referer_medium_pageviews']),
-        'article_category_pageviews': lambda d: json.dumps(d['article_category_pageviews']),
-        'article_tag_pageviews': lambda d: json.dumps(d['article_tag_pageviews']),
+        'referer_mediums_pageviews': lambda d: json.dumps(d['referer_mediums_pageviews']),
+        'article_categories_pageviews': lambda d: json.dumps(d['article_categories_pageviews']),
+        'article_tags_pageviews': lambda d: json.dumps(d['article_tags_pageviews']),
         'hour_interval_pageviews': lambda d: json.dumps(d['hour_interval_pageviews']),
     }
 
@@ -207,34 +207,34 @@ class UserParser:
         conn.commit()
 
     def __save_to_aggregated_user_days_tags(self, conn, cur, processed_date):
-        sql = make_insert_update_sql('aggregated_user_days_tags', ['date', 'user_id', 'tag'], ['pageviews'])
+        sql = make_insert_update_sql('aggregated_user_days_tags', ['date', 'user_id', 'tags'], ['pageviews'])
 
         data_to_insert = []
         for user_id, user_data in self.data.items():
-            for key in user_data['article_tag_pageviews']:
-                data_to_insert.append((processed_date, user_id, key, user_data['article_tag_pageviews'][key]))
+            for key in user_data['article_tags_pageviews']:
+                data_to_insert.append((processed_date, user_id, key, user_data['article_tags_pageviews'][key]))
 
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
         conn.commit()
 
     def __save_to_aggregated_user_days_categories(self, conn, cur, processed_date):
-        sql = make_insert_update_sql('aggregated_user_days_categories', ['date', 'user_id', 'category'], ['pageviews'])
+        sql = make_insert_update_sql('aggregated_user_days_categories', ['date', 'user_id', 'categories'], ['pageviews'])
 
         data_to_insert = []
         for user_id, user_data in self.data.items():
-            for key in user_data['article_category_pageviews']:
-                data_to_insert.append((processed_date, user_id, key, user_data['article_category_pageviews'][key]))
+            for key in user_data['article_categories_pageviews']:
+                data_to_insert.append((processed_date, user_id, key, user_data['article_categories_pageviews'][key]))
 
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
         conn.commit()
 
     def __save_to_aggregated_user_days_referer_mediums(self, conn, cur, processed_date):
-        sql = make_insert_update_sql('aggregated_user_days_referer_mediums', ['date', 'user_id', 'referer_medium'], ['pageviews'])
+        sql = make_insert_update_sql('aggregated_user_days_referer_mediums', ['date', 'user_id', 'referer_mediums'], ['pageviews'])
 
         data_to_insert = []
         for user_id, user_data in self.data.items():
-            for key in user_data['referer_medium_pageviews']:
-                data_to_insert.append((processed_date, user_id, key, user_data['referer_medium_pageviews'][key]))
+            for key in user_data['referer_mediums_pageviews']:
+                data_to_insert.append((processed_date, user_id, key, user_data['referer_mediums_pageviews'][key]))
 
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
         conn.commit()
@@ -324,7 +324,7 @@ class BrowserParser:
 
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
-            for key in browser_data['article_tag_pageviews']:
+            for key in browser_data['article_tags_pageviews']:
                 data_to_insert.append((processed_date, browser_id, key, browser_data['article_tag_pageviews'][key]))
 
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
@@ -335,8 +335,8 @@ class BrowserParser:
 
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
-            for key in browser_data['article_category_pageviews']:
-                data_to_insert.append((processed_date, browser_id, key, browser_data['article_category_pageviews'][key]))
+            for key in browser_data['article_categories_pageviews']:
+                data_to_insert.append((processed_date, browser_id, key, browser_data['article_categories_pageviews'][key]))
 
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
         conn.commit()
@@ -346,8 +346,8 @@ class BrowserParser:
 
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
-            for key in browser_data['referer_medium_pageviews']:
-                data_to_insert.append((processed_date, browser_id, key, browser_data['referer_medium_pageviews'][key]))
+            for key in browser_data['referer_mediums_pageviews']:
+                data_to_insert.append((processed_date, browser_id, key, browser_data['referer_mediums_pageviews'][key]))
 
         psycopg2.extras.execute_batch(cur, sql, data_to_insert)
         conn.commit()

@@ -107,8 +107,8 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
     "sessions_without_ref" integer NOT NULL,    
     "next_30_days" character varying NOT NULL DEFAULT 'ongoing',
     "next_event_time" timestamp NULL,
-    "referer_medium_pageviews" jsonb,
-    "article_category_pageviews" jsonb,
+    "referer_mediums_pageviews" jsonb,
+    "article_categories_pageviews" jsonb,
     "hour_interval_pageviews" jsonb,
     "pageviews_0h" integer DEFAULT 0,
     "pageviews_1h" integer DEFAULT 0,
@@ -162,9 +162,9 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
 
     sql_add_tags_pageviews = '''
             ALTER TABLE "public"."aggregated_browser_days" 
-                ADD COLUMN IF NOT EXISTS "article_tag_pageviews" jsonb;
+                ADD COLUMN IF NOT EXISTS "article_tags_pageviews" jsonb;
             ALTER TABLE "public"."aggregated_user_days" 
-                ADD COLUMN IF NOT EXISTS "article_tag_pageviews" jsonb;
+                ADD COLUMN IF NOT EXISTS "article_tags_pageviews" jsonb;
                 '''
     cur.execute(sql_add_tags_pageviews)
 
@@ -239,3 +239,35 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
             );
             '''
     cur.execute(sql)
+
+    # rename column names
+    columns_to_rename = [
+        ['aggregated_browser_days', 'referer_medium_pageviews', 'referer_mediums_pageviews'],
+        ['aggregated_browser_days', 'article_category_pageviews', 'article_categories_pageviews'],
+        ['aggregated_browser_days', 'article_tag_pageviews', 'article_tags_pageviews'],
+        ['aggregated_browser_days_categories', 'category', 'categories'],
+        ['aggregated_browser_days_referer_mediums', 'referer_medium', 'referer_mediums'],
+        ['aggregated_browser_days_tags', 'tag', 'tags'],
+        ['aggregated_user_days', 'referer_medium_pageviews', 'referer_mediums_pageviews'],
+        ['aggregated_user_days', 'article_category_pageviews', 'article_categories_pageviews'],
+        ['aggregated_user_days', 'article_tag_pageviews', 'article_tags_pageviews'],
+        ['aggregated_user_days_categories', 'category', 'categories'],
+        ['aggregated_user_days_referer_mediums', 'referer_medium', 'referer_mediums'],
+        ['aggregated_user_days_tags', 'tag', 'tags'],
+    ]
+
+    for table, column_from, column_to in columns_to_rename:
+        sql = '''
+        DO $$
+        BEGIN
+          IF EXISTS(SELECT *
+            FROM information_schema.columns
+            WHERE table_name='{}' and column_name='{}')
+          THEN
+              ALTER TABLE "public"."{}" RENAME COLUMN "{}" TO "{}";
+          END IF;
+        END $$;'''.format(table, column_from, table, column_from, column_to)
+        cur.execute(sql)
+        cur.connection.commit()
+
+
