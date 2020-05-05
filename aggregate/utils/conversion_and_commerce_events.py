@@ -24,14 +24,14 @@ class Commerce:
         return self.__str__()
 
 
-class ConversionsParser:
+class CommerceParser:
     def __init__(self, cur_date, cursor):
         self.user_id_payment_time = {}
         self.user_id_browser_id = {}
         self.data = []
         self.cur_date = cur_date
         self.cursor = cursor
-
+        self.browser_steps = {}
         self.events_to_save = []
         pass
 
@@ -40,6 +40,20 @@ class ConversionsParser:
             r = csv.DictReader(csv_file, delimiter=',')
             for row in r:
                 self.data.append(Commerce(row))
+
+                if row['browser_id']:
+                    if row['browser_id'] not in self.browser_steps:
+                        self.browser_steps[row['browser_id']] = {
+                            'checkout': 0,
+                            'payment': 0,
+                            'purchase': 0,
+                            'refund': 0
+                        }
+
+                    if row['step'] not in ['checkout', 'payment', 'purchase', 'refund']:
+                        raise Exception("unknown commerce step: " + row['step'] + ' for browser_id: ' + row['browser_id'])
+                    else:
+                        self.browser_steps[row['browser_id']][row['step']] += 1
 
     def __save_events_to_separate_table(self):
         sql = '''
@@ -81,8 +95,25 @@ class ConversionsParser:
                         "type": "conversion",
                     })
 
-        self.cursor.connection.commit()
         self.__save_events_to_separate_table()
+        self.__save_commerce_steps_count()
+
+    def __save_commerce_steps_count(self):
+        sql = '''
+            UPDATE aggregated_browser_days
+            SET commerce_checkouts = %s, commerce_payments = %s, commerce_purchases = %s, commerce_refunds = %s
+            WHERE date = %s AND browser_id = %s
+        '''
+
+        psycopg2.extras.execute_batch(self.cursor, sql, [
+            (self.browser_steps[browser_id]['checkout'],
+             self.browser_steps[browser_id]['payment'],
+             self.browser_steps[browser_id]['purchase'],
+             self.browser_steps[browser_id]['refund'],
+             self.cur_date.isoformat(),
+             browser_id) for browser_id in self.browser_steps
+        ])
+        self.cursor.connection.commit()
 
     def __mark_conversion_event(self, browser_id, purchase_time):
         # first delete that particular day
@@ -103,6 +134,7 @@ class ConversionsParser:
         psycopg2.extras.execute_batch(self.cursor, sql, [
             (purchase_time.isoformat(), day[0].date(), browser_id) for day in arrow.Arrow.span_range('day', start, end)
         ])
+        self.cursor.connection.commit()
 
 
 class PageView:
@@ -231,7 +263,7 @@ def run(file_date, aggregate_folder):
     ''', (cur_date, event_types))
     conn.commit()
 
-    commerce_parser = ConversionsParser(cur_date, cur)
+    commerce_parser = CommerceParser(cur_date, cur)
     commerce_parser.process_file(commerce_file)
 
     pageviews_parser= SharedLoginParser(cur_date, cur)

@@ -270,4 +270,14 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
         cur.execute(sql)
         cur.connection.commit()
 
+    #
+    sql = '''
+        ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS "commerce_checkouts" integer DEFAULT 0;
+        ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS "commerce_payments" integer DEFAULT 0;
+        ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS "commerce_purchases" integer DEFAULT 0;
+        ALTER TABLE "public"."aggregated_browser_days" ADD COLUMN IF NOT EXISTS "commerce_refunds" integer DEFAULT 0;
+            '''
+    cur.execute(sql)
+
+
 

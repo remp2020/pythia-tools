@@ -74,6 +74,11 @@ def aggregated_browser_days():
         bigquery.SchemaField("pageviews_12h_16h", "INTEGER", mode="NULLABLE"),
         bigquery.SchemaField("pageviews_16h_20h", "INTEGER", mode="NULLABLE"),
         bigquery.SchemaField("pageviews_20h_24h", "INTEGER", mode="NULLABLE"),
+
+        bigquery.SchemaField("commerce_checkouts", "INTEGER", mode="NULLABLE"),
+        bigquery.SchemaField("commerce_payments", "INTEGER", mode="NULLABLE"),
+        bigquery.SchemaField("commerce_purchases", "INTEGER", mode="NULLABLE"),
+        bigquery.SchemaField("commerce_refunds", "INTEGER", mode="NULLABLE"),
     ]
     return schema
 
