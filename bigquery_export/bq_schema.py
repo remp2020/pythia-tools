@@ -203,3 +203,24 @@ def events():
         bigquery.SchemaField("type", "STRING", mode="REQUIRED"),
     ]
     return schema
+
+
+def user_devices():
+    schema = [
+        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+        bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+
+        bigquery.SchemaField("browser_family", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("browser_version", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("os_family", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("os_version", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("device_family", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("device_brand", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("device_model", "STRING", mode="NULLABLE"),
+
+        bigquery.SchemaField("is_desktop", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("is_mobile", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("is_tablet", "STRING", mode="NULLABLE"),
+    ]
+    return schema
