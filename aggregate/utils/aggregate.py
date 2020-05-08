@@ -293,6 +293,32 @@ class BrowserParser:
         else:
             print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 
+    def __save_to_user_devices(self, conn, cur, processed_date):
+        accessors = {
+            'browser_family': lambda d: d['ua'].browser.family,
+            'browser_version': lambda d: d['ua'].browser.version_string,
+            'os_family': lambda d: d['ua'].os.family,
+            'os_version': lambda d: d['ua'].os.version_string,
+            'device_family': lambda d: d['ua'].device.family,
+            'device_brand': lambda d: d['ua'].device.brand,
+            'device_model': lambda d: d['ua'].device.model,
+            'is_desktop': lambda d: d['ua'].is_pc,
+            'is_tablet': lambda d: d['ua'].is_tablet,
+            'is_mobile': lambda d: d['ua'].is_mobile,
+        }
+
+        ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
+        sql = make_insert_update_sql('user_devices', ['date', 'browser_id', 'user_id'], list(ordered_accessors.keys()))
+
+        data_to_insert = []
+        for browser_id, browser_data in self.data.items():
+            computed_values = tuple([func(browser_data) for key, func in ordered_accessors.items()])
+            for user_id in list(browser_data['user_ids']):
+                data_to_insert.append((processed_date, browser_id, user_id) + computed_values)
+
+        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+        conn.commit()
+
     def __save_to_aggregated_browser_days(self, conn, cur, processed_date):
         accessors = aggregated_pageviews_row_accessors({
             'browser_family': lambda d: d['ua'].browser.family,
@@ -356,6 +382,7 @@ class BrowserParser:
         print("Deleting data for date " + str(processed_date))
 
         tables_to_del = [
+            'user_devices',
             'aggregated_browser_days',
             'aggregated_browser_days_tags',
             'aggregated_browser_days_categories',
@@ -368,6 +395,7 @@ class BrowserParser:
 
         print("Storing data for date " + str(processed_date))
 
+        self.__save_to_user_devices(conn, cur, processed_date)
         self.__save_to_aggregated_browser_days(conn, cur, processed_date)
         self.__save_to_aggregated_browser_days_tags(conn, cur, processed_date)
         self.__save_to_aggregated_browser_days_categories(conn, cur, processed_date)
