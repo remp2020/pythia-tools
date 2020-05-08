@@ -346,7 +346,7 @@ class BrowserParser:
         conn.commit()
 
     def __save_to_aggregated_browser_days_tags(self, conn, cur, processed_date):
-        sql = make_insert_update_sql('aggregated_browser_days_tags', ['date', 'browser_id', 'tag'], ['pageviews'])
+        sql = make_insert_update_sql('aggregated_browser_days_tags', ['date', 'browser_id', 'tags'], ['pageviews'])
 
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
@@ -357,7 +357,7 @@ class BrowserParser:
         conn.commit()
 
     def __save_to_aggregated_browser_days_categories(self, conn, cur, processed_date):
-        sql = make_insert_update_sql('aggregated_browser_days_categories', ['date', 'browser_id', 'category'], ['pageviews'])
+        sql = make_insert_update_sql('aggregated_browser_days_categories', ['date', 'browser_id', 'categories'], ['pageviews'])
 
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
@@ -368,7 +368,7 @@ class BrowserParser:
         conn.commit()
 
     def __save_to_aggregated_browser_days_referer_mediums(self, conn, cur, processed_date):
-        sql = make_insert_update_sql('aggregated_browser_days_referer_mediums', ['date', 'browser_id', 'referer_medium'], ['pageviews'])
+        sql = make_insert_update_sql('aggregated_browser_days_referer_mediums', ['date', 'browser_id', 'referer_mediums'], ['pageviews'])
 
         data_to_insert = []
         for browser_id, browser_data in self.data.items():
