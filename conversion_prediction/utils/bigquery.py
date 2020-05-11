@@ -51,7 +51,7 @@ bq_mappings = get_sqlalchemy_tables_w_session(
     'BQ_CONNECTION_STRING',
     schema='pythia',
     table_names=tables_to_map,
-    engine_kwargs={'credentials_path': '../../client_secrets.json'}
+    engine_kwargs={'credentials_path': '../../gcloud_client_secrets.json'}
 )
 
 bq_session = bq_mappings['session']

@@ -1028,12 +1028,12 @@ class ConversionPredictionModel(object):
 
             _, db_connection = create_connection(
                 os.getenv('BQ_CONNECTION_STRING'),
-                engine_kwargs={'credentials_path': '../../client_secrets.json'}
+                engine_kwargs={'credentials_path': '../../gcloud_client_secrets.json'}
             )
             database = os.getenv('BQ_DATABASE')
 
             credentials = service_account.Credentials.from_service_account_file(
-                '../../client_secrets.json',
+                '../../gcloud_client_secrets.json',
             )
 
             self.predictions.to_gbq(
