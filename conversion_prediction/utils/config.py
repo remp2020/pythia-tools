@@ -24,7 +24,7 @@ def build_numeric_columns_base(aggregation_function_alias: str) -> List[str]:
 
 
 SUPPORTED_JSON_FIELDS_KEYS = {
-    'referer_medium': [
+    'referer_mediums': [
         'direct',
         'email',
         'external',
@@ -32,7 +32,7 @@ SUPPORTED_JSON_FIELDS_KEYS = {
         'search',
         'social'
     ],
-    'categorie': [
+    'categories': [
         '',
         'blog',
         'ekonomika',
@@ -103,7 +103,7 @@ def build_derived_metrics_config(aggregation_function_alias: str) -> Dict:
 
 
 # TODO: Categorie is only there due to inconvenient table names, will hopefully get fixed later
-PROFILE_COLUMNS = ['referer_medium', 'hour_interval_pageviews', 'categorie']
+PROFILE_COLUMNS = ['referer_mediums', 'hour_interval_pageviews', 'categories']
 
 
 def generate_4_hour_interval_column_names():
@@ -156,15 +156,15 @@ def build_out_profile_based_column_names(
     suffix = return_normalized_suffix(normalized)
     profile_numeric_columns_from_json_fields = {
         # Referral features
-        'referer_medium': [
-            f'referer_medium_{referral_category}_{aggregation_function_alias}{suffix}'
-            for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_medium']
+        'referer_mediums': [
+            f'referer_mediums_{referral_category}_{aggregation_function_alias}{suffix}'
+            for referral_category in SUPPORTED_JSON_FIELDS_KEYS['referer_mediums']
             for aggregation_function_alias in aggregation_function_aliases
         ],
         # Article category (section) features
-        'categorie': [
-            f'categorie_{article_category.replace("-", "_")}_{aggregation_function_alias}{suffix}'
-            for article_category in SUPPORTED_JSON_FIELDS_KEYS['categorie']
+        'categories': [
+            f'categories_{article_category.replace("-", "_")}_{aggregation_function_alias}{suffix}'
+            for article_category in SUPPORTED_JSON_FIELDS_KEYS['categories']
             for aggregation_function_alias in aggregation_function_aliases
         ]
     }

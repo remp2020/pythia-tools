@@ -42,7 +42,7 @@ def get_sqlalchemy_tables_w_session(
 
 tables_to_map = (
     ['aggregated_browser_days', 'events'] +
-    [f'aggregated_browser_days_{profile_feature_set_name}s' for profile_feature_set_name in PROFILE_COLUMNS
+    [f'aggregated_browser_days_{profile_feature_set_name}' for profile_feature_set_name in PROFILE_COLUMNS
      if profile_feature_set_name != 'hour_interval_pageviews']
 )
 
@@ -381,9 +381,8 @@ def get_profile_columns(
         start_time,
         end_time
 ):
-    table = bq_mappings[f'aggregated_browser_days_{profile_feature_set_name}s']
+    table = bq_mappings[f'aggregated_browser_days_{profile_feature_set_name}']
     # TODO: This is only here because of the mismatched naming of tables and columns, hopefully we can unify this ASAP
-    breakdown_column = profile_feature_set_name.replace('ie', 'y')
 
     pivoted_profile_table = bq_session.query(
         table.c['browser_id'].label('browser_id'),
@@ -392,7 +391,7 @@ def get_profile_columns(
             func.sum(case(
                 [
                     (
-                        table.c[breakdown_column] == profile_column,
+                        table.c[profile_feature_set_name] == profile_column,
                         table.c['pageviews']
                     )
                 ],
