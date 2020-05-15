@@ -124,10 +124,14 @@ def run(file_date, csv_folder):
     )
 
     # aggregated_browser_days tables
+    user_devices = 'user_devices'
     aggregated_browser_days = 'aggregated_browser_days'
     aggregated_browser_days_tags = 'aggregated_browser_days_tags'
     aggregated_browser_days_categories = 'aggregated_browser_days_categories'
     aggregated_browser_days_referer_mediums = 'aggregated_browser_days_referer_mediums'
+
+    if not uploader.table_exists(user_devices):
+        uploader.create_table(user_devices, bq_schema.user_devices(), date_col_partitioning)
 
     if not uploader.table_exists(aggregated_browser_days):
         uploader.create_table(aggregated_browser_days, bq_schema.aggregated_browser_days(), date_col_partitioning)
@@ -175,6 +179,9 @@ def run(file_date, csv_folder):
         ))
 
     # Upload data
+    csv_path = os.path.join(csv_folder, "user_devices_" + file_date + ".csv")
+    uploader.upload_csv_to_table(user_devices, csv_path)
+
     csv_path = os.path.join(csv_folder, "aggregated_browser_days_" + file_date + ".csv")
     uploader.upload_csv_to_table(aggregated_browser_days, csv_path, ["user_ids"])
     csv_path = os.path.join(csv_folder, "aggregated_browser_days_tags_" + file_date + ".csv")

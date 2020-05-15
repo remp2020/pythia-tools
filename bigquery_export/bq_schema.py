@@ -39,9 +39,9 @@ def aggregated_browser_days():
         bigquery.SchemaField("next_7_days_event", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("next_event_time", "TIMESTAMP", mode="NULLABLE"),
 
-        bigquery.SchemaField("referer_medium_pageviews", "STRING", mode="NULLABLE"),
-        bigquery.SchemaField("article_category_pageviews", "STRING", mode="NULLABLE"),
-        bigquery.SchemaField("article_tag_pageviews", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("referer_mediums_pageviews", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("article_categories_pageviews", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("article_tags_pageviews", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("hour_interval_pageviews", "STRING", mode="NULLABLE"),
 
         bigquery.SchemaField("pageviews_0h", "INTEGER", mode="NULLABLE"),
@@ -74,6 +74,11 @@ def aggregated_browser_days():
         bigquery.SchemaField("pageviews_12h_16h", "INTEGER", mode="NULLABLE"),
         bigquery.SchemaField("pageviews_16h_20h", "INTEGER", mode="NULLABLE"),
         bigquery.SchemaField("pageviews_20h_24h", "INTEGER", mode="NULLABLE"),
+
+        bigquery.SchemaField("commerce_checkouts", "INTEGER", mode="NULLABLE"),
+        bigquery.SchemaField("commerce_payments", "INTEGER", mode="NULLABLE"),
+        bigquery.SchemaField("commerce_purchases", "INTEGER", mode="NULLABLE"),
+        bigquery.SchemaField("commerce_refunds", "INTEGER", mode="NULLABLE"),
     ]
     return schema
 
@@ -82,7 +87,7 @@ def aggregated_browser_days_tags():
     schema = [
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("tag", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("tags", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
     ]
     return schema
@@ -92,7 +97,7 @@ def aggregated_browser_days_categories():
     schema = [
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("category", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("categories", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
     ]
     return schema
@@ -102,7 +107,7 @@ def aggregated_browser_days_referer_mediums():
     schema = [
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("referer_medium", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("referer_mediums", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
     ]
     return schema
@@ -121,9 +126,9 @@ def aggregated_user_days():
         bigquery.SchemaField("next_30_days", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("next_event_time", "TIMESTAMP", mode="NULLABLE"),
 
-        bigquery.SchemaField("referer_medium_pageviews", "STRING", mode="NULLABLE"),
-        bigquery.SchemaField("article_category_pageviews", "STRING", mode="NULLABLE"),
-        bigquery.SchemaField("article_tag_pageviews", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("referer_mediums_pageviews", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("article_categories_pageviews", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("article_tags_pageviews", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("hour_interval_pageviews", "STRING", mode="NULLABLE"),
 
         bigquery.SchemaField("pageviews_0h", "INTEGER", mode="NULLABLE"),
@@ -164,7 +169,7 @@ def aggregated_user_days_tags():
     schema = [
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("tag", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("tags", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
     ]
     return schema
@@ -174,7 +179,7 @@ def aggregated_user_days_categories():
     schema = [
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("category", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("categories", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
     ]
     return schema
@@ -184,7 +189,7 @@ def aggregated_user_days_referer_mediums():
     schema = [
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("referer_medium", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("referer_mediums", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("pageviews", "INTEGER", mode="REQUIRED"),
     ]
     return schema
@@ -196,5 +201,26 @@ def events():
         bigquery.SchemaField("browser_id", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("time", "TIMESTAMP", mode="REQUIRED"),
         bigquery.SchemaField("type", "STRING", mode="REQUIRED"),
+    ]
+    return schema
+
+
+def user_devices():
+    schema = [
+        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+        bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+
+        bigquery.SchemaField("browser_family", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("browser_version", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("os_family", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("os_version", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("device_family", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("device_brand", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("device_model", "STRING", mode="NULLABLE"),
+
+        bigquery.SchemaField("is_desktop", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("is_mobile", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("is_tablet", "STRING", mode="NULLABLE"),
     ]
     return schema

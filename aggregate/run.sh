@@ -3,11 +3,13 @@
 export PATH=".virtualenv/bin:$PATH"
 
 function usage {
-    echo "Aggregation script moving data from Elastic storage to PostgreSQL DB for Pythia processing"
+    echo "Aggregation script processing data from Elastic storage to PostgreSQL DB for Pythia processing"
     echo "Usage: $0 --min_date=<DATE> --max_date=<DATE> | $0 --date=<DATE>" >&2
     echo "Optional arguments:"
-    echo "  --dir=<DIR>, specifying where to look for/save aggregated elastic CSV files" >&2
+    echo "  --dir=<DIR>, specifying where to look for/save aggregated (.gz) elastic CSV files" >&2
+    echo "  --tmp=<DIR>, specifying where to extract/process CSV files" >&2
     echo "  --env=<FILE>, specifying .env file for sourcing" >&2
+    echo "  --onlyaggregate, specifying not to download data from Elastic if not present" >&2
     echo "  --dryrun, specifying to check/save the CSVs, but prevent execution of aggregation" >&2
     echo "Date format is YYYY-MM-DD" >&2
 }
@@ -46,8 +48,14 @@ while [ $# -gt 0 ]; do
     --dir=*)
       dir="${1#*=}"
       ;;
+    --tmp=*)
+      tmp="${1#*=}"
+      ;;
     --dryrun)
       dryrun=1
+      ;;
+    --onlyaggregate)
+      onlyaggregate=1
       ;;
     --env=*)
       env="${1#*=}"
@@ -110,9 +118,22 @@ else
     dir=$(pwd)
 fi
 
+if [ ! -z $tmp ]; then
+    if [ ! -e "$tmp" ]; then
+        echo "Directory $tmp does not exist"
+        exit 4
+    elif [ ! -d "$tmp" ]; then
+        echo "$tmp is not a directory"
+        exit 5
+    fi
+else
+    tmp=$dir
+fi
+
 if [ -z $env ]; then
     env=".env"
 fi
+
 
 echo "Sourcing environment variables from $env"
 export $(grep -v '^#' $env | xargs)
@@ -124,15 +145,24 @@ files=("pageviews_time_spent" "pageviews" "commerce" "events")
 # For every date, aggregate CSV files into Postgres (optionally download CSV files from elastic)
 while [ "$di" != "$end_on" ]; do
     file_date=${di//-/}
+    skip_date=0
 
     for idx in "${files[@]}"; do
         echo "Processing ${idx}, date: ${di}"
         cur_dir="$dir/$idx"
-        mkdir -p $cur_dir # create directory if does not exist
+        cur_tmp_dir="$tmp/$idx"
+        mkdir -p $cur_tmp_dir # create directory if does not exist
         cur_file_gz="${cur_dir}/${idx}_${file_date}.csv.gz"
-        cur_file_csv="${cur_dir}/${idx}_${file_date}.csv"
+        cur_file_csv="${cur_tmp_dir}/${idx}_${file_date}.csv"
 
         if [ ! -f $cur_file_gz ]; then
+
+            if [ "$onlyaggregate" -eq "1" ]; then
+                echo "File ${cur_file_gz} not found, --onlyaggregate mode is turned on, skipping the date"
+                skip_date=1
+                break
+            fi
+
             echo "File ${cur_file_gz} not found, downloading from Elastic ($ELASTIC_ADDR): ${idx} [ ${di} TO ${di} ]"
             # aggregate CSV file from elastic
             es2csv -u $ELASTIC_ADDR -i "${idx}" -q "time: [ ${di} TO ${di} ]" -s 10000 -o $cur_file_csv
@@ -142,20 +172,25 @@ while [ "$di" != "$end_on" ]; do
             fi
         else
             # unpack .csv.gz file
-            gzip -k -f -d $cur_file_gz
+            gzip -k -f -d -c $cur_file_gz > $cur_file_csv
         fi
     done
 
+    if [ "$skip_date" -eq "1" ]; then
+        di=$(add_day $di)
+        continue
+    fi
+
     # Run aggregation
     if [ -z $dryrun ]; then
-        python utils/aggregate.py ${file_date} --dir=$dir
-        python utils/conversion_events.py ${file_date} --dir=$dir
+        python utils/aggregate.py ${file_date} --dir=$tmp
+        python utils/conversion_and_commerce_events.py ${file_date} --dir=$tmp
         python utils/subscriptions_churn_events.py ${file_date}
     fi
 
     # Delete csv files
     for idx in "${files[@]}"; do
-        cur_dir="$dir/$idx"
+        cur_dir="$tmp/$idx"
         cur_file_csv="${cur_dir}/${idx}_${file_date}.csv"
         if [ -f $cur_file_csv ]; then
         rm $cur_file_csv
