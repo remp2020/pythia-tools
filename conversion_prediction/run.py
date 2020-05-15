@@ -457,7 +457,7 @@ class ConversionPredictionModel(object):
             self.user_profiles.groupby('browser_id')['outcome'].fillna(method='ffill')
         )
         self.user_profiles['outcome'] = test_outcome
-        self.encode_uncommon_categorie()
+        self.encode_uncommon_categories()
         self.transform_bool_columns_to_int()
         logger.info('  * Filtering user profiles')
         self.user_profiles = self.user_profiles[self.user_profiles['days_active_count'] >= 1].reset_index(drop=True)
@@ -475,7 +475,7 @@ class ConversionPredictionModel(object):
         for column in [column for column in self.feature_columns.bool_columns]:
             self.user_profiles[column] = self.user_profiles[column].apply(lambda value: True if value == 't' else False).astype(int)
 
-    def encode_uncommon_categorie(self):
+    def encode_uncommon_categories(self):
         '''
         Requires:
             - user_profiles
