@@ -220,8 +220,8 @@ def filter_by_date(
         aggregated_browser_days.c['pageviews_12h_16h'].label('pvs_12h_16h'),
         aggregated_browser_days.c['pageviews_16h_20h'].label('pvs_16h_20h'),
         aggregated_browser_days.c['pageviews_20h_24h'].label('pvs_20h_24h'),
-        aggregated_browser_days.c['commerce_checkouts'].label('checkouts'),
-        aggregated_browser_days.c['commerce_payments'].label('payments'),
+        aggregated_browser_days.c['commerce_checkouts'].label('commerce_checkouts'),
+        aggregated_browser_days.c['commerce_payments'].label('commerce_payments'),
     ).subquery()
 
     current_data = bq_session.query(
