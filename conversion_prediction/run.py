@@ -153,7 +153,7 @@ class ConversionPredictionModel(object):
         for column in [column for column in self.feature_columns.return_feature_list()
                        if column not in self.user_profiles.columns
                        and column not in [
-                              'checkout', 'payment', 'clv', 'days_since_last_subscription', 'article_pageviews_count',
+                              'clv', 'days_since_last_subscription', 'article_pageviews_count',
                               'sum_paid', 'avg_price'] +
                        [  # Iterate over all aggregation function types
                               f'pageviews_{aggregation_function_alias}'
@@ -177,18 +177,18 @@ class ConversionPredictionModel(object):
             for column in ['article_pageviews_count', 'sum_paid', 'pageviews_count', 'avg_price']:
                 self.user_profiles[column] = 0.0
 
-        try:
-            self.get_payment_window_features_from_csvs()
-            self.feature_columns.add_commerce_csv_features()
-            logger.info('Successfully added commerce flow features from csvs')
-        except Exception as e:
-            logger.info(
-                f'''Failed adding commerce flow features from csvs with exception: 
-                {e};
-                proceeding with remaining features''')
-            # To make sure these columns are filled in case of failure to retrieve
-            for column in ['checkout', 'payment', 'purchase']:
-                self.user_profiles[column] = 0.0
+        # try:
+        #     self.get_payment_window_features_from_csvs()
+        #     self.feature_columns.add_commerce_csv_features()
+        #     logger.info('Successfully added commerce flow features from csvs')
+        # except Exception as e:
+        #     logger.info(
+        #         f'''Failed adding commerce flow features from csvs with exception:
+        #         {e};
+        #         proceeding with remaining features''')
+        #     # To make sure these columns are filled in case of failure to retrieve
+        #     for column in ['checkout', 'payment', 'purchase']:
+        #         self.user_profiles[column] = 0.0
 
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
 
