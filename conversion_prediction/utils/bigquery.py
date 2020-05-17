@@ -382,8 +382,7 @@ def get_profile_columns(
         end_time
 ):
     table = bq_mappings[f'aggregated_browser_days_{profile_feature_set_name}']
-    # TODO: This is only here because of the mismatched naming of tables and columns, hopefully we can unify this ASAP
-
+    
     pivoted_profile_table = bq_session.query(
         table.c['browser_id'].label('browser_id'),
         table.c['date'].label('date'),
