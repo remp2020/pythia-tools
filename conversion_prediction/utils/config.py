@@ -17,7 +17,9 @@ def build_numeric_columns_base(aggregation_function_alias: str) -> List[str]:
         f'direct_visits_share_{aggregation_function_alias}',
         f'timespent_per_visit_{aggregation_function_alias}',
         f'timespent_per_pageview_{aggregation_function_alias}',
-        'days_since_last_active'
+        'days_since_last_active',
+        f'checkouts_{aggregation_function_alias}',
+        f'payments_{aggregation_function_alias}'
     ]
 
     return numeric_columns_base
@@ -238,7 +240,7 @@ class FeatureColumns(object):
         self.numeric_columns_with_window_variants = self.numeric_columns_with_window_variants + final_fields
 
     def add_commerce_csv_features(self):
-        self.numeric_columns = self.numeric_columns + ['checkout', 'payment']
+        self.numeric_columns = self.numeric_columns + ['checkouts', 'payments']
 
     def add_payment_history_features(self):
         self.numeric_columns = self.numeric_columns + ['clv', 'days_since_last_subscription']
