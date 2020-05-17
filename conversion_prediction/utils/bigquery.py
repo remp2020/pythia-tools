@@ -398,8 +398,8 @@ def get_profile_columns(
             for profile_column in SUPPORTED_JSON_FIELDS_KEYS[profile_feature_set_name]
         ]
     ).filter(
-        table.c['date'] >= start_time,
-        table.c['date'] <= end_time
+        table.c['date'] >= cast(start_time, DATE),
+        table.c['date'] <= cast(end_time, DATE)
     ).group_by(
         table.c['browser_id'],
         table.c['date']
