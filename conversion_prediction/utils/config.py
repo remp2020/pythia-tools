@@ -18,8 +18,8 @@ def build_numeric_columns_base(aggregation_function_alias: str) -> List[str]:
         f'timespent_per_visit_{aggregation_function_alias}',
         f'timespent_per_pageview_{aggregation_function_alias}',
         'days_since_last_active',
-        f'checkouts_{aggregation_function_alias}',
-        f'payments_{aggregation_function_alias}'
+        f'commerce_checkouts_{aggregation_function_alias}',
+        f'commerce_payments_{aggregation_function_alias}'
     ]
 
     return numeric_columns_base
