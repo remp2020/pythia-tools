@@ -498,6 +498,8 @@ def join_all_partial_queries(
         filtered_data_with_profile_fields.c['timespent'],
         filtered_data_with_profile_fields.c['sessions_without_ref'],
         filtered_data_with_profile_fields.c['sessions'],
+        filtered_data_with_profile_fields.c['commerce_checkouts'],
+        filtered_data_with_profile_fields.c['commerce_payments'],
         # Add all columns created from json_fields
         *[filtered_data_with_profile_fields.c[profile_column].label(profile_column) for profile_column in
           profile_column_names],
@@ -602,6 +604,8 @@ def create_rolling_window_columns_config(
         'timespent': joined_queries.c['timespent'],
         'direct_visit': joined_queries.c['sessions_without_ref'],
         'visit': joined_queries.c['sessions'],
+        'commerce_checkouts': joined_queries.c['commerce_checkouts'],
+        'commerce_payments': joined_queries.c['commerce_payments'],
         # All json key columns have their own rolling sums
         **{
             column: joined_queries.c[column] for column in profile_column_names
