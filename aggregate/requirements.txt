@@ -1,7 +1,8 @@
 psycopg2-binary==2.8.4
 arrow==0.12.1
 user-agents==2.0.0
-es2csv==5.5.2
+# Support for Elasticsearch7 in forked es2csv repo branch https://github.com/gboddin/es2csv/tree/es-7.0
+-e git+https://github.com/gboddin/es2csv.git@75ddba45c46d52dbfdfd91118f55f89eb23ef39b#egg=es2csv
 python-dotenv==0.9.1
 unidecode==1.0.23
 mysql-connector-python==8.0.19
