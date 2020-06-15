@@ -165,7 +165,17 @@ while [ "$di" != "$end_on" ]; do
 
             echo "File ${cur_file_gz} not found, downloading from Elastic ($ELASTIC_ADDR): ${idx} [ ${di} TO ${di} ]"
             # aggregate CSV file from elastic
-            es2csv -u $ELASTIC_ADDR -i "${idx}" -q "time: [ ${di} TO ${di} ]" -s 10000 -o $cur_file_csv
+            if [ -z "$ELASTIC_AUTH" ]
+                authstring=''
+            then
+                authstring="-a $ELASTIC_AUTH"
+            fi
+
+            indexname="${ELASTIC_PREFIX}${idx}"
+
+            echo "es2csv -u ${ELASTIC_ADDR} ${authstring} -i ${indexname} -q \"time: [ ${di} TO ${di} ]\" -s 10000 -o ${cur_file_csv}"
+
+            es2csv -u $ELASTIC_ADDR $authstring -i "${indexname}" -q "time: [ ${di} TO ${di} ]" -s 10000 -o $cur_file_csv
             # pack file to .gz if it was downloaded (at least one record was present for the day)
             if [ -f $cur_file_csv ]; then
                 gzip -k -f -c $cur_file_csv > $cur_file_gz
