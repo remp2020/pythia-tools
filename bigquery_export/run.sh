@@ -98,7 +98,8 @@ while [ "$di" != "$end_on" ]; do
     echo "Exporting CSV files for $di"
 
     # Connection settings are passed automatically from .env file variables
-    psql -c "\copy (SELECT * FROM user_devices WHERE date = '$di') TO './csv/user_devices_$file_date.csv' DELIMITER '|' csv HEADER"
+    psql -c "\copy (SELECT * FROM browsers WHERE date = '$di') TO './csv/browsers_$file_date.csv' DELIMITER '|' csv HEADER"
+    psql -c "\copy (SELECT * FROM browser_users WHERE date = '$di') TO './csv/browser_users_$file_date.csv' DELIMITER '|' csv HEADER"
 
     psql -c "\copy (SELECT * FROM aggregated_browser_days WHERE date = '$di') TO './csv/aggregated_browser_days_$file_date.csv' DELIMITER '|' csv HEADER"
     psql -c "\copy (SELECT * FROM aggregated_browser_days_tags WHERE date = '$di') TO './csv/aggregated_browser_days_tags_$file_date.csv' DELIMITER '|' csv HEADER"

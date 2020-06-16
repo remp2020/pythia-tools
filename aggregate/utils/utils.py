@@ -299,5 +299,39 @@ CREATE TABLE IF NOT EXISTS "public"."aggregated_user_days" (
     '''
     cur.execute(sql)
 
+    sql = 'DROP TABLE "public"."user_devices"'
+    cur.execute(sql)
+
+    sql = '''
+        CREATE TABLE IF NOT EXISTS "public"."browsers" (
+            "date" date NOT NULL,
+            "browser_id" character varying NOT NULL,
+            "browser_family" text, 
+            "browser_version" text, 
+            "os_family" text, 
+            "os_version" text,
+            "device_family" text, 
+            "device_brand" text, 
+            "device_model" text,
+            "is_desktop" boolean, 
+            "is_mobile" boolean, 
+            "is_tablet" boolean,
+            PRIMARY KEY(date, browser_id)
+        );
+        '''
+    cur.execute(sql)
+
+    sql = '''
+        CREATE TABLE IF NOT EXISTS "public"."browser_users" (
+            "date" date NOT NULL,
+            "browser_id" character varying NOT NULL,
+            "user_id" character varying NOT NULL,
+            PRIMARY KEY(date, browser_id, user_id)
+        );
+        '''
+    cur.execute(sql)
+
+
+
 
 

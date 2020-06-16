@@ -114,11 +114,16 @@ def make_insert_update_sql(table, primary_keys, keys):
     all_key_placeholders = string.join(['%s'] * (len(primary_keys) + len(keys)), ', ')
     update_keys = string.join(["{} = EXCLUDED.{}".format(key, key) for key in keys], ', ')
 
-    sql = '''INSERT INTO {} ({}) 
-                    VALUES ({}) 
-                    ON CONFLICT ({}) DO UPDATE SET {}
-                '''.format(table, all_keys, all_key_placeholders, concatenated_primary_keys, update_keys)
-    return sql
+    if len(keys) > 0:
+        return '''INSERT INTO {} ({}) 
+                        VALUES ({}) 
+                        ON CONFLICT ({}) DO UPDATE SET {}
+                    '''.format(table, all_keys, all_key_placeholders, concatenated_primary_keys, update_keys)
+    else:
+        return '''INSERT INTO {} ({}) 
+                        VALUES ({}) 
+                        ON CONFLICT ({}) DO NOTHING
+                    '''.format(table, all_keys, all_key_placeholders, concatenated_primary_keys)
 
 
 class UserParser:
@@ -242,6 +247,7 @@ class UserParser:
 
 class BrowserParser:
     def __init__(self):
+        self.browsers_with_users = {}
         self.data = {}
 
     def __process_pageviews(self, f):
@@ -250,31 +256,38 @@ class BrowserParser:
         with open(f) as csvfile:
             r = csv.DictReader(csvfile, delimiter=',')
             for row in r:
+                # save UA to cache
+                user_agent = unidecode(row['user_agent'].decode("utf8"))
+                if user_agent not in ua_cache:
+                    ua_cache[user_agent] = ua_parse(user_agent)
+
+                # save all user devices for (user<->device mapping)
+                browser_id = row['browser_id']
+                if browser_id not in self.browsers_with_users:
+                    self.browsers_with_users[browser_id] = {'user_ids': set()}
+                if row['user_id']:
+                    self.browsers_with_users[browser_id]['user_ids'].add(row['user_id'])
+                self.browsers_with_users[browser_id]['ua'] = ua_cache[user_agent]
+
+                # continue with pageviews only for subscribers
                 if row['subscriber'] == 'True':
                     continue
 
                 if row['derived_referer_medium'] == '':
                     continue
 
-                browser_id = row['browser_id']
                 if browser_id not in self.data:
                     self.data[browser_id] = empty_data_entry({
                         'user_ids': set()
                     })
 
-                # Retrieve record
                 record = self.data[browser_id]
                 update_record_from_pageviews_row(record, row)
 
                 if row['user_id']:
                     record['user_ids'].add(row['user_id'])
-
-                user_agent = unidecode(row['user_agent'].decode("utf8"))
-                if user_agent not in ua_cache:
-                    ua_cache[user_agent] = ua_parse(user_agent)
                 record['ua'] = ua_cache[user_agent]
 
-                # Save record
                 self.data[browser_id] = record
 
     def __process_timespent(self, f):
@@ -288,12 +301,12 @@ class BrowserParser:
 
     def process_files(self, pageviews_file, pageviews_timespent_file):
         self.__process_pageviews(pageviews_file)
-        if os.path.isfile(pageviews_timespent_file):
-            self.__process_timespent(pageviews_timespent_file)
-        else:
-            print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
+        # if os.path.isfile(pageviews_timespent_file):
+        #     self.__process_timespent(pageviews_timespent_file)
+        # else:
+        #     print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 
-    def __save_to_user_devices(self, conn, cur, processed_date):
+    def __save_to_browsers_and_browser_users(self, conn, cur, processed_date):
         accessors = {
             'browser_family': lambda d: d['ua'].browser.family,
             'browser_version': lambda d: d['ua'].browser.version_string,
@@ -308,15 +321,22 @@ class BrowserParser:
         }
 
         ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
-        sql = make_insert_update_sql('user_devices', ['date', 'browser_id', 'user_id'], list(ordered_accessors.keys()))
+        sql_browsers = make_insert_update_sql('browsers', ['date', 'browser_id'], list(ordered_accessors.keys()))
+        sql_browser_users = make_insert_update_sql('browser_users', ['date', 'browser_id', 'user_id'], [])
 
-        data_to_insert = []
-        for browser_id, browser_data in self.data.items():
+        browsers_to_insert = []
+        browser_users_to_insert = []
+        for browser_id, browser_data in self.browsers_with_users.items():
             computed_values = tuple([func(browser_data) for key, func in ordered_accessors.items()])
-            for user_id in list(browser_data['user_ids']):
-                data_to_insert.append((processed_date, browser_id, user_id) + computed_values)
+            browsers_to_insert.append((processed_date, browser_id) + computed_values)
 
-        psycopg2.extras.execute_batch(cur, sql, data_to_insert)
+            for user_id in list(browser_data['user_ids']):
+                browser_users_to_insert.append((processed_date, browser_id, user_id))
+
+        psycopg2.extras.execute_batch(cur, sql_browsers, browsers_to_insert)
+        conn.commit()
+
+        psycopg2.extras.execute_batch(cur, sql_browser_users, browser_users_to_insert)
         conn.commit()
 
     def __save_to_aggregated_browser_days(self, conn, cur, processed_date):
@@ -382,7 +402,8 @@ class BrowserParser:
         print("Deleting data for date " + str(processed_date))
 
         tables_to_del = [
-            'user_devices',
+            'browsers',
+            'browser_users',
             'aggregated_browser_days',
             'aggregated_browser_days_tags',
             'aggregated_browser_days_categories',
@@ -395,7 +416,7 @@ class BrowserParser:
 
         print("Storing data for date " + str(processed_date))
 
-        self.__save_to_user_devices(conn, cur, processed_date)
+        self.__save_to_browsers_and_browser_users(conn, cur, processed_date)
         self.__save_to_aggregated_browser_days(conn, cur, processed_date)
         self.__save_to_aggregated_browser_days_tags(conn, cur, processed_date)
         self.__save_to_aggregated_browser_days_categories(conn, cur, processed_date)
