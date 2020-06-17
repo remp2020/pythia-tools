@@ -22,14 +22,16 @@ def get_sqla_table(table_name, engine):
 
 
 def get_sqlalchemy_tables_w_session(
-        db_connection_string_name: str,
         schema: str,
         table_names: List[str],
         engine_kwargs: Dict[str, Any] = None,
 ) -> Dict:
     table_mapping = {}
-    _, db_connection = create_connection(os.getenv(db_connection_string_name), engine_kwargs)
     database = os.getenv('BQ_DATABASE')
+    _, db_connection = create_connection(
+        f'bigquery://{database}',
+        engine_kwargs
+    )
     for table in table_names:
         table_mapping[table] = get_sqla_table(
             table_name=f'{database}.{schema}.{table}', engine=db_connection,
@@ -48,7 +50,6 @@ tables_to_map = (
 
 
 bq_mappings = get_sqlalchemy_tables_w_session(
-    'BQ_CONNECTION_STRING',
     schema='pythia',
     table_names=tables_to_map,
     engine_kwargs={'credentials_path': '../../gcloud_client_secrets.json'}

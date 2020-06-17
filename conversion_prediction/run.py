@@ -1025,12 +1025,12 @@ class ConversionPredictionModel(object):
             self.predictions.drop('outcome', axis=1, inplace=True)
 
             logger.info(f'Storing predicted data')
-
+            database = os.getenv('BQ_DATABASE')
             _, db_connection = create_connection(
-                os.getenv('BQ_CONNECTION_STRING'),
+                f'bigquery://{database}',
                 engine_kwargs={'credentials_path': '../../gcloud_client_secrets.json'}
             )
-            database = os.getenv('BQ_DATABASE')
+
 
             credentials = service_account.Credentials.from_service_account_file(
                 '../../gcloud_client_secrets.json',

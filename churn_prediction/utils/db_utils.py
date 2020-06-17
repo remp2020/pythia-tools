@@ -56,40 +56,6 @@ def get_sqla_table(table_name, engine, kwargs: Dict[str, str] = None):
     return table
 
 
-def get_sqlalchemy_tables_w_session(
-        db_connection_string_name: str,
-        schema: str,
-        table_names: List[str],
-        engine_kwargs: Dict[str, Any] = None,
-) -> Dict:
-    if not engine_kwargs:
-        engine_kwargs = {}
-    table_mapping = {}
-    _, db_connection = create_connection(os.getenv(db_connection_string_name), engine_kwargs)
-    if db_connection_string_name == 'BQ_CONNECTION_STRING':
-        database = os.getenv('BQ_DATABASE')
-        for table in table_names:
-            table_mapping[table] = get_sqla_table(
-                table_name=f'{database}.{schema}.{table}', engine=db_connection,
-            )
-    elif db_connection_string_name == 'MYSQL_CONNECTION_SQL':
-        for table in table_names:
-            table_mapping[table] = get_sqla_table(
-                table_name=f'{schema}.{table}', engine=db_connection,
-                kwargs={'schema': 'public'}
-            )
-
-    table_mapping['session'] = sessionmaker(bind=db_connection)()
-
-    return table_mapping
-
-
-def sanitize_column_name(column_name: str) -> str:
-    new_column_name = column_name.replace('-', '_')
-    new_column_name = new_column_name.replace('-', '_')
-    return new_column_name
-
-
 class DailyProfilesHandler:
     def __init__(
             self,
@@ -109,23 +75,32 @@ class DailyProfilesHandler:
         )
         self.uploader = BigQueryUploader(
             project_id=self.project_id,
-            dataset_id='pythia',
+            dataset_id=os.getenv("SCHEMA"),
             tmp_folder=self.csv_path,
             credentials=self.credentials
         )
 
     def create_daily_profiles_table(self, logger):
         table = 'rolling_daily_user_profile'
+
         if not self.uploader.table_exists(table):
             schema = [
                 bigquery.SchemaField('date', 'DATE'),
                 bigquery.SchemaField('user_id', 'STRING'),
+                bigquery.SchemaField('outcome', 'STRING'),
                 bigquery.SchemaField('pipeline_version', 'STRING'),
                 bigquery.SchemaField('created_at', 'TIMESTAMP'),
                 bigquery.SchemaField('window_days', 'INTEGER'),
                 bigquery.SchemaField('event_lookahead', 'INTEGER'),
                 bigquery.SchemaField('feature_aggregation_functions', 'STRING'),
-                bigquery.SchemaField('features', 'STRING'),
+                bigquery.SchemaField('features__numeric_columns', 'STRING'),
+                bigquery.SchemaField('features__profile_numeric_columns_from_json_fields__referer_mediums', 'STRING'),
+                bigquery.SchemaField('features__profile_numeric_columns_from_json_fields__categories', 'STRING'),
+                bigquery.SchemaField('features__time_based_columns__hour_ranges', 'STRING'),
+                bigquery.SchemaField('features__time_based_columns__days_of_week', 'STRING'),
+                bigquery.SchemaField('features__categorical_columns', 'STRING'),
+                bigquery.SchemaField('features__bool_columns', 'STRING'),
+                bigquery.SchemaField('features__numeric_columns_with_window_variants', 'STRING'),
             ]
 
             self.uploader.create_table(table_id=table, schema=schema, time_partitioning=self.date_col_partitioning)
@@ -275,3 +250,32 @@ def literalquery(statement):
         dialect=LiteralDialect(),
         compile_kwargs={'literal_binds': True},
     ).string
+
+
+class UserIdHandler:
+    def __init__(
+            self,
+            date,
+            expiration_lookahead: int=30
+    ):
+        from .mysql import get_users_with_expirations
+        self.user_ids = get_users_with_expirations(
+            date,
+            expiration_lookahead
+        )
+        self.user_ids_frame = pd.DataFrame()
+
+    def upload_user_ids(self):
+        self.user_ids_frame['user_id'] = self.user_ids
+        from google.oauth2 import service_account
+        client_secrets_path = os.getenv('PATH_TO_GCLOUD_CREDENTIALS_JSON')
+        credentials = service_account.Credentials.from_service_account_file(
+            client_secrets_path,
+        )
+
+        self.user_ids_frame.to_gbq(
+            destination_table=f'{os.getenv("SCHEMA")}.user_ids_filter',
+            project_id=os.getenv('BQ_DATABASE'),
+            credentials=credentials,
+            if_exists='replace'
+        )

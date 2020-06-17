@@ -37,7 +37,6 @@ def get_payment_history_features(end_time: datetime):
 
     mysql_predplatne_session = predplatne_mysql_mappings['session']
     payments = predplatne_mysql_mappings['payments']
-    subscriptions = predplatne_mysql_mappings['subscriptions']
 
     clv = mysql_predplatne_session.query(
         func.sum(payments.c['amount']).label('clv'),
@@ -161,3 +160,37 @@ def get_global_context(start_time, end_time):
     return context
 
 
+def get_users_with_expirations(
+        aggregation_date: datetime.date = datetime.utcnow().date(),
+        expiration_lookahead: int = 30
+) -> List[str]:
+    predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
+        'MYSQL_CONNECTION_STRING',
+        'predplatne',
+        ['payments', 'subscriptions']
+    )
+
+    mysql_predplatne_session = predplatne_mysql_mappings['session']
+    payments = predplatne_mysql_mappings['payments']
+    subscriptions = predplatne_mysql_mappings['subscriptions']
+
+    relevant_users = mysql_predplatne_session.query(
+        subscriptions.c['user_id']
+    ).join(
+        payments,
+        payments.c['subscription_id'] == subscriptions.c['id']
+    ).filter(
+        and_(
+            payments.c['status'] == 'paid',
+            func.datediff(subscriptions.c['end_time'], aggregation_date) <= expiration_lookahead,
+            func.datediff(subscriptions.c['end_time'], aggregation_date) >= 0,
+        )
+    ).group_by(
+        subscriptions.c['user_id']
+    )
+
+    relevant_users = relevant_users.all()
+    relevant_users = [user_id[0] for user_id in relevant_users]
+    mysql_predplatne_session.close()
+
+    return relevant_users

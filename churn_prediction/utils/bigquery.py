@@ -1,18 +1,19 @@
 import re
 import pandas as pd
 from sqlalchemy import select, column
-from sqlalchemy.types import Float, DATE, String
+from sqlalchemy.types import Float, DATE, String, Integer, TIMESTAMP
 from sqlalchemy import and_, func, case, text
-from sqlalchemy.sql.expression import cast
+from sqlalchemy.sql.expression import cast, literal
 from datetime import timedelta, datetime
 from .config import build_derived_metrics_config, PROFILE_COLUMNS, LABELS, generate_4_hour_interval_column_names, \
-    SUPPORTED_JSON_FIELDS_KEYS
+    SUPPORTED_JSON_FIELDS_KEYS, FeatureColumns
 from typing import List, Dict, Any
 import os
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData, Table
-from .db_utils import create_connection, sanitize_column_name
-from .enums import DataRetrievalMode
+from .db_utils import create_connection, UserIdHandler
+from .config import sanitize_column_name
+from sqlalchemy.engine import Engine
 
 
 def get_sqla_table(table_name, engine):
@@ -22,15 +23,14 @@ def get_sqla_table(table_name, engine):
 
 
 def get_sqlalchemy_tables_w_session(
-        db_connection_string_name: str,
         table_names: List[str]
-) -> Dict:
+) -> (Dict, Engine):
     table_mapping = {}
+    database = os.getenv('BQ_DATABASE')
     _, db_connection = create_connection(
-        os.getenv(db_connection_string_name),
+        f'bigquery://{database}',
         {'credentials_path': os.getenv('PATH_TO_GCLOUD_CREDENTIALS_JSON')}
     )
-    database = os.getenv('BQ_DATABASE')
     schema = os.getenv('SCHEMA')
     for table in table_names:
         table_mapping[table] = get_sqla_table(
@@ -39,18 +39,16 @@ def get_sqlalchemy_tables_w_session(
 
     table_mapping['session'] = sessionmaker(bind=db_connection)()
 
-    return table_mapping
+    return table_mapping, db_connection
 
 
 tables_to_map = (
-    ['aggregated_user_days', 'events'] +
+    ['aggregated_user_days', 'events', 'user_devices'] +
     [f'aggregated_user_days_{profile_feature_set_name}' for profile_feature_set_name in PROFILE_COLUMNS
-     if profile_feature_set_name != 'hour_interval_pageviews'] +
-    ['user_devices']
+     if profile_feature_set_name != 'hour_interval_pageviews']
 )
 
-bq_mappings = get_sqlalchemy_tables_w_session(
-    'BQ_CONNECTION_STRING',
+bq_mappings, bq_engine = get_sqlalchemy_tables_w_session(
     table_names=tables_to_map
 )
 
@@ -63,30 +61,224 @@ device_information = bq_mappings['user_devices']
 def get_feature_frame_via_sqlalchemy(
         start_time: datetime,
         end_time: datetime,
-        moving_window_length: int = 7,
-        feature_aggregation_functions: Dict[str, func] = None,
-        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA,
-        positive_event_lookahead: int = 1
+        moving_window_length: int = 30,
+        positive_event_lookahead: int = 33
 ):
-    if feature_aggregation_functions is None:
-        feature_aggregation_functions = {'avg': func.avg}
+    rolling_daily_user_profile = get_user_profiles_table()
 
-    full_query = bq_session.query(get_full_features_query(
-        start_time,
-        end_time,
-        moving_window_length,
-        feature_aggregation_functions,
-        data_retrieval_mode,
-        positive_event_lookahead
-    ))
+    feature_frame_query = bq_session.query(
+        rolling_daily_user_profile.c['user_id'].label('user_id'),
+        rolling_daily_user_profile.c['date'].label('date'),
+        rolling_daily_user_profile.c['outcome'].label('outcome'),
+        rolling_daily_user_profile.c['feature_aggregation_functions'].label('feature_aggregation_functions'),
+        *[column.label(column.name) for column in rolling_daily_user_profile.columns if 'features' in column.name]
+    ).filter(
+        and_(
+            rolling_daily_user_profile.c['date'] >= cast(start_time, DATE),
+            rolling_daily_user_profile.c['date'] <= cast(end_time, DATE),
+            rolling_daily_user_profile.c['window_days'] == moving_window_length,
+            rolling_daily_user_profile.c['event_lookahead'] == positive_event_lookahead,
+        )
+    )
 
-    feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
-    feature_frame.columns = [re.sub('feature_query_w_outcome_', '', column) for column in feature_frame.columns]
-    feature_frame['is_active_on_date'] = feature_frame['is_active_on_date'].astype(bool)
-    feature_frame['date'] = pd.to_datetime(feature_frame['date']).dt.tz_localize(None).dt.date
-    feature_frame.drop('date_w_gaps', axis=1, inplace=True)
+    feature_frame = pd.read_sql(feature_frame_query.statement, feature_frame_query.session.bind)
 
     return feature_frame
+
+
+def get_user_profiles_table():
+    database = os.getenv('BQ_DATABASE')
+    schema = os.getenv('SCHEMA')
+    rolling_daily_user_profile = get_sqla_table(f'{database}.{schema}.rolling_daily_user_profile', bq_engine)
+
+    return rolling_daily_user_profile
+
+
+def insert_daily_feature_frame(
+        date: datetime = datetime.utcnow().date(),
+        moving_window_length: int = 7,
+        feature_aggregation_functions: Dict[str, func] = None,
+        positive_event_lookahead: int = 33,
+        meta_columns_w_values: Dict[str, Any] = {}
+):
+    full_query = get_full_features_query(
+        date,
+        date,
+        moving_window_length,
+        feature_aggregation_functions,
+        positive_event_lookahead
+    )
+
+    meta_columns = [
+        'date', 'user_id', 'outcome', 'pipeline_version',
+        'created_at', 'window_days', 'event_lookahead', 'feature_aggregation_functions'
+    ]
+
+    features_in_data = [column.name for column in full_query.columns if column.name not in meta_columns]
+    features_expected = FeatureColumns(
+        feature_aggregation_functions,
+        date,
+        date,
+    )
+
+    dumper = ColumnJsonDumper(
+        full_query,
+        features_in_data,
+        features_expected
+    )
+    dumper.dump_feature_sets()
+    feature_set_dumps = dumper.get_feature_set_dumps()
+
+    full_query = bq_session.query(
+        full_query.c['date'].cast(DATE),
+        full_query.c['user_id'],
+        full_query.c['outcome'],
+        literal(meta_columns_w_values['pipeline_version']).cast(String).label('pipeline_version'),
+        literal(meta_columns_w_values['created_at']).cast(TIMESTAMP).label('created_at'),
+        literal(meta_columns_w_values['window_days']).cast(Integer).label('window_days'),
+        literal(meta_columns_w_values['event_lookahead']).cast(Integer).label('event_lookahead'),
+        literal(meta_columns_w_values['feature_aggregation_functions']).cast(String).label(
+            'feature_aggregation_functions'
+        ),
+        *feature_set_dumps
+    )
+
+    rolling_daily_user_profile = get_user_profiles_table()
+    date_data_sample = bq_session.query(
+        *[rolling_daily_user_profile.c[column.name].label(column.name) for column in rolling_daily_user_profile.columns]
+    ).filter(
+        and_(
+            rolling_daily_user_profile.c['date'] == cast(date, DATE),
+            *[rolling_daily_user_profile.c[meta_column] == meta_columns_w_values[meta_column]
+              for meta_column in meta_columns_w_values.keys() if meta_column != 'created_at'],
+        )
+    ).limit(1)
+
+    if len(date_data_sample.all()) == 1:
+        delete = rolling_daily_user_profile.delete().where(
+            and_(
+                rolling_daily_user_profile.c['date'] == cast(date, DATE),
+                *[rolling_daily_user_profile.c[meta_column] == meta_columns_w_values[meta_column]
+                  for meta_column in meta_columns_w_values.keys() if meta_column != 'created_at']
+            )
+        )
+
+        delete.execute()
+
+    insert = rolling_daily_user_profile.insert().from_select(
+        meta_columns + [
+            'features__numeric_columns',
+            'features__profile_numeric_columns_from_json_fields__referer_mediums',
+            'features__profile_numeric_columns_from_json_fields__categories',
+            'features__time_based_columns__hour_ranges',
+            'features__time_based_columns__days_of_week',
+            'features__categorical_columns',
+            'features__bool_columns',
+            'features__numeric_columns_with_window_variants'
+        ],
+        full_query
+    )
+
+    insert.execute()
+
+
+class ColumnJsonDumper:
+    def __init__(
+            self,
+            full_query,
+            features_in_data,
+            features_expected
+    ):
+        self.full_query = full_query
+        self.features_in_data = features_in_data
+        self.features_expected = features_expected
+        self.feature_set_dumps = []
+        self.feature_set_name_being_processed = ''
+        self.column_defaults = {
+            'numeric': '0.0',
+            'bool': 'False',
+            'categorical': '',
+            'time': '0.0'
+        }
+
+    def get_feature_set_dumps(self):
+        return self.feature_set_dumps
+
+    def dump_feature_sets(self):
+        for feature_set_name, feature_set in {
+            'numeric_columns': self.features_expected.numeric_columns,
+            'profile_numeric_columns_from_json_fields':  self.features_expected.profile_numeric_columns_from_json_fields,
+            'time_based_columns': self.features_expected.time_based_columns,
+            'categorical_columns': self.features_expected.categorical_columns,
+            'bool_columns': self.features_expected.bool_columns,
+            'numeric_columns_with_window_variants': self.features_expected.numeric_columns_window_variants
+        }.items():
+            self.feature_set_name_being_processed = feature_set_name
+            if isinstance(feature_set, list):
+                feature_set.sort()
+                self.feature_set_dumps.append(
+                    self.create_json_string_from_feature_set(
+                        feature_set
+                    ).label(f'features_{feature_set_name}')
+                )
+
+            elif isinstance(feature_set, dict):
+                for key in feature_set.keys():
+                    feature_set[key].sort()
+                    self.feature_set_dumps.append(
+                        self.create_json_string_from_feature_set(
+                            feature_set[key]
+                        ).label(f'features_{feature_set_name}_{key}')
+                    )
+
+    def create_json_string_from_feature_set(
+            self,
+            feature_set: List[str]
+    ) -> func:
+        feature_columns_json_dump = func.concat(
+            '{',
+            *[
+                func.concat(
+                    # Prepare each element to be wrapped inside curly brackets
+                    ',' if i != 0 else '',
+                    # opening double quotes for the key
+                    '"',
+                    # name of the column as key
+                    re.sub('feature_query_w_outcome_', '', column),
+                    # closing double quotes for the key
+                    '"',
+                    # colon and opening double quotes for the value
+                    ': "',
+                    # actual value
+                    self.handle_single_column(column),
+                    # closing double quotes for the value
+                    '"'
+                )
+                for i, column in enumerate(feature_set)
+            ],
+            '}'
+        )
+
+        return feature_columns_json_dump
+
+    def handle_single_column(
+            self,
+            handled_column
+    ):
+        default_null_filler_value = [value for key, value in self.column_defaults.items()
+                                     if key in self.feature_set_name_being_processed][0]
+        if handled_column in self.features_in_data:
+            adjusted_null_values = case(
+                [
+                    (self.full_query.c[handled_column] == None, literal(default_null_filler_value))
+                ],
+                else_=self.full_query.c[handled_column].cast(String)
+            ).label(handled_column)
+            return adjusted_null_values
+
+        else:
+            missing_column_filler = literal(default_null_filler_value).label(handled_column)
+            return missing_column_filler
 
 
 def get_full_features_query(
@@ -94,19 +286,16 @@ def get_full_features_query(
         end_time: datetime,
         moving_window_length: int = 7,
         feature_aggregation_functions: Dict[str, func] = None,
-        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA,
         positive_event_lookahead: int = 1
 ):
     if feature_aggregation_functions is None:
-        feature_aggregation_functions = {'count': func.sum}
+        feature_aggregation_functions = {'avg': func.avg}
 
     filtered_data = filter_by_date(
         # We retrieve an additional window length lookback of records to correctly construct the rolling window
         # for the records on the 1st day of the time period we intend to use
         start_time - timedelta(days=moving_window_length),
-        end_time,
-        # These determine if we retrieve past positives or not
-        data_retrieval_mode
+        end_time
     )
 
     all_date_user_combinations = get_subqueries_for_non_gapped_time_series(
@@ -174,15 +363,7 @@ def add_outcomes(
 
     feature_query_w_outcome = bq_session.query(
         feature_query,
-        case(
-            [
-                (
-                    relevant_events.c['outcome'].in_(positive_labels()),
-                    relevant_events.c['outcome']
-                )
-            ],
-            else_=negative_label()
-        ).label('outcome')
+        relevant_events.c['outcome']
     ).outerjoin(
         relevant_events,
         and_(
@@ -191,7 +372,7 @@ def add_outcomes(
                 relevant_events.c['date'],
                 text(f'interval {positive_event_lookahead} day')
             ),
-            feature_query.c['date'] < relevant_events.c['date']
+            feature_query.c['date'] <= relevant_events.c['date']
         )
     ).subquery('feature_query_w_outcome')
 
@@ -200,8 +381,7 @@ def add_outcomes(
 
 def filter_by_date(
         start_time: datetime,
-        end_time: datetime,
-        data_retrieval_model: DataRetrievalMode,
+        end_time: datetime
 ):
     filtered_data = bq_session.query(
         aggregated_user_days.c['date'].label('date'),
@@ -224,14 +404,24 @@ def filter_by_date(
     ).filter(
         filtered_data.c['date'] >= cast(start_time, DATE),
         filtered_data.c['date'] <= cast(end_time, DATE)
+    ).subquery()
+
+    user_id_handler = UserIdHandler(
+        end_time
+    )
+    user_id_handler.upload_user_ids()
+
+    database = os.getenv('BQ_DATABASE')
+    schema = os.getenv('SCHEMA')
+
+    user_id_table = get_sqla_table(
+        table_name=f'{database}.{schema}.user_ids_filter', engine=bq_engine,
     )
 
-    if data_retrieval_model == DataRetrievalMode.MODEL_TRAIN_DATA:
-        filtered_data = current_data.union_all(
-            past_positive_user_ids(filtered_data, start_time)
-        ).subquery('filtered_data')
-    else:
-        filtered_data = current_data.subquery('filtered_data')
+    filtered_data = bq_session.query(current_data).join(
+        user_id_table,
+        current_data.c['user_id'] == user_id_table.c['user_id'].cast(String)
+    ).subquery('filtered_data')
 
     return filtered_data
 
@@ -276,14 +466,18 @@ def remove_helper_lookback_rows(
         filtered_w_derived_metrics_w_all_time_delta_columns,
         start_time
 ):
-    label_lookback_cause = filtered_w_derived_metrics_w_all_time_delta_columns.c['date'] >= (
-        (start_time - timedelta(days=90)).date()
-    )
+    label_lookback_cause = filtered_w_derived_metrics_w_all_time_delta_columns.c['date'] >= start_time.date()
 
     features_query = bq_session.query(
         # We re-alias since adding another layer causes sqlalchemy to abbreviate columns
         *[filtered_w_derived_metrics_w_all_time_delta_columns.c[column.name].label(column.name) for column in
-          filtered_w_derived_metrics_w_all_time_delta_columns.columns]
+          filtered_w_derived_metrics_w_all_time_delta_columns.columns if column.name != 'is_active_on_date'],
+        case(
+            [
+                (filtered_w_derived_metrics_w_all_time_delta_columns.c['is_active_on_date'] == None, False)
+            ],
+            else_=filtered_w_derived_metrics_w_all_time_delta_columns.c['is_active_on_date']
+        ).label('is_active_on_date')
     ).filter(
         label_lookback_cause
     ).subquery('query_without_lookback_rows')
@@ -456,6 +650,11 @@ def add_profile_based_features(filtered_data):
         func.min(filtered_data.c['date']),
         func.max(filtered_data.c['date']),
     ).all()[0]
+
+    if start_time is None and end_time is None:
+        raise ValueError(
+            'No valid dates found after filtering data, it is likely there is no data for the given time period'
+        )
 
     filtered_data_w_profile_columns = filtered_data
 
@@ -648,10 +847,11 @@ def create_rolling_window_columns_config(
             column_source,
             joined_queries.c['user_id'],
             joined_queries.c['date']
-        ).cast(Float).label(f'{column_name}_{suffix}' if column_name != 'days_active' else 'days_active_count')
+        ).cast(Float).label(f'{column_name}_{suffix}')
         for column_name, column_source in column_source_to_name_mapping.items()
         for aggregation_function_alias, aggregation_function in feature_aggregation_functions.items()
         for suffix, is_half_window in get_rolling_agg_window_variants(aggregation_function_alias).items()
+        if f'{column_name}_{suffix}' != 'days_active_count'
     ]
 
     # It only makes sense to aggregate active days by summing, all other aggregations would end up with a value

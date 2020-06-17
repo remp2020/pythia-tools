@@ -54,34 +54,6 @@ def get_sqla_table(table_name, engine, kwargs: Dict[str, str] = None):
     return table
 
 
-def get_sqlalchemy_tables_w_session(
-        db_connection_string_name: str,
-        schema: str,
-        table_names: List[str],
-        engine_kwargs: Dict[str, Any] = None,
-) -> Dict:
-    if not engine_kwargs:
-        engine_kwargs = {}
-    table_mapping = {}
-    _, db_connection = create_connection(os.getenv(db_connection_string_name), engine_kwargs)
-    if db_connection_string_name == 'BQ_CONNECTION_STRING':
-        database = os.getenv('BQ_DATABASE')
-        for table in table_names:
-            table_mapping[table] = get_sqla_table(
-                table_name=f'{database}.{schema}.{table}', engine=db_connection,
-            )
-    elif db_connection_string_name == 'MYSQL_CONNECTION_SQL':
-        for table in table_names:
-            table_mapping[table] = get_sqla_table(
-                table_name=f'{schema}.{table}', engine=db_connection,
-                kwargs={'schema': 'public'}
-            )
-
-    table_mapping['session'] = sessionmaker(bind=db_connection)()
-
-    return table_mapping
-
-
 def create_predictions_table(connection: sqlalchemy.engine):
     existing_user_defined_types = retrieve_user_defined_type_existence(connection)
 

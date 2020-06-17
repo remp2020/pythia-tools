@@ -1,10 +1,15 @@
 from typing import List, Dict
 from sqlalchemy import func
 from datetime import datetime
-from .db_utils import sanitize_column_name
 
 
 CATEGORICAL_COLUMNS = ['day_of_week']
+
+
+def sanitize_column_name(column_name: str) -> str:
+    new_column_name = column_name.replace('-', '_')
+    new_column_name = new_column_name.replace('-', '_')
+    return new_column_name
 
 
 def build_numeric_columns_base(
@@ -88,7 +93,7 @@ CONFIG_COLUMNS = [
     'user_ids'
 ]
 
-LABELS = {'churn': 'negative', 'renewal': 'positive', 'ongoing': 'neutral'}
+LABELS = {'churn': 'negative', 'renewal': 'positive'}
 
 
 CURRENT_MODEL_VERSION = '1.0'
@@ -241,16 +246,20 @@ class FeatureColumns(object):
         )
         self.time_based_columns = generate_all_time_based_column_names(aggregation_function_aliases, normalized)
 
-        self.numeric_columns = (
-                self.base_numeric_columns +
+        self.numeric_columns = self.base_numeric_columns
+
+        self.numeric_columns_window_variants = create_window_variant_permuations(
+            self.numeric_columns +
+            unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields) +
+            unpack_profile_based_fields(self.time_based_columns)
+        )
+
+        self.numeric_columns_all = (
+                self.numeric_columns_window_variants +
+                self.numeric_columns +
                 unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields) +
                 unpack_profile_based_fields(self.time_based_columns)
         )
-
-        self.numeric_columns_with_window_variants = create_window_variant_permuations(self.numeric_columns) + \
-            self.numeric_columns
-
-        self.numeric_columns = self.numeric_columns + self.numeric_columns_with_window_variants
 
         self.bool_columns = BOOL_COLUMNS
         self.config_columns = CONFIG_COLUMNS
@@ -265,21 +274,20 @@ class FeatureColumns(object):
             unpack_profile_based_fields(normalized_column_names)
         )
 
-        self.numeric_columns_with_window_variants = self.numeric_columns_with_window_variants + final_fields
+        self.numeric_columns_all = self.numeric_columns_all + final_fields
 
     def add_payment_history_features(self):
-        self.numeric_columns = self.numeric_columns + ['clv']
+        self.numeric_columns_all = self.numeric_columns_all + ['clv']
 
     def add_global_context_features(self):
-        self.numeric_columns = self.numeric_columns + [
-            'article_pageviews_count', 'sum_paid',
-            'pageviews_count', 'avg_price'
+        self.numeric_columns_all = self.numeric_columns_all + [
+            'article_pageviews_count', 'sum_paid', 'avg_price'
         ]
     
     def return_feature_list(self):
         return (
                 self.categorical_columns +
-                self.numeric_columns
+                self.numeric_columns_all
         )
 
     def remove_columns_missing_in_data(self, user_profile_columns: List[str]):
