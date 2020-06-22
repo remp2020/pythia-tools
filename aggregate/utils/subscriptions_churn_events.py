@@ -39,7 +39,8 @@ LEFT JOIN subscriptions s2 ON
     s1.end_time <= s2.start_time AND
     DATE_ADD(s1.end_time, INTERVAL {} DAY) >= s2.start_time AND
     DATE_ADD(s1.end_time, INTERVAL {} DAY) <= s2.end_time
-WHERE s1.end_time >= '{}' AND s1.end_time <= '{}'
+    AND s2.is_paid=true
+WHERE s1.end_time >= '{}' AND s1.end_time <= '{}' AND s1.is_paid=true
     '''
     sql = sql.format(churn_days_threshold, churn_days_threshold, day_start, day_end)
     cursor.execute(sql)
