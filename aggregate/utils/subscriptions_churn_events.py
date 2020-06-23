@@ -32,15 +32,17 @@ def churn_or_renewed_users(cursor, subscriptions_stop_date, churn_days_threshold
     day_end = day + ' 23:59:59'
 
     sql = '''
-SELECT s1.user_id AS user_id, s1.end_time AS sub_end, s2.start_time AS next_sub_start 
-FROM subscriptions s1
-LEFT JOIN subscriptions s2 ON 
-    s1.user_id = s2.user_id AND 
-    s1.end_time <= s2.start_time AND
-    DATE_ADD(s1.end_time, INTERVAL {} DAY) >= s2.start_time AND
-    DATE_ADD(s1.end_time, INTERVAL {} DAY) <= s2.end_time
-    AND s2.is_paid=true
-WHERE s1.end_time >= '{}' AND s1.end_time <= '{}' AND s1.is_paid=true
+    SELECT s1.user_id AS user_id, s1.end_time AS sub_end, s2.start_time AS next_sub_start 
+    FROM subscriptions s1
+        JOIN subscription_types st ON s1.subscription_type_id = st.id AND st.length > 5
+        LEFT JOIN
+        (SELECT subscriptions.* FROM subscriptions JOIN subscription_types ON subscriptions.subscription_type_id = subscription_types.id AND subscription_types.length > 5) s2 
+        ON
+            s1.user_id = s2.user_id AND 
+            s1.end_time <= s2.start_time AND
+            DATE_ADD(s1.end_time, INTERVAL {} DAY) >= s2.start_time AND
+            DATE_ADD(s1.end_time, INTERVAL {} DAY) <= s2.end_time
+    WHERE s1.end_time >= '{}' AND s1.end_time <= '{}'
     '''
     sql = sql.format(churn_days_threshold, churn_days_threshold, day_start, day_end)
     cursor.execute(sql)

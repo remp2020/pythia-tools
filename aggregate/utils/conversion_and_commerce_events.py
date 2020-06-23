@@ -252,7 +252,7 @@ def run(file_date, aggregate_folder):
     day = int(file_date[6:8])
     cur_date = date(year, month, day)
 
-    conn, cur = create_con(os.getenv("POSTGRES_USER"), os.getenv("POSTGRES_PASS"), os.getenv("POSTGRES_DB"),os.getenv("POSTGRES_HOST"))
+    conn, cur = create_con(os.getenv("POSTGRES_USER"), os.getenv("POSTGRES_PASS"), os.getenv("POSTGRES_DB"), os.getenv("POSTGRES_HOST"))
     migrate(cur)
     conn.commit()
 
