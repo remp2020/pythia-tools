@@ -27,7 +27,7 @@ def get_sqlalchemy_tables_w_session(
         engine_kwargs: Dict[str, Any] = None,
 ) -> Dict:
     table_mapping = {}
-    database = os.getenv('BQ_DATABASE')
+    database = os.getenv('BIGQUERY_PROJECT_ID')
     _, db_connection = create_connection(
         f'bigquery://{database}',
         engine_kwargs

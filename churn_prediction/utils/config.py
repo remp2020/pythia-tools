@@ -13,9 +13,7 @@ def sanitize_column_name(column_name: str) -> str:
 
 
 def build_numeric_columns_base(
-        aggregation_function_alias: str,
-        start_time: datetime,
-        end_time: datetime
+        aggregation_function_alias: str
 ) -> List[str]:
     numeric_columns_base = [
         f'pageview_{aggregation_function_alias}',
@@ -34,6 +32,14 @@ def build_numeric_columns_base(
         for device in ['desktop', 'mobile', 'tablet']
     ]
 
+    return numeric_columns_base
+
+
+def get_device_information_features(
+        aggregation_function_alias,
+        start_time,
+        end_time
+):
     from .bigquery import get_prominent_device_list
 
     device_brands = get_prominent_device_list(
@@ -41,12 +47,22 @@ def build_numeric_columns_base(
         end_time
     )
 
-    numeric_columns_base = numeric_columns_base + [
-        f'{sanitize_column_name(device_brand[0])}_device_brand_{aggregation_function_alias}'
+    # We will need to get the device names for differing handling in regards to rolling window calculations,
+    # the base name won't have any aggregation
+    optional_underscore = '_' if aggregation_function_alias != '' else ''
+
+    device_brands = [
+        f'{sanitize_column_name(device_brand)}_device_brand{optional_underscore}{aggregation_function_alias}'
         for device_brand in device_brands
     ]
 
-    return numeric_columns_base
+    if not device_brands:
+        raise ValueError('Device Brands Feature List Empty')
+
+    device_types = [f'{device_type}_device{optional_underscore}{aggregation_function_alias}'
+                    for device_type in EXPECTED_DEVICE_TYPES]
+
+    return device_brands + device_types
 
 
 SUPPORTED_JSON_FIELDS_KEYS = {
@@ -227,15 +243,23 @@ class FeatureColumns(object):
     ):
         # Add one version for each aggregation whenever available
         base_numeric_columns = set()
+        device_based_features = set()
         for aggregation_function_alias in aggregation_function_aliases:
             base_numeric_columns.update(
                 build_numeric_columns_base(
-                    aggregation_function_alias,
-                    start_time,
-                    end_time
+                    aggregation_function_alias
                 )
             )
 
+        device_based_features.update(
+            get_device_information_features(
+                aggregation_function_aliases[0] if aggregation_function_aliases == [''] else 'sum',
+                start_time,
+                end_time
+            )
+        )
+
+        self.device_based_features = list(device_based_features)
         self.categorical_columns = CATEGORICAL_COLUMNS
         self.base_numeric_columns = list(base_numeric_columns)
         normalized = False
@@ -254,11 +278,13 @@ class FeatureColumns(object):
             unpack_profile_based_fields(self.time_based_columns)
         )
 
+
         self.numeric_columns_all = (
                 self.numeric_columns_window_variants +
                 self.numeric_columns +
                 unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields) +
-                unpack_profile_based_fields(self.time_based_columns)
+                unpack_profile_based_fields(self.time_based_columns) +
+                self.device_based_features
         )
 
         self.bool_columns = BOOL_COLUMNS
@@ -338,4 +364,6 @@ AGGREGATION_FUNCTIONS_w_ALIASES = {
 
 MIN_TRAINING_DAYS = 7
 
-CURRENT_PIPELINE_VERSION = '1.0'
+CURRENT_PIPELINE_VERSION = '1.01'
+
+EXPECTED_DEVICE_TYPES = ['desktop', 'mobile', 'tablet']

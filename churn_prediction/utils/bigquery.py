@@ -12,8 +12,9 @@ import os
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData, Table
 from .db_utils import create_connection, UserIdHandler
-from .config import sanitize_column_name
+from .config import sanitize_column_name, EXPECTED_DEVICE_TYPES
 from sqlalchemy.engine import Engine
+from google.oauth2 import service_account
 
 
 def get_sqla_table(table_name, engine):
@@ -26,12 +27,12 @@ def get_sqlalchemy_tables_w_session(
         table_names: List[str]
 ) -> (Dict, Engine):
     table_mapping = {}
-    database = os.getenv('BQ_DATABASE')
+    database = os.getenv('BIGQUERY_PROJECT_ID')
     _, db_connection = create_connection(
         f'bigquery://{database}',
-        {'credentials_path': os.getenv('PATH_TO_GCLOUD_CREDENTIALS_JSON')}
+        {'credentials_path': os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')}
     )
-    schema = os.getenv('SCHEMA')
+    schema = os.getenv('BIGQUERY_DATASET')
     for table in table_names:
         table_mapping[table] = get_sqla_table(
             table_name=f'{database}.{schema}.{table}', engine=db_connection,
@@ -43,7 +44,7 @@ def get_sqlalchemy_tables_w_session(
 
 
 tables_to_map = (
-    ['aggregated_user_days', 'events', 'user_devices'] +
+    ['aggregated_user_days', 'events', 'browser_users', 'browsers'] +
     [f'aggregated_user_days_{profile_feature_set_name}' for profile_feature_set_name in PROFILE_COLUMNS
      if profile_feature_set_name != 'hour_interval_pageviews']
 )
@@ -55,7 +56,8 @@ bq_mappings, bq_engine = get_sqlalchemy_tables_w_session(
 bq_session = bq_mappings['session']
 aggregated_user_days = bq_mappings['aggregated_user_days']
 events = bq_mappings['events']
-device_information = bq_mappings['user_devices']
+browser_users = bq_mappings['browser_users']
+browsers = bq_mappings['browsers']
 
 
 def get_feature_frame_via_sqlalchemy(
@@ -66,29 +68,74 @@ def get_feature_frame_via_sqlalchemy(
 ):
     rolling_daily_user_profile = get_user_profiles_table()
 
-    feature_frame_query = bq_session.query(
-        rolling_daily_user_profile.c['user_id'].label('user_id'),
-        rolling_daily_user_profile.c['date'].label('date'),
-        rolling_daily_user_profile.c['outcome'].label('outcome'),
-        rolling_daily_user_profile.c['feature_aggregation_functions'].label('feature_aggregation_functions'),
-        *[column.label(column.name) for column in rolling_daily_user_profile.columns if 'features' in column.name]
-    ).filter(
-        and_(
-            rolling_daily_user_profile.c['date'] >= cast(start_time, DATE),
-            rolling_daily_user_profile.c['date'] <= cast(end_time, DATE),
-            rolling_daily_user_profile.c['window_days'] == moving_window_length,
-            rolling_daily_user_profile.c['event_lookahead'] == positive_event_lookahead,
-        )
+    query = f'''
+        SELECT
+            user_id,
+            date,
+            outcome,
+            feature_aggregation_functions,
+            {','.join([column.name for column in rolling_daily_user_profile.columns if 'features' in column.name])}
+        FROM
+            {os.getenv('BIGQUERY_DATASET')}.rolling_daily_user_profile
+        WHERE
+            date >= @start_time
+            AND date <= @end_time
+            AND window_days = @window_days
+            AND event_lookahead = @event_lookahead
+    '''
+
+    client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
+    database = os.getenv('BIGQUERY_PROJECT_ID')
+    _, db_connection = create_connection(
+        f'bigquery://{database}',
+        engine_kwargs={'credentials_path': client_secrets_path}
     )
 
-    feature_frame = pd.read_sql(feature_frame_query.statement, feature_frame_query.session.bind)
+    credentials = service_account.Credentials.from_service_account_file(
+        client_secrets_path,
+    )
+
+    import pandas_gbq
+    feature_frame = pandas_gbq.read_gbq(
+        query,
+        project_id=database,
+        credentials=credentials,
+        use_bqstorage_api=True,
+        configuration={
+            'query': {
+                'parameterMode': 'NAMED',
+                'queryParameters': [
+                    {
+                        'name': 'start_time',
+                        'parameterType': {'type': 'DATE'},
+                        'parameterValue': {'value': str(start_time.date())}
+                    },
+                    {
+                        'name': 'end_time',
+                        'parameterType': {'type': 'DATE'},
+                        'parameterValue': {'value': str(end_time.date())}
+                    },
+                    {
+                        'name': 'window_days',
+                        'parameterType': {'type': 'INT64'},
+                        'parameterValue': {'value': moving_window_length}
+                    },
+                    {
+                        'name': 'event_lookahead',
+                        'parameterType': {'type': 'INT64'},
+                        'parameterValue': {'value': positive_event_lookahead}
+                    },
+                ]
+            }
+        }
+    )
 
     return feature_frame
 
 
 def get_user_profiles_table():
-    database = os.getenv('BQ_DATABASE')
-    schema = os.getenv('SCHEMA')
+    database = os.getenv('BIGQUERY_PROJECT_ID')
+    schema = os.getenv('BIGQUERY_DATASET')
     rolling_daily_user_profile = get_sqla_table(f'{database}.{schema}.rolling_daily_user_profile', bq_engine)
 
     return rolling_daily_user_profile
@@ -174,7 +221,8 @@ def insert_daily_feature_frame(
             'features__time_based_columns__days_of_week',
             'features__categorical_columns',
             'features__bool_columns',
-            'features__numeric_columns_with_window_variants'
+            'features__numeric_columns_with_window_variants',
+            'features__device_based_columns'
         ],
         full_query
     )
@@ -198,7 +246,8 @@ class ColumnJsonDumper:
             'numeric': '0.0',
             'bool': 'False',
             'categorical': '',
-            'time': '0.0'
+            'time': '0.0',
+            'device': '0.0'
         }
 
     def get_feature_set_dumps(self):
@@ -211,7 +260,8 @@ class ColumnJsonDumper:
             'time_based_columns': self.features_expected.time_based_columns,
             'categorical_columns': self.features_expected.categorical_columns,
             'bool_columns': self.features_expected.bool_columns,
-            'numeric_columns_with_window_variants': self.features_expected.numeric_columns_window_variants
+            'numeric_columns_with_window_variants': self.features_expected.numeric_columns_window_variants,
+            'device_based_columns': self.features_expected.device_based_features
         }.items():
             self.feature_set_name_being_processed = feature_set_name
             if isinstance(feature_set, list):
@@ -219,7 +269,7 @@ class ColumnJsonDumper:
                 self.feature_set_dumps.append(
                     self.create_json_string_from_feature_set(
                         feature_set
-                    ).label(f'features_{feature_set_name}')
+                    ).label(f'features__{feature_set_name}')
                 )
 
             elif isinstance(feature_set, dict):
@@ -228,7 +278,7 @@ class ColumnJsonDumper:
                     self.feature_set_dumps.append(
                         self.create_json_string_from_feature_set(
                             feature_set[key]
-                        ).label(f'features_{feature_set_name}_{key}')
+                        ).label(f'features__{feature_set_name}_{key}')
                     )
 
     def create_json_string_from_feature_set(
@@ -267,6 +317,7 @@ class ColumnJsonDumper:
     ):
         default_null_filler_value = [value for key, value in self.column_defaults.items()
                                      if key in self.feature_set_name_being_processed][0]
+
         if handled_column in self.features_in_data:
             adjusted_null_values = case(
                 [
@@ -320,6 +371,7 @@ def get_full_features_query(
         joined_partial_queries,
         moving_window_length,
         start_time,
+        end_time,
         profile_column_names,
         feature_aggregation_functions
     )
@@ -340,6 +392,7 @@ def get_full_features_query(
 
     full_query = add_outcomes(
         feature_query,
+        start_time,
         positive_event_lookahead
     )
 
@@ -348,7 +401,8 @@ def get_full_features_query(
 
 def add_outcomes(
         feature_query,
-        positive_event_lookahead: int = 1
+        start_time: datetime,
+        positive_event_lookahead: int = 1,
 ):
     # The events table holds all the events, not just conversion ones
     relevant_events = bq_session.query(
@@ -358,21 +412,49 @@ def add_outcomes(
     ).filter(
         events.c['type'].in_(
             list(LABELS.keys())
-        )
+        ),
+        cast(events.c['time'], DATE) > cast(start_time, DATE),
+        cast(events.c['time'], DATE) <= cast(start_time + timedelta(days=positive_event_lookahead), DATE)
+    ).subquery()
+
+    # TODO: Remove deduplication, once the event table doesn't contain any
+    relevant_events_deduplicated = bq_session.query(
+        relevant_events.c['date'],
+        relevant_events.c['user_id'],
+        # This case when provides logic for dealing with multiple outcomes during the same time period
+        # an example is user_id 195379 during the 4/2020 where the user renews, but then cancels and gets
+        # a refund (the current pipeline provides both labels)
+        case(
+            [
+                # If there is at leadt one churn event, we identify the user as churned
+                (
+                    literal(negative_label()).in_(
+                        func.unnest(
+                            func.array_agg(relevant_events.c['outcome']
+                                           )
+                        )
+                    ), negative_label())
+            ],
+            # In case of any number of any positive only events we consider the event as a renewal
+            else_=positive_labels()
+        ).label('outcome')
+    ).group_by(
+        relevant_events.c['date'].label('date'),
+        relevant_events.c['user_id'].label('user_id')
     ).subquery()
 
     feature_query_w_outcome = bq_session.query(
         feature_query,
-        relevant_events.c['outcome']
+        relevant_events_deduplicated.c['outcome']
     ).outerjoin(
-        relevant_events,
+        relevant_events_deduplicated,
         and_(
-            feature_query.c['user_id'] == relevant_events.c['user_id'],
+            feature_query.c['user_id'] == relevant_events_deduplicated.c['user_id'],
             feature_query.c['date'] >= func.date_sub(
-                relevant_events.c['date'],
+                relevant_events_deduplicated.c['date'],
                 text(f'interval {positive_event_lookahead} day')
             ),
-            feature_query.c['date'] <= relevant_events.c['date']
+            feature_query.c['date'] <= relevant_events_deduplicated.c['date']
         )
     ).subquery('feature_query_w_outcome')
 
@@ -411,8 +493,8 @@ def filter_by_date(
     )
     user_id_handler.upload_user_ids()
 
-    database = os.getenv('BQ_DATABASE')
-    schema = os.getenv('SCHEMA')
+    database = os.getenv('BIGQUERY_PROJECT_ID')
+    schema = os.getenv('BIGQUERY_DATASET')
 
     user_id_table = get_sqla_table(
         table_name=f'{database}.{schema}.user_ids_filter', engine=bq_engine,
@@ -436,30 +518,6 @@ def negative_label():
 
 def neutral_label():
     return [label for label, label_type in LABELS.items() if label_type == 'neutral'][0]
-
-
-def past_positive_user_ids(
-        filtered_data,
-        start_time: datetime,
-):
-    user_ids_with_positive_outcomes = bq_session.query(
-        events.c['user_id']
-    ).filter(
-        events.c['time'].cast(DATE) >= cast(start_time - timedelta(days=90), DATE),
-        events.c['time'].cast(DATE) <= cast(start_time, DATE),
-        events.c['type'].in_(positive_labels())
-    )
-
-    past_positives = bq_session.query(
-        *[filtered_data.c[column.name].label(column.name) for column in
-          filtered_data.columns]
-    ).filter(
-        filtered_data.c['date'] >= cast(start_time - timedelta(days=90), DATE),
-        filtered_data.c['date'] <= cast(start_time, DATE),
-        filtered_data.c['user_id'].in_(user_ids_with_positive_outcomes)
-    )
-
-    return past_positives
 
 
 def remove_helper_lookback_rows(
@@ -514,53 +572,72 @@ def get_prominent_device_list(
     start_time: datetime,
     end_time: datetime
 ):
-    prominent_device_brand_past_90_days = bq_session.query(
-        device_information.c['device_brand']
+    prominent_device_brands_past_90_days = bq_session.query(
+        func.lower(browsers.c['device_brand'])
     ).filter(
-        device_information.c['date'] >= cast(start_time - timedelta(days=90), DATE),
-        device_information.c['date'] <= cast(end_time, DATE)
-    ).group_by(device_information.c['device_brand']).all()
+        browsers.c['date'] >= cast(start_time - timedelta(days=90), DATE),
+        browsers.c['date'] <= cast(end_time, DATE)
+    ).group_by(browsers.c['device_brand']).all()
 
-    return prominent_device_brand_past_90_days
+    # This hnadles cases such as Toshiba and TOSHIBA (occurs on 2020-02-17) since resulting
+    # column names are not case sensitive
+    prominent_device_brands_past_90_days = set(
+        [device_brand[0] for device_brand in prominent_device_brands_past_90_days]
+    )
+
+    return prominent_device_brands_past_90_days
 
 
 def get_device_information_subquery(
         start_time: datetime,
         end_time: datetime
 ):
-    prominent_device_brand_past_90_days = get_prominent_device_list(
+    prominent_device_brands_past_90_days = get_prominent_device_list(
         start_time,
         end_time
+    )
+
+    database = os.getenv('BIGQUERY_PROJECT_ID')
+    schema = os.getenv('BIGQUERY_DATASET')
+
+    user_id_table = get_sqla_table(
+        table_name=f'{database}.{schema}.user_ids_filter', engine=bq_engine,
     )
 
     device_features = bq_session.query(
         *[
             func.sum(
-                    case(
-                        [(device_information.c[f'is_{device}'] == 't', 1)],
-                        else_=0
+                case(
+                    [(browsers.c[f'is_{device}'] == 't', 1.0)],
+                    else_=0.0
                 )
             ).label(f'{device}_device')
-            for device in ['desktop', 'mobile', 'tablet']
+            for device in EXPECTED_DEVICE_TYPES
         ],
         *[
             func.sum(
                 case(
-                    [(device_information.c['device_brand'] == device_brand[0], 1)],
-                    else_=0
+                    [(func.lower(browsers.c['device_brand']) == device_brand, 1.0)],
+                    else_=0.0
                 )
-            ).label(f'{sanitize_column_name(device_brand[0])}device_brand')
-            for device_brand in prominent_device_brand_past_90_days
+            ).label(f'{sanitize_column_name(device_brand)}_device_brand')
+            for device_brand in prominent_device_brands_past_90_days
         ],
-        device_information.c['user_id'],
-        device_information.c['date']
+        browser_users.c['user_id'].label('user_id'),
+        browser_users.c['date'].label('date')
+    ).join(
+        browser_users,
+        browsers.c['browser_id'] == browser_users.c['browser_id'],
+    ).join(
+        user_id_table,
+        browser_users.c['user_id'] == user_id_table.c['user_id'].cast(String),
     ).filter(
-        device_information.c['date'] >= cast(start_time - timedelta(days=90), DATE),
-        device_information.c['date'] <= cast(end_time, DATE)
+        browsers.c['date'] >= cast(start_time, DATE),
+        browsers.c['date'] <= cast(end_time, DATE),
     ).group_by(
-        device_information.c['user_id'],
-        device_information.c['date']
-        ).subquery('device_information')
+        browser_users.c['user_id'].label('user_id'),
+        browser_users.c['date'].label('date')
+    ).subquery('device_information')
 
     return device_features
 
@@ -737,6 +814,7 @@ def calculate_rolling_windows_features(
         joined_queries,
         moving_window_length: int,
         start_time: datetime,
+        end_time: datetime,
         profile_column_names: List[str],
         feature_aggregation_functions
 ):
@@ -747,9 +825,17 @@ def calculate_rolling_windows_features(
         feature_aggregation_functions
     )
 
+    rolling_agg_columns_devices = create_device_rolling_window_columns_config(
+        start_time,
+        end_time,
+        joined_queries,
+        moving_window_length
+    )
+
     queries_with_basic_window_columns = bq_session.query(
         joined_queries,
         *rolling_agg_columns_base,
+        *rolling_agg_columns_devices,
         func.date_diff(
             # last day in the current window
             joined_queries.c['date'],
@@ -765,15 +851,6 @@ def calculate_rolling_windows_features(
                 (start_time - timedelta(days=2)).date()
             ),
             text('day')).label('days_since_last_active'),
-        # row number in case deduplication is needed
-        func.row_number().over(
-            partition_by=[
-                joined_queries.c['user_id'],
-                joined_queries.c['date']],
-            order_by=[
-                joined_queries.c['user_id'],
-                joined_queries.c['date']]
-        ).label('row_number')
     ).subquery('queries_with_basic_window_columns')
 
     return queries_with_basic_window_columns
@@ -783,7 +860,6 @@ def create_time_window_vs_day_of_week_combinations(
         joined_queries
 ):
     interval_names = generate_4_hour_interval_column_names()
-
     combinations = {
         f'dow_{i}': case(
             [
@@ -804,6 +880,36 @@ def create_time_window_vs_day_of_week_combinations(
     )
 
     return combinations
+
+
+def create_device_rolling_window_columns_config(
+    start_time,
+    end_time,
+    joined_queries,
+    moving_window_length
+):
+    features = FeatureColumns(
+        [''],
+        start_time,
+        end_time
+    )
+
+    device_rolling_agg_columns = [
+        create_rolling_agg_function(
+            moving_window_length,
+            False,
+            func.sum,
+            joined_queries.c[device_column],
+            joined_queries.c['date'],
+            joined_queries.c['user_id']
+        ).label(f'{device_column}_sum')
+        for device_column in features.device_based_features
+        if device_column in [
+            column.name for column in joined_queries.columns
+        ]
+    ]
+
+    return device_rolling_agg_columns
 
 
 def create_rolling_window_columns_config(
@@ -888,8 +994,7 @@ def filter_joined_queries_adding_derived_metrics(
     first_aggregation_function_alias = next(iter(feature_aggregation_functions.keys()))
 
     finalizing_filter = [
-        joined_partial_queries.c[f'pageview_{first_aggregation_function_alias}'] > 0,
-        joined_partial_queries.c['row_number'] == 1
+    joined_partial_queries.c[f'pageview_{first_aggregation_function_alias}'] > 0
     ]
 
     derived_metrics_config = {}

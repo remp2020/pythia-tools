@@ -83,7 +83,9 @@ class ArtifactRetentionCollection(Enum):
         ModelArtifacts.VARIABLE_IMPORTANCES
     ]
     PREDICTION =[
-        ModelArtifacts.PREDICTIONS
+        ModelArtifacts.PREDICTIONS,
+        ModelArtifacts.OUTCOME_FRAME,
+        ModelArtifacts.USER_PROFILES
     ]
 
 

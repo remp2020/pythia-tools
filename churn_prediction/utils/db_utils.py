@@ -2,10 +2,9 @@ import pandas as pd
 import sqlalchemy
 import os
 from typing import List, Dict, Any
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData, Table
 from google.cloud import bigquery
-from cmd.bigquery_export.upload import BigQueryUploader
+from bigquery_export.upload import BigQueryUploader
 
 
 CUSTOM_USER_DEFINED_TYPES = ['conversion_prediction_outcomes', 'conversion_prediction_model_versions']
@@ -75,7 +74,7 @@ class DailyProfilesHandler:
         )
         self.uploader = BigQueryUploader(
             project_id=self.project_id,
-            dataset_id=os.getenv("SCHEMA"),
+            dataset_id=os.getenv("BIGQUERY_DATASET"),
             tmp_folder=self.csv_path,
             credentials=self.credentials
         )
@@ -101,6 +100,7 @@ class DailyProfilesHandler:
                 bigquery.SchemaField('features__categorical_columns', 'STRING'),
                 bigquery.SchemaField('features__bool_columns', 'STRING'),
                 bigquery.SchemaField('features__numeric_columns_with_window_variants', 'STRING'),
+                bigquery.SchemaField('features__device_based_columns', 'STRING')
             ]
 
             self.uploader.create_table(table_id=table, schema=schema, time_partitioning=self.date_col_partitioning)
@@ -268,14 +268,14 @@ class UserIdHandler:
     def upload_user_ids(self):
         self.user_ids_frame['user_id'] = self.user_ids
         from google.oauth2 import service_account
-        client_secrets_path = os.getenv('PATH_TO_GCLOUD_CREDENTIALS_JSON')
+        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
         credentials = service_account.Credentials.from_service_account_file(
             client_secrets_path,
         )
 
         self.user_ids_frame.to_gbq(
-            destination_table=f'{os.getenv("SCHEMA")}.user_ids_filter',
-            project_id=os.getenv('BQ_DATABASE'),
+            destination_table=f'{os.getenv("BIGQUERY_DATASET")}.user_ids_filter',
+            project_id=os.getenv('BIGQUERY_PROJECT_ID'),
             credentials=credentials,
             if_exists='replace'
         )

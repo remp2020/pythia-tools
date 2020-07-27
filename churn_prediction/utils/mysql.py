@@ -183,7 +183,7 @@ def get_users_with_expirations(
         and_(
             payments.c['status'] == 'paid',
             func.datediff(subscriptions.c['end_time'], aggregation_date) <= expiration_lookahead,
-            func.datediff(subscriptions.c['end_time'], aggregation_date) >= 0,
+            func.datediff(subscriptions.c['end_time'], aggregation_date) > 0,
         )
     ).group_by(
         subscriptions.c['user_id']

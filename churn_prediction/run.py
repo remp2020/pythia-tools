@@ -1,10 +1,17 @@
+import sys
+from math import floor
+
+sys.path.append("../")
+
 # environment variables
 from dotenv import load_dotenv
 load_dotenv('.env')
 
+from utils.config import PROFILE_COLUMNS
+
 # logging
 import logging.config
-from cmd.churn_prediction.utils.config import LOGGING
+from utils.config import LOGGING
 logger = logging.getLogger(__name__)
 logging.config.dictConfig(LOGGING)
 logger.setLevel(logging.INFO)
@@ -28,14 +35,14 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
 from google.oauth2 import service_account
 
-from cmd.churn_prediction.utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
-    MIN_TRAINING_DAYS, CURRENT_PIPELINE_VERSION
-from cmd.churn_prediction.utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
-from cmd.churn_prediction.utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
-from cmd.churn_prediction.utils.db_utils import create_connection, DailyProfilesHandler
-from cmd.churn_prediction.utils.bigquery import get_feature_frame_via_sqlalchemy, insert_daily_feature_frame
-from cmd.churn_prediction.utils.mysql import get_payment_history_features, get_global_context
-from cmd.churn_prediction.utils.data_transformations import row_wise_normalization
+from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
+    MIN_TRAINING_DAYS, CURRENT_PIPELINE_VERSION, PROFILE_COLUMNS
+from utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
+from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
+from utils.db_utils import create_connection, DailyProfilesHandler
+from utils.bigquery import get_feature_frame_via_sqlalchemy, insert_daily_feature_frame
+from utils.mysql import get_payment_history_features, get_global_context
+from utils.data_transformations import row_wise_normalization
 
 
 class ChurnPredictionModel(object):
@@ -135,7 +142,7 @@ class ChurnPredictionModel(object):
             self.max_date
         )
 
-    def precalculate_user_profiles_by_date(
+    def get_full_user_profiles_by_date(
             self
     ):
         '''
@@ -225,7 +232,7 @@ class ChurnPredictionModel(object):
         Retrieves & joins daily rolling article pageviews, sum paid, payment count and average price
         '''
         context = get_global_context(
-            self.user_profiles['date'].min() - timedelta(days=7),
+            self.user_profiles['date'].min() - timedelta(days=self.moving_window),
             self.user_profiles['date'].max()
         )
         # We extract these, since we also want global context for the past positives data
@@ -280,14 +287,19 @@ class ChurnPredictionModel(object):
                 )
             else:
                 raise ValueError('Unknown normalization handling parameter')
-
+            
+            columns_after_concat = list(self.user_profiles) + list(normalized_data)
             self.user_profiles = pd.concat(
                 [
                     self.user_profiles,
                     normalized_data
                 ],
-                axis=1
+                axis=1,
+                ignore_index=True
             )
+
+            self.user_profiles.columns = columns_after_concat
+
         logger.info('  * Feature normalization success')
 
     def add_missing_json_columns(self):
@@ -300,12 +312,11 @@ class ChurnPredictionModel(object):
         a section should be via the config file in utils
         '''
         potential_columns = [
-            column for column_list_set in
+            column for column_list in
             self.feature_columns.profile_numeric_columns_from_json_fields.values()
-            for column_list in column_list_set
             for column in column_list
         ]
-
+        
         for missing_json_column in set(potential_columns) - set(self.user_profiles.columns):
             self.user_profiles[missing_json_column] = 0.0
 
@@ -329,6 +340,7 @@ class ChurnPredictionModel(object):
             self.moving_window,
             self.positive_event_lookahead
         )
+
         logger.info(f'  * Processing user profiles')
 
         if self.user_profiles.empty:
@@ -363,7 +375,7 @@ class ChurnPredictionModel(object):
                     self.user_profiles,
                     expansion_frame
                 ],
-                axis=1
+                axis=1,
             )
             self.user_profiles.drop(column, axis=1, inplace=True)
 
@@ -468,8 +480,8 @@ class ChurnPredictionModel(object):
             test_indices = self.user_profiles[self.user_profiles['date'] > train_date.date()].index
 
         util_columns = ['outcome', 'feature_aggregation_functions', 'user_id']
-        self.X_train = self.user_profiles.iloc[train_indices].drop(columns=util_columns)
-        self.X_test = self.user_profiles.iloc[test_indices].drop(columns=util_columns)
+        self.X_train = self.user_profiles.loc[train_indices].drop(columns=util_columns)
+        self.X_test = self.user_profiles.loc[test_indices].drop(columns=util_columns)
         self.generate_category_list_dict()
 
         with open(
@@ -484,6 +496,7 @@ class ChurnPredictionModel(object):
 
         logger.info('  * Dummy variables generation success')
 
+        self.feature_columns.numeric_columns_all.sort()
         X_train_numeric = self.user_profiles.loc[
             train_indices,
             self.feature_columns.numeric_columns_all
@@ -513,6 +526,9 @@ class ChurnPredictionModel(object):
              if column not in self.feature_columns.numeric_columns_all +
              self.feature_columns.config_columns]
         ].sort_index()], axis=1)
+
+        self.X_train = self.sort_columns_alphabetically(self.X_train)
+        self.X_test = self.sort_columns_alphabetically(self.X_test)
 
         joblib.dump(
             self.scaler,
@@ -715,14 +731,28 @@ class ChurnPredictionModel(object):
         Pipeline that outputs a trained model and it's accuracy measures
         '''
         logger.info(f'Executing training pipeline')
+        # Make sure we have enough days for training, this statement is behind the condition since sometimes
+        # we might be reusing training data from a previous run
         if self.user_profiles is None:
+            # The + 1 is because datetime diff considers an interval open on one side and closed on the other
+            days_in_range = (self.max_date - self.min_date).days + 1
+            # if days_in_range < MIN_TRAINING_DAYS:
+            #     raise ValueError(
+            #         f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data'
+            #     )
+            if min(
+                floor(self.training_split_parameters['split_ratio'] * days_in_range),
+                floor((1 - self.training_split_parameters['split_ratio']) * days_in_range)
+            ) == 0:
+                raise ValueError(
+                    f'The current split ration allows for either a test or train set with 0 days included'
+                )
 
-            # Make sure we have enough days for training, this statement is behind the condition since sometimes
-            # we might be reusing training data from a previous run
-            #if (self.max_date - self.min_date).days < MIN_TRAINING_DAYS:
-            #    raise ValueError(f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data')
+            self.get_full_user_profiles_by_date()
 
-            self.precalculate_user_profiles_by_date()
+        # Some users have no outcome due to having renewed via a non-payment option, thus we need to drop them
+        # for the purpose of training a model
+        self.user_profiles = self.user_profiles[~self.user_profiles['outcome'].isna()]
 
         if self.overwrite_files:
             for model_file in ['category_lists', 'scaler', 'model']:
@@ -821,13 +851,31 @@ class ChurnPredictionModel(object):
         if self.model is None:
             self.load_model_related_constructs()
 
+        # Add missing columns that were in the train set
         for column in self.variable_importances.index:
-            if column not in data.columns and column in self.feature_columns.numeric_columns_all:
-                data[column] = 0.0
+            if column not in data.columns:
+                if column in self.feature_columns.numeric_columns_all:
+                    data[column] = 0.0
+                    self.feature_columns.numeric_columns_all.append(column)
+                # This is a hacky solution, but device brand (and potentially other profile columns
+                # have the most fluctuations in terms of values that translate to new columns:
+                for profile_column_flag in PROFILE_COLUMNS + ['_device_brand_']:
+                    if profile_column_flag in column and column:
+                        data[column] = 0.0
+                        self.feature_columns.numeric_columns_all.append(column)
 
+        # Remove new columns (such as new devices appearing in shorter time ranges)
+        for column in [
+            column for column in data.columns
+            if column not in self.variable_importances
+            and column in self.feature_columns.numeric_columns_all
+        ]:
+            data.drop(column, axis=1, inplace=True)
+            self.feature_columns.numeric_columns_all.remove(column)
+
+        self.feature_columns.numeric_columns_all.sort()
         self.scaler.transform(
-            data[
-                self.feature_columns.numeric_columns_all]
+            data[self.feature_columns.numeric_columns_all]
         )
         feature_frame_numeric = pd.DataFrame(
             self.scaler.transform(
@@ -847,13 +895,8 @@ class ChurnPredictionModel(object):
         self.prediction_data = self.replace_dummy_columns_with_dummies(self.prediction_data)
 
         self.align_prediction_frame_with_train_columns()
-
-        logger.info('  * Prediction data ready')
+        self.prediction_data = self.sort_columns_alphabetically(self.prediction_data)
         self.prediction_data.fillna(0.0, inplace=True)
-        if not self.X_train.empty:
-            for column in [column for column in self.X_train.columns if column not in self.prediction_data.columns]:
-                self.prediction_data[column] = 0.0
-            self.prediction_data = self.prediction_data[list(self.X_train.columns)]
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
         logger.info('  * Prediction generation success, handling artifacts')
 
@@ -870,6 +913,14 @@ class ChurnPredictionModel(object):
             axis=1
         )
         self.predictions['predicted_outcome'] = self.le.inverse_transform(self.model.predict(self.prediction_data))
+
+    @staticmethod
+    def sort_columns_alphabetically(df):
+        column_order = list(df.columns)
+        column_order.sort()
+        df = df[column_order]
+
+        return df
 
     def align_prediction_frame_with_train_columns(self):
         # Sometimes the columns used to train a model don't align with columns im prediction set
@@ -903,7 +954,7 @@ class ChurnPredictionModel(object):
         Generates outcome prediction for churn and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-        self.retrieve_feature_frame()
+        self.get_full_user_profiles_by_date()
         self.artifact_retention_mode = ArtifactRetentionMode.DROP
 
         logger.setLevel(logging.INFO)
@@ -919,8 +970,8 @@ class ChurnPredictionModel(object):
             self.predictions.drop('outcome', axis=1, inplace=True)
 
             logger.info(f'Storing predicted data')
-            client_secrets_path = os.getenv('PATH_TO_GCLOUD_CREDENTIALS_JSON')
-            database = os.getenv('BQ_DATABASE')
+            client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
+            database = os.getenv('BIGQUERY_PROJECT_ID')
             _, db_connection = create_connection(
                 f'bigquery://{database}',
                 engine_kwargs={'credentials_path': client_secrets_path}
@@ -931,7 +982,7 @@ class ChurnPredictionModel(object):
             )
 
             self.predictions.to_gbq(
-                destination_table=f'{os.getenv("SCHEMA")}.churn_predictions_log',
+                destination_table=f'{os.getenv("BIGQUERY_DATASET")}.churn_predictions_log',
                 project_id=database,
                 credentials=credentials,
                 if_exists='append'
@@ -942,14 +993,17 @@ class ChurnPredictionModel(object):
             self.prediction_job_log['rows_predicted'] = len(self.predictions)
 
             self.prediction_job_log.to_gbq(
-                destination_table=f'{os.getenv("SCHEMA")}.prediction_job_log',
+                destination_table=f'{os.getenv("BIGQUERY_DATASET")}.prediction_job_log',
                 project_id=database,
                 credentials=credentials,
                 if_exists='append',
             )
         else:
-            actual_labels = {'test': self.predictions['outcome']}
-            predicted_labels = {'test': self.predictions['predicted_outcome']}
+            # Sometimes we're missing the ground truth label due to holes in the logic for outcome resolution
+            self.predictions = self.predictions[~self.predictions['outcome'].isna()]
+            actual_labels = {'test': self.le.transform(self.predictions['outcome'])}
+            predicted_labels = {'test': self.le.transform(self.predictions['predicted_outcome'])}
+
             self.outcome_frame = self.create_outcome_frame(
                 actual_labels,
                 predicted_labels,
@@ -967,8 +1021,8 @@ class ChurnPredictionModel(object):
     ):
         dates_for_preaggregation = [date for date in pd.date_range(self.min_date, self.max_date)]
 
-        client_secrets_path = os.getenv('PATH_TO_GCLOUD_CREDENTIALS_JSON')
-        database = os.getenv('BQ_DATABASE')
+        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
+        database = os.getenv('BIGQUERY_PROJECT_ID')
         _, db_connection = create_connection(
             f'bigquery://{database}',
             engine_kwargs={'credentials_path': client_secrets_path}
@@ -1028,7 +1082,7 @@ if __name__ == "__main__":
     logger.info(f'CHURN PREDICTION')
     parser = argparse.ArgumentParser()
     parser.add_argument('--action',
-                        help='Should either be "train" for model training or "predict" for prediction',
+                        help='Should either be "train" for model training, "preaggregate" to preprocess the data for prediction, or "predict" for actual prediction',
                         type=str)
     parser.add_argument('--min-date',
                         help='Min date denoting from when to fetch data',
@@ -1052,7 +1106,7 @@ if __name__ == "__main__":
     parser.add_argument('--training-split-parameters',
                         help='Speficies split_type (random vs time_based) and split_ratio for train/test split',
                         type=json.loads,
-                        default={'split': 'random', 'split_ratio': 5 / 10},
+                        default={'split': 'time_based', 'split_ratio': 5 / 10},
                         required=False)
     parser.add_argument('--model-arguments',
                         help='Parameters for scikit model training',
