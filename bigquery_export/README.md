@@ -11,7 +11,7 @@ All other required Python packages are described in `requirements.txt` file and 
 ## Installation
 
 ```
-python3 -m venv .virtualenv;
+python3 -m venv .virtualenv
 source .virtualenv/bin/activate
 pip3 install -r requirements.txt
 ```

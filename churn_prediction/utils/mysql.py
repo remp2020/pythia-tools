@@ -21,7 +21,7 @@ def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str,
     _, db_connection = create_connection(os.getenv(db_connection_string_name))
 
     for table in table_names:
-        table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=schema)
+        table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=os.getenv(schema))
 
     table_mapping['session'] = sessionmaker(bind=db_connection)()
 
@@ -63,16 +63,16 @@ def get_payment_history_features(end_time: datetime):
 
 def get_global_context(start_time, end_time):
     beam_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'remp_beam',
+        'MYSQL_BEAM_CONNECTION_STRING',
+        'MYSQL_BEAM_DB',
         ['article_pageviews']
     )
     mysql_beam_session = beam_mysql_mappings['session']
     article_pageviews = beam_mysql_mappings['article_pageviews']
 
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'predplatne',
+        'MYSQL_CRM_CONNECTION_STRING',
+        'MYSQL_CRM_DB',
         ['payments']
     )
 
