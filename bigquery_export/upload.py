@@ -115,12 +115,17 @@ class BigQueryUploader:
                 print("CSV contains no data (after conversion), not uploading")
                 return
 
+            table = self.get_table(table_id)
+
             job_config = bigquery.LoadJobConfig(source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON)
             with open(json_path, "rb") as source_file:
-                load_job = self.client.load_table_from_file(source_file, self.get_table(table_id),
+                load_job = self.client.load_table_from_file(source_file, table,
                                                             job_config=job_config)
 
             load_job.result()  # Waits for the job to complete.
+            print(
+                "Uploaded CSV to table {}.{}.{}".format(table.project, table.dataset_id, table.table_id)
+            )
         except BadRequest:
             print("Unable to upload file, errors:\n")
             for err in load_job.errors:

@@ -117,7 +117,7 @@ while [ "$di" != "$end_on" ]; do
 
     python upload.py ${file_date}
 
-    # delete csv files
+    # delete temporary csv files
     rm csv/*.csv
 
     di=$(add_day $di)
