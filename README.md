@@ -17,8 +17,8 @@ The whole process is split to several steps:
 - [Export of aggregated data to BigQuery](cmd/bigquery_export)
 - [Conversion model training and prediction](cmd/conversion_prediction)
 - [Churn model training and prediction](cmd/churn_prediction)
-- [Expoting generated data as segments for other applications via API](cmd/pythia_segments)
+- [Exporting generated data as segments for other applications via API](cmd/pythia_segments)
 
-For installation and running instructions, please see README files of linked services.
+For installation and running instructions, please see README files of the linked tools.
 
 To run Pythia tools, you'll need `python2`, `python3`, `Postgresql 12` and `BigQuery`.
