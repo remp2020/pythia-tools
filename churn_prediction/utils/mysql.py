@@ -30,8 +30,8 @@ def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str,
 
 def get_payment_history_features(end_time: datetime):
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'predplatne',
+        'MYSQL_CRM_CONNECTION_STRING',
+        'MYSQL_CRM_DB',
         ['payments', 'subscriptions']
     )
 
