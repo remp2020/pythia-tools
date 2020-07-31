@@ -165,8 +165,8 @@ def get_users_with_expirations(
         expiration_lookahead: int = 30
 ) -> List[str]:
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'predplatne',
+        'MYSQL_CRM_CONNECTION_STRING',
+        'MYSQL_CRM_DB',
         ['payments', 'subscriptions']
     )
 

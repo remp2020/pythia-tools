@@ -1,8 +1,6 @@
 # Pythia Churn Prediction
 
-Script generating conversion prediction models based on data aggregated by `cmd/aggregate`, data stored in Beam's MySQL database and data provided by CRM MySQL database.
-
-Once the prediction models are generated, script is writing list of users to PostgreSQL database with the probability of their conversion. This list is a requirement for `cmd/pythia_segments` API which can be integrated into REMP Campaign and REMP Beam to target users.
+Script generating churn prediction models based on data aggregated by `cmd/aggregate` and exported to BigQuery using `cmd/bigquery_export`, data stored in Beam's MySQL database and data provided by CRM MySQL database.
 
 ## Requirements
 
