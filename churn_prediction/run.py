@@ -1,6 +1,8 @@
 import sys
 from math import floor
 
+from imblearn.under_sampling import NearMiss
+
 sys.path.append("../")
 
 # environment variables
@@ -26,7 +28,7 @@ import sqlalchemy
 import joblib
 
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import List, Dict, Callable
 from dateutil.parser import parse
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support
@@ -55,7 +57,7 @@ class ChurnPredictionModel(object):
             outcome_labels: List[str] = tuple(LABELS.keys()),
             overwrite_files: bool = True,
             training_split_parameters=None,
-            undersampling_factor=300,
+            max_allowed_class_imbalance: int = None,
             # This applies to all model artifacts that are not part of the flow output
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
@@ -83,12 +85,14 @@ class ChurnPredictionModel(object):
         self.le.fit(outcome_labels)
         self.X_train = pd.DataFrame()
         self.X_test = pd.DataFrame()
+        self.X_train_undersampled = pd.DataFrame()
         self.Y_train = pd.Series()
         self.Y_test = pd.Series()
+        self.Y_train_undersampled = pd.DataFrame()
         self.scaler = MinMaxScaler()
         self.model_date = None
         self.training_split_parameters = training_split_parameters
-        self.undersampling_factor = undersampling_factor
+        self.max_allowed_class_imbalance = max_allowed_class_imbalance
         self.model = None
         self.outcome_frame = None
         self.scoring_date = datetime.utcnow()
@@ -572,7 +576,7 @@ class ChurnPredictionModel(object):
         '''
         Requires:
             - user_profiles
-            - undersampling_factor
+            - max_allowed_class_imbalance
             - model_arguments
             - artifacts_to_retain
             - artifact_retention_mode
@@ -712,12 +716,13 @@ class ChurnPredictionModel(object):
 
     def model_training_pipeline(
             self,
-            model_function=RandomForestClassifier,
-            model_arguments={'n_estimators': 250}
+            model_function: Callable = RandomForestClassifier,
+            model_arguments: Dict = {'n_estimators': 250},
+            sampling_function: Callable = NearMiss
     ):
         '''
         Requires:
-            - undersampling_factor
+            - max_allowed_class_imbalance
             - model_arguments
             - artifacts_to_retain
             - artifact_retention_mode
@@ -757,6 +762,8 @@ class ChurnPredictionModel(object):
         if self.overwrite_files:
             for model_file in ['category_lists', 'scaler', 'model']:
                 self.delete_existing_model_file_for_same_date(model_file)
+
+        self.undersample_majority_class(sampling_function)
 
         self.train_model(
             model_function,
@@ -1065,6 +1072,16 @@ class ChurnPredictionModel(object):
             logger.setLevel(logging.INFO)
             logger.info(f'Date {date} succesfully aggregated & uploaded to BQ')
 
+    def undersample_majority_class(
+            self,
+            sampler_function
+    ):
+        sampler = sampler_function()
+        self.X_train_undersampled, self.Y_train_undersampled = sampler.fit_resample(
+            self.X_train,
+            self.Y_train
+        )
+
 
 def mkdatetime(datestr: str) -> datetime:
     '''
@@ -1130,7 +1147,7 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             overwrite_files=args['overwrite_files'],
             training_split_parameters=args['training_split_parameters'],
-            undersampling_factor=500,
+            max_allowed_class_imbalance=2,
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING,
             positive_event_lookahead=args['positive_event_lookahead']
@@ -1146,7 +1163,6 @@ if __name__ == "__main__":
         churn_prediction = ChurnPredictionModel(
             min_date=args['min_date'],
             max_date=args['max_date'],
-            undersampling_factor=1,
             moving_window_length=args['moving_window_length'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.PREDICTION,
@@ -1159,7 +1175,6 @@ if __name__ == "__main__":
             min_date=args['min_date'],
             max_date=args['max_date'],
             moving_window_length=args['moving_window_length'],
-            undersampling_factor=500,
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING,
             positive_event_lookahead=args['positive_event_lookahead']
