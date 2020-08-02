@@ -567,7 +567,7 @@ class ChurnPredictionModel(object):
                     None if self.path_to_model_files == '' else self.path_to_model_files):
                 os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
 
-    def train_model(
+    def preprocess_and_train(
             self,
             model_function,
             model_arguments
@@ -584,6 +584,13 @@ class ChurnPredictionModel(object):
             self.user_profiles['outcome'] = self.le.transform(self.user_profiles['outcome'])
 
         self.create_train_test_transformations()
+        self.train_model(model_function, model_arguments)
+
+    def train_model(
+            self,
+            model_function,
+            model_arguments
+    ):
         self.undersample_majority_class()
         self.X_train.fillna(0.0, inplace=True)
         self.X_train_undersampled.fillna(0.0, inplace=True)
@@ -765,7 +772,7 @@ class ChurnPredictionModel(object):
         if sampling_function:
             self.sampling_function = sampling_function()
 
-        self.train_model(
+        self.preprocess_and_train(
             model_function,
             model_arguments
         )
