@@ -763,7 +763,7 @@ class ChurnPredictionModel(object):
                 self.delete_existing_model_file_for_same_date(model_file)
 
         if sampling_function:
-            self.sampling_function = sampling_function
+            self.sampling_function = sampling_function()
 
         self.train_model(
             model_function,
@@ -1072,11 +1072,8 @@ class ChurnPredictionModel(object):
             logger.setLevel(logging.INFO)
             logger.info(f'Date {date} succesfully aggregated & uploaded to BQ')
 
-    def undersample_majority_class(
-            self,
-            sampler_function
-    ):
-        sampler = self.sampler_function()
+    def undersample_majority_class(self):
+        sampler = self.sampling_function
         self.X_train_undersampled, self.Y_train_undersampled = sampler.fit_resample(
             self.X_train,
             self.Y_train
