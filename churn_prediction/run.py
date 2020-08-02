@@ -57,7 +57,6 @@ class ChurnPredictionModel(object):
             outcome_labels: List[str] = tuple(LABELS.keys()),
             overwrite_files: bool = True,
             training_split_parameters=None,
-            max_allowed_class_imbalance: int = None,
             # This applies to all model artifacts that are not part of the flow output
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
@@ -89,10 +88,10 @@ class ChurnPredictionModel(object):
         self.Y_train = pd.Series()
         self.Y_test = pd.Series()
         self.Y_train_undersampled = pd.DataFrame()
+        self.sampling_function = NearMiss()
         self.scaler = MinMaxScaler()
         self.model_date = None
         self.training_split_parameters = training_split_parameters
-        self.max_allowed_class_imbalance = max_allowed_class_imbalance
         self.model = None
         self.outcome_frame = None
         self.scoring_date = datetime.utcnow()
@@ -576,7 +575,6 @@ class ChurnPredictionModel(object):
         '''
         Requires:
             - user_profiles
-            - max_allowed_class_imbalance
             - model_arguments
             - artifacts_to_retain
             - artifact_retention_mode
@@ -586,13 +584,15 @@ class ChurnPredictionModel(object):
             self.user_profiles['outcome'] = self.le.transform(self.user_profiles['outcome'])
 
         self.create_train_test_transformations()
+        self.undersample_majority_class()
         self.X_train.fillna(0.0, inplace=True)
+        self.X_train_undersampled.fillna(0.0, inplace=True)
         self.X_test.fillna(0.0, inplace=True)
 
         logger.info('  * Commencing model training')
 
         classifier_instance = model_function(**model_arguments)
-        self.model = classifier_instance.fit(self.X_train, self.Y_train)
+        self.model = classifier_instance.fit(self.X_train_undersampled, self.Y_train_undersampled)
 
         logger.info('  * Model training complete, generating outcome frame')
 
@@ -718,11 +718,10 @@ class ChurnPredictionModel(object):
             self,
             model_function: Callable = RandomForestClassifier,
             model_arguments: Dict = {'n_estimators': 250},
-            sampling_function: Callable = NearMiss
+            sampling_function: Callable = None
     ):
         '''
         Requires:
-            - max_allowed_class_imbalance
             - model_arguments
             - artifacts_to_retain
             - artifact_retention_mode
@@ -763,7 +762,8 @@ class ChurnPredictionModel(object):
             for model_file in ['category_lists', 'scaler', 'model']:
                 self.delete_existing_model_file_for_same_date(model_file)
 
-        self.undersample_majority_class(sampling_function)
+        if sampling_function:
+            self.sampling_function = sampling_function
 
         self.train_model(
             model_function,
@@ -1076,7 +1076,7 @@ class ChurnPredictionModel(object):
             self,
             sampler_function
     ):
-        sampler = sampler_function()
+        sampler = self.sampler_function()
         self.X_train_undersampled, self.Y_train_undersampled = sampler.fit_resample(
             self.X_train,
             self.Y_train
@@ -1147,7 +1147,6 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             overwrite_files=args['overwrite_files'],
             training_split_parameters=args['training_split_parameters'],
-            max_allowed_class_imbalance=2,
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING,
             positive_event_lookahead=args['positive_event_lookahead']
