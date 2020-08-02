@@ -13,7 +13,7 @@ pybigquery==0.4.15
 pandas-gbq==0.13.2
 fastavro==0.23.5
 tqdm==4.47.0
-imbalanced-learn-0.7.0
+imbalanced-learn==0.7.0
 
 google-api-python-client==1.9.3
 google-api-core==1.21.0
