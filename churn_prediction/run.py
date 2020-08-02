@@ -529,7 +529,7 @@ class ChurnPredictionModel(object):
 
         self.X_train = self.sort_columns_alphabetically(self.X_train)
         self.X_test = self.sort_columns_alphabetically(self.X_test)
-
+        self.X_train.to_csv('debug.csv')
         joblib.dump(
             self.scaler,
             f'{self.path_to_model_files}scaler_{self.model_date}.pkl'
@@ -867,7 +867,7 @@ class ChurnPredictionModel(object):
         # Remove new columns (such as new devices appearing in shorter time ranges)
         for column in [
             column for column in data.columns
-            if column not in self.variable_importances
+            if column not in self.variable_importances.index
             and column in self.feature_columns.numeric_columns_all
         ]:
             data.drop(column, axis=1, inplace=True)
