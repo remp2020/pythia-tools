@@ -221,7 +221,7 @@ def run(file_date, csv_folder):
         uploader.create_table(events, bq_schema.events(), bigquery.TimePartitioning(
             type_=bigquery.TimePartitioningType.DAY,
             field="time",
-            expiration_ms=15552000000,  # 180 days
+            expiration_ms=31536000000,  # 1 year
         ))
 
     # Upload data
