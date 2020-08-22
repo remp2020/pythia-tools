@@ -157,7 +157,7 @@ def insert_daily_feature_frame(
     )
 
     meta_columns = [
-        'date', 'user_id', 'outcome', 'pipeline_version',
+        'date', 'user_id', 'outcome', 'outcome_date', 'pipeline_version',
         'created_at', 'window_days', 'event_lookahead', 'feature_aggregation_functions'
     ]
 
@@ -180,6 +180,7 @@ def insert_daily_feature_frame(
         full_query.c['date'].cast(DATE),
         full_query.c['user_id'],
         full_query.c['outcome'],
+        full_query.c['outcome_date'],
         literal(meta_columns_w_values['pipeline_version']).cast(String).label('pipeline_version'),
         literal(meta_columns_w_values['created_at']).cast(TIMESTAMP).label('created_at'),
         literal(meta_columns_w_values['window_days']).cast(Integer).label('window_days'),
@@ -426,7 +427,7 @@ def add_outcomes(
         # a refund (the current pipeline provides both labels)
         case(
             [
-                # If there is at leadt one churn event, we identify the user as churned
+                # If there is at least one churn event, we identify the user as churned
                 (
                     literal(negative_label()).in_(
                         func.unnest(
@@ -445,7 +446,8 @@ def add_outcomes(
 
     feature_query_w_outcome = bq_session.query(
         feature_query,
-        relevant_events_deduplicated.c['outcome']
+        relevant_events_deduplicated.c['outcome'].label('outcome'),
+        relevant_events_deduplicated.c['date'].label('outcome_date')
     ).outerjoin(
         relevant_events_deduplicated,
         and_(
@@ -579,7 +581,7 @@ def get_prominent_device_list(
         browsers.c['date'] <= cast(end_time, DATE)
     ).group_by(browsers.c['device_brand']).all()
 
-    # This hnadles cases such as Toshiba and TOSHIBA (occurs on 2020-02-17) since resulting
+    # This handles cases such as Toshiba and TOSHIBA (occurs on 2020-02-17) since resulting
     # column names are not case sensitive
     prominent_device_brands_past_90_days = set(
         [device_brand[0] for device_brand in prominent_device_brands_past_90_days]
