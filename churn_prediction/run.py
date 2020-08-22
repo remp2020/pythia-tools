@@ -1,7 +1,7 @@
 import sys
 from math import floor
 
-from imblearn.under_sampling import NearMiss
+from imblearn.under_sampling import RandomUnderSampler
 
 sys.path.append("../")
 
@@ -88,7 +88,7 @@ class ChurnPredictionModel(object):
         self.Y_train = pd.Series()
         self.Y_test = pd.Series()
         self.Y_train_undersampled = pd.DataFrame()
-        self.sampling_function = NearMiss()
+        self.sampling_function = RandomUnderSampler()
         self.scaler = MinMaxScaler()
         self.model_date = None
         self.training_split_parameters = training_split_parameters
