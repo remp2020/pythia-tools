@@ -109,8 +109,8 @@ CONFIG_COLUMNS = [
     'user_ids'
 ]
 
+# TODO: Check if the positive/negative distinction is still needed when using automated undersampling
 LABELS = {'churn': 'negative', 'renewal': 'positive'}
-
 
 CURRENT_MODEL_VERSION = '1.0'
 
