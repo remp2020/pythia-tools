@@ -251,6 +251,10 @@ class FeatureColumns(object):
                 )
             )
 
+            base_numeric_columns.update(
+                list(build_derived_metrics_config(aggregation_function_alias))
+            )
+
         device_based_features.update(
             get_device_information_features(
                 aggregation_function_aliases[0] if aggregation_function_aliases == [''] else 'sum',
