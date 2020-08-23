@@ -78,8 +78,8 @@ def get_feature_frame_via_sqlalchemy(
         FROM
             {os.getenv('BIGQUERY_DATASET')}.rolling_daily_user_profile
         WHERE
-            date >= @start_time
-            AND date <= @end_time
+            outcome_date >= @start_time
+            AND outcome_date <= @end_time
             AND window_days = @window_days
             AND event_lookahead = @event_lookahead
     '''
@@ -1025,6 +1025,7 @@ def add_all_time_delta_columns(
 ):
     filtered_w_derived_metrics_w_all_time_delta_columns = bq_session.query(
         filtered_w_derived_metrics,
+        # TODO: This doesn't work for aggregation functions other than sum, need to fix
         *[
             (
                     filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)] -
