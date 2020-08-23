@@ -103,7 +103,6 @@ class ChurnPredictionModel(object):
         if not os.path.exists(self.path_to_model_files):
             os.mkdir(self.path_to_model_files)
         self.negative_outcome_frame = pd.DataFrame()
-        self.browser_day_combinations_original_set = pd.DataFrame()
         self.variable_importances = pd.Series()
         self.dry_run = dry_run
         self.prediction_job_log = None
@@ -509,7 +508,7 @@ class ChurnPredictionModel(object):
             self.feature_columns.numeric_columns_all
         ].fillna(0.0)
 
-        self.scaler =MinMaxScaler(feature_range=(0, 1)).fit(X_train_numeric)
+        self.scaler = MinMaxScaler(feature_range=(0, 1)).fit(X_train_numeric)
 
         X_train_numeric = pd.DataFrame(self.scaler.transform(X_train_numeric), index=train_indices,
                                        columns=self.feature_columns.numeric_columns_all).sort_index()
@@ -537,15 +536,6 @@ class ChurnPredictionModel(object):
             self.scaler,
             f'{self.path_to_model_files}scaler_{self.model_date}.pkl'
         )
-
-        # This is used later on for excluding negatives that we already evaluated
-        self.browser_day_combinations_original_set = self.user_profiles.loc[
-            # We only pick train indices, since we will be iterating over all negatives and it's simpler to do the
-            # ones included in the undersampled test set again than to introduce some special handling
-            train_indices,
-            ['user_id', 'date', 'outcome']
-        ]
-        self.browser_day_combinations_original_set['used_in_training'] = True
 
         if ModelArtifacts.USER_PROFILES.value not in self.artifacts_to_retain:
             self.artifact_handler(ModelArtifacts.USER_PROFILES)
@@ -706,20 +696,6 @@ class ChurnPredictionModel(object):
 
         return outcome_frame
 
-    def remove_rows_from_original_flow(self):
-        logger.info('  * Commencing accuracy metrics for negatives calculation')
-        self.user_profiles = pd.merge(
-            left=self.user_profiles,
-            right=self.browser_day_combinations_original_set[['date', 'user_id', 'used_in_training']],
-            on=['date', 'user_id'],
-            how='left'
-        )
-
-        self.user_profiles = self.user_profiles[
-            self.user_profiles['used_in_training'].isna()
-        ].reset_index(drop=True)
-
-        self.user_profiles.drop('used_in_training', axis=1, inplace=True)
 
     def model_training_pipeline(
             self,
