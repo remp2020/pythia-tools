@@ -531,7 +531,7 @@ class ChurnPredictionModel(object):
 
         self.X_train = self.sort_columns_alphabetically(self.X_train)
         self.X_test = self.sort_columns_alphabetically(self.X_test)
-        self.X_train.to_csv('debug.csv')
+
         joblib.dump(
             self.scaler,
             f'{self.path_to_model_files}scaler_{self.model_date}.pkl'

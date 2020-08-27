@@ -16,6 +16,8 @@ from .config import sanitize_column_name, EXPECTED_DEVICE_TYPES
 from sqlalchemy.engine import Engine
 from google.oauth2 import service_account
 
+from .enums import WindowHalfDirection
+
 
 def get_sqla_table(table_name, engine):
     meta = MetaData(bind=engine)
@@ -383,7 +385,8 @@ def get_full_features_query(
     )
 
     filtered_w_derived_metrics_w_all_time_delta_columns = add_all_time_delta_columns(
-        filtered_w_derived_metrics
+        filtered_w_derived_metrics,
+        feature_aggregation_functions
     )
 
     feature_query = remove_helper_lookback_rows(
@@ -646,19 +649,33 @@ def get_device_information_subquery(
 
 def create_rolling_agg_function(
         moving_window_length: int,
-        half_window: bool,
         agg_function,
         column,
         partitioning_column,
-        ordering_column
+        ordering_column,
+        window_half_direction: WindowHalfDirection = WindowHalfDirection.FULL
 ):
-    window_look_back_adjustment = 1 if moving_window_length % 2 > 0 or half_window is False else 0
-    half_window_adjustment = 2 if half_window else 1
-    lower_bound = int(-1 * (moving_window_length / half_window_adjustment - window_look_back_adjustment))
+    lower_bound = moving_window_length
+    # If we're aggregating for a half window, halve the reach of the lower bound
+    if window_half_direction in [WindowHalfDirection.FIRST_HALF, WindowHalfDirection.LAST_HALF]:
+        lower_bound = round(lower_bound / 2, 0)
+    # If there is an odd number of days in the moving window, one the half windows needs to have a shortened time
+    # we've decided for this to be the second window part as for comparisons of change between first and second half
+    # we prefer to have more recent data stand out
+    if moving_window_length % 2 > 0 and window_half_direction == WindowHalfDirection.LAST_HALF:
+        lower_bound = lower_bound - 1
+    # For last window half, we need to order the window in a descending order for which the window_half_direction is
+    # used
+    if window_half_direction != WindowHalfDirection.LAST_HALF:
+        # since the lower bound is defined as a negative offset, we multiply by -1
+        rows = (int(-1 * lower_bound), 0)
+    else:
+        rows = (-1 * moving_window_length, int(-1 * lower_bound))
+
     result_function = agg_function(column).over(
         partition_by=partitioning_column,
         order_by=ordering_column,
-        rows=(lower_bound, 0)
+        rows=rows
     )
 
     return result_function
@@ -845,7 +862,6 @@ def calculate_rolling_windows_features(
             func.coalesce(
                 create_rolling_agg_function(
                     moving_window_length,
-                    False,
                     func.max,
                     joined_queries.c['date_w_gaps'],
                     joined_queries.c['user_id'],
@@ -899,7 +915,6 @@ def create_device_rolling_window_columns_config(
     device_rolling_agg_columns = [
         create_rolling_agg_function(
             moving_window_length,
-            False,
             func.sum,
             joined_queries.c[device_column],
             joined_queries.c['date'],
@@ -922,7 +937,7 @@ def create_rolling_window_columns_config(
 ):
     # {name of the resulting column : source / calculation},
     column_source_to_name_mapping = {
-        'pageview': joined_queries.c['pageviews'],
+        'pageviews': joined_queries.c['pageviews'],
         'timespent': joined_queries.c['timespent'],
         'direct_visit': joined_queries.c['sessions_without_ref'],
         'visit': joined_queries.c['sessions'],
@@ -941,8 +956,9 @@ def create_rolling_window_columns_config(
     def get_rolling_agg_window_variants(aggregation_function_alias):
         # {naming suffix : related parameter for determining part of full window}
         return {
-            f'{aggregation_function_alias}': False,
-            f'{aggregation_function_alias}_last_window_half': True
+            f'{aggregation_function_alias}_first_window_half': WindowHalfDirection.FIRST_HALF,
+            f'{aggregation_function_alias}_last_window_half': WindowHalfDirection.LAST_HALF,
+            f'{aggregation_function_alias}': WindowHalfDirection.FULL
         }
 
     rolling_agg_columns = []
@@ -950,15 +966,15 @@ def create_rolling_window_columns_config(
     rolling_agg_columns = rolling_agg_columns + [
         create_rolling_agg_function(
             moving_window_length,
-            is_half_window,
             aggregation_function,
             column_source,
             joined_queries.c['user_id'],
-            joined_queries.c['date']
+            joined_queries.c['date'],
+            half_window_direction
         ).cast(Float).label(f'{column_name}_{suffix}')
         for column_name, column_source in column_source_to_name_mapping.items()
         for aggregation_function_alias, aggregation_function in feature_aggregation_functions.items()
-        for suffix, is_half_window in get_rolling_agg_window_variants(aggregation_function_alias).items()
+        for suffix, half_window_direction in get_rolling_agg_window_variants(aggregation_function_alias).items()
         if f'{column_name}_{suffix}' != 'days_active_count'
     ]
 
@@ -968,7 +984,6 @@ def create_rolling_window_columns_config(
     rolling_agg_columns = rolling_agg_columns + [
         create_rolling_agg_function(
             moving_window_length,
-            is_half_window,
             func.sum,
             case(
                 [
@@ -979,9 +994,10 @@ def create_rolling_window_columns_config(
                 ],
                 else_=1),
             joined_queries.c['user_id'],
-            joined_queries.c['date']
+            joined_queries.c['date'],
+            half_window_direction
         ).cast(Float).label(f'days_active_{suffix}')
-        for suffix, is_half_window in get_rolling_agg_window_variants('count').items()
+        for suffix, half_window_direction in get_rolling_agg_window_variants('count').items()
     ]
 
     return rolling_agg_columns
@@ -996,7 +1012,7 @@ def filter_joined_queries_adding_derived_metrics(
     first_aggregation_function_alias = next(iter(feature_aggregation_functions.keys()))
 
     finalizing_filter = [
-    joined_partial_queries.c[f'pageview_{first_aggregation_function_alias}'] > 0
+    joined_partial_queries.c['pageviews'] > 0
     ]
 
     derived_metrics_config = {}
@@ -1013,7 +1029,7 @@ def filter_joined_queries_adding_derived_metrics(
                     joined_partial_queries.c[derived_metrics_config[key]['denominator'] + suffix]
             ), 0.0).label(key + suffix)
             for key in derived_metrics_config.keys()
-            for suffix in ['', '_last_window_half']
+            for suffix in ['_first_window_half', '_last_window_half']
         ]
     ).filter(and_(*finalizing_filter)).subquery('filtered_w_derived_metrics')
 
@@ -1021,19 +1037,12 @@ def filter_joined_queries_adding_derived_metrics(
 
 
 def add_all_time_delta_columns(
-        filtered_w_derived_metrics
+    filtered_w_derived_metrics,
+    feature_aggregation_functions
 ):
     filtered_w_derived_metrics_w_all_time_delta_columns = bq_session.query(
         filtered_w_derived_metrics,
         # TODO: This doesn't work for aggregation functions other than sum, need to fix
-        *[
-            (
-                    filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)] -
-                    filtered_w_derived_metrics.c[column.name]
-            ).label(re.sub('_last_window_half', '_first_window_half', column.name))
-            for column in filtered_w_derived_metrics.columns
-            if re.search('_last_window_half', column.name)
-        ],
         *[
             case(
                 [
@@ -1041,15 +1050,17 @@ def add_all_time_delta_columns(
                     (filtered_w_derived_metrics.c[column.name] == 0, -1),
                     # If the 1st half of period has 0 for its value, we assign 100 % growth
                     (
-                        filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)]
-                        - filtered_w_derived_metrics.c[column.name] == 0, 1)
+                        filtered_w_derived_metrics.c[
+                            column.name.replace('_last_window_half', '_first_window_half')
+                        ] == 0, 1)
                 ],
-                else_=(filtered_w_derived_metrics.c[column.name] / (
-                        filtered_w_derived_metrics.c[re.sub('_last_window_half', '', column.name)] -
-                        filtered_w_derived_metrics.c[column.name]))
-            ).label(f'relative_{re.sub("_last_window_half", "", column.name)}_change_first_and_second_half')
+                else_=(
+                        filtered_w_derived_metrics.c[column.name] /
+                        filtered_w_derived_metrics.c[column.name.replace('_last_window_half', '_first_window_half')]
+                ).label(f'relative_{column.name.replace("_last_window_half", "")}_change_first_and_second_half')
+            )
             for column in filtered_w_derived_metrics.columns
-            if re.search('_last_window_half', column.name)
+            if '_last_window_half' in column.name
         ]
     ).subquery('filtered_w_derived_metrics_w_all_time_delta_columns')
 

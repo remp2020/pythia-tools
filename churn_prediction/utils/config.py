@@ -16,7 +16,7 @@ def build_numeric_columns_base(
         aggregation_function_alias: str
 ) -> List[str]:
     numeric_columns_base = [
-        f'pageview_{aggregation_function_alias}',
+        f'pageviews_{aggregation_function_alias}',
         f'visit_{aggregation_function_alias}',
         f'direct_visit_{aggregation_function_alias}',
         'days_active_count',
@@ -118,7 +118,7 @@ CURRENT_MODEL_VERSION = '1.0'
 def build_derived_metrics_config(aggregation_function_alias: str) -> Dict:
     derived_metrics_config = {
         f'pageviews_per_visit_{aggregation_function_alias}': {
-            'nominator': f'pageview_{aggregation_function_alias}',
+            'nominator': f'pageviews_{aggregation_function_alias}',
             'denominator': f'visit_{aggregation_function_alias}'
         },
         f'visits_per_day_active_{aggregation_function_alias}': {
@@ -135,7 +135,7 @@ def build_derived_metrics_config(aggregation_function_alias: str) -> Dict:
         },
         f'timespent_per_pageview_{aggregation_function_alias}': {
             'nominator': f'timespent_{aggregation_function_alias}',
-            'denominator': f'pageview_{aggregation_function_alias}'
+            'denominator': f'pageviews_{aggregation_function_alias}'
         },
     }
 
@@ -251,6 +251,10 @@ class FeatureColumns(object):
                 )
             )
 
+            base_numeric_columns.update(
+                list(build_derived_metrics_config(aggregation_function_alias))
+            )
+
         device_based_features.update(
             get_device_information_features(
                 aggregation_function_aliases[0] if aggregation_function_aliases == [''] else 'sum',
@@ -277,7 +281,6 @@ class FeatureColumns(object):
             unpack_profile_based_fields(self.profile_numeric_columns_from_json_fields) +
             unpack_profile_based_fields(self.time_based_columns)
         )
-
 
         self.numeric_columns_all = (
                 self.numeric_columns_window_variants +
