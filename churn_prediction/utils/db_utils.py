@@ -87,6 +87,7 @@ class DailyProfilesHandler:
                 bigquery.SchemaField('date', 'DATE'),
                 bigquery.SchemaField('user_id', 'STRING'),
                 bigquery.SchemaField('outcome', 'STRING'),
+                bigquery.SchemaField('outcome_date', 'DATE'),
                 bigquery.SchemaField('pipeline_version', 'STRING'),
                 bigquery.SchemaField('created_at', 'TIMESTAMP'),
                 bigquery.SchemaField('window_days', 'INTEGER'),
