@@ -770,7 +770,10 @@ class ChurnPredictionModel(object):
                 self.delete_existing_model_file_for_same_date(model_file)
 
         if sampling_function:
-            self.sampling_function = sampling_function()
+            try:
+                self.sampling_function = sampling_function(n_jobs=-1)
+            except:
+                self.sampling_function = sampling_function()
 
         self.preprocess_and_train(
             model_function,
