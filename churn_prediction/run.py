@@ -390,7 +390,7 @@ class ChurnPredictionModel(object):
         for column in [column for column in self.feature_columns.bool_columns]:
             self.user_profiles[column] = self.user_profiles[column].apply(lambda value: True if value == 't' else False).astype(int)
 
-    def generate_category_list_dict(self) -> Dict:
+    def generate_category_list_dict(self):
         '''
         Requires:
             - user_profiles
@@ -400,7 +400,7 @@ class ChurnPredictionModel(object):
         for column in self.feature_columns.categorical_columns:
             self.category_list_dict[column] = list(self.user_profiles[column].unique()) + ['Unknown']
 
-    def encode_unknown_categorie(self, data: pd.Series):
+    def encode_unknown_categories(self, data: pd.Series):
         '''
         In train and predictiom set, we mighr encounter categorie that weren't present in the test set, in order
         to allow for the prediction algorithm to handle these, we create an Unknown category
@@ -415,12 +415,13 @@ class ChurnPredictionModel(object):
         '''
         Requires:
             - category_lists_dict
-        Generate 0/1 columns from categorical columns handling the logic for Others and Unknown categorie. Always drops
-        the Unknown columns (since we only need k-1 columns for k categorie)
+            - categorical column as an input
+        Generate 0/1 (values) columns from categorical columns handling the logic for Others and Unknown categories.
+        Always drops the Unknown columns (since we only need k-1 columns for k categories)
         :param data: A column to encode
         :return:
         '''
-        data = self.encode_unknown_categorie(data)
+        data = self.encode_unknown_categories(data.copy())
         dummies = pd.get_dummies(pd.Categorical(data, categories=self.category_list_dict[data.name]))
         dummies.columns = [data.name + '_' + dummy_column for dummy_column in dummies.columns]
         dummies.drop(columns=data.name + '_Unknown', axis=1, inplace=True)
