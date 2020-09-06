@@ -74,6 +74,7 @@ def get_feature_frame_via_sqlalchemy(
         SELECT
             user_id,
             date,
+            outcome_date,
             outcome,
             feature_aggregation_functions,
             {','.join([column.name for column in rolling_daily_user_profile.columns if 'features' in column.name])}

@@ -107,6 +107,7 @@ class ChurnPredictionModel(object):
         self.dry_run = dry_run
         self.prediction_job_log = None
         self.positive_event_lookahead = positive_event_lookahead
+        self.util_columns = ['outcome', 'feature_aggregation_functions', 'user_id', 'date', 'outcome_date']
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -351,7 +352,11 @@ class ChurnPredictionModel(object):
         self.unpack_json_columns()
         self.update_feature_names_from_data()
         self.user_profiles['is_active_on_date'] = self.user_profiles['is_active_on_date'].astype(bool)
-        self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.tz_localize(None).dt.date
+        for date_column in ['date', 'outcome_date']:
+            self.user_profiles[date_column] = pd.to_datetime(
+                self.user_profiles[date_column]
+            ).dt.tz_localize(None).dt.date
+
         self.transform_bool_columns_to_int()
         logger.info('  * Filtering user profiles')
         self.user_profiles = self.user_profiles[self.user_profiles['days_active_count'] >= 1].reset_index(drop=True)
@@ -450,6 +455,17 @@ class ChurnPredictionModel(object):
 
         return data
 
+    @classmethod
+    def transform_feature_data_for_model_ingestion(
+            cls,
+            data
+    ):
+
+        data = cls.replace_dummy_columns_with_dummies(data)
+        data = cls.replace_dummy_columns_with_dummies()
+
+        return data
+
     def create_train_test_transformations(self):
         '''
         Requires:
@@ -462,29 +478,35 @@ class ChurnPredictionModel(object):
             - artifact_retention_mode
         Splits train / test applying dummification and scaling to their variables
         '''
-        self.model_date = self.user_profiles['date'].max() + timedelta(days=1)
+        self.model_date = self.user_profiles['outcome_date'].max() + timedelta(days=1)
         split = SplitType(self.training_split_parameters['split'])
         split_ratio = self.training_split_parameters['split_ratio']
         if split is SplitType.RANDOM:
-            train, test = train_test_split(self.user_profiles, test_size=(1 - split_ratio), random_state=42)
-            train_indices = train.index
-            test_indices = test.index
-            del (train, test)
+            indices = np.random.RandomState(seed=42).permutation(self.user_profiles.index)
+            # train, test = train_test_split(self.user_profiles, test_size=(1 - split_ratio), random_state=42)
+            # train_indices = train.index
+            # test_indices = test.index
+            # del (train, test)
         else:
-            dates = pd.to_datetime(
-                pd.Series([date.date() for date in pd.date_range(
-                    self.min_date,
-                    self.max_date)]
-                    )
-                )
+            indices = self.user_profiles.sort_values('date').index
+            # dates = pd.to_datetime(
+            #     pd.Series([date.date() for date in pd.date_range(
+            #         self.min_date,
+            #         self.max_date)]
+            #         )
+            #     )
 
-            train_date = dates[0:int(round(len(dates) * split_ratio, 0))].max()
-            train_indices = self.user_profiles[self.user_profiles['date'] <= train_date.date()].index
-            test_indices = self.user_profiles[self.user_profiles['date'] > train_date.date()].index
+        # Reindex based on desired ordering (random vs time based)
+        self.user_profiles = self.user_profiles.iloc[indices].reset_index(drop=True)
+        train_cutoff = round(np.max(indices) * split_ratio, 0)
+        train_indices = indices[indices <= train_cutoff]
+        test_indices = indices[indices > train_cutoff]
+            # train_date = dates[0:int(round(len(dates) * split_ratio, 0))].max()
+        # train_indices = self.user_profiles[self.user_profiles['outcome_date'] <= train_date.date()].index
+        # test_indices = self.user_profiles[self.user_profiles['outcome_date'] > train_date.date()].index
 
-        util_columns = ['outcome', 'feature_aggregation_functions', 'user_id']
-        self.X_train = self.user_profiles.loc[train_indices].drop(columns=util_columns)
-        self.X_test = self.user_profiles.loc[test_indices].drop(columns=util_columns)
+        self.X_train = self.user_profiles.loc[train_indices].drop(columns=self.util_columns)
+        self.X_test = self.user_profiles.loc[test_indices].drop(columns=self.util_columns)
         self.generate_category_list_dict()
 
         with open(
@@ -492,7 +514,7 @@ class ChurnPredictionModel(object):
             json.dump(self.category_list_dict, outfile)
 
         self.X_train = self.replace_dummy_columns_with_dummies(self.X_train)
-        self.X_test = self.replace_dummy_columns_with_dummies(self.X_test)
+        # self.X_test = self.replace_dummy_columns_with_dummies(self.X_test)
 
         self.Y_train = self.user_profiles.loc[train_indices, 'outcome'].sort_index()
         self.Y_test = self.user_profiles.loc[test_indices, 'outcome'].sort_index()
@@ -504,18 +526,18 @@ class ChurnPredictionModel(object):
             train_indices,
             self.feature_columns.numeric_columns_all
         ].fillna(0.0)
-        X_test_numeric = self.user_profiles.loc[
-            test_indices,
-            self.feature_columns.numeric_columns_all
-        ].fillna(0.0)
+        # X_test_numeric = self.user_profiles.loc[
+        #     test_indices,
+        #     self.feature_columns.numeric_columns_all
+        # ].fillna(0.0)
 
         self.scaler = MinMaxScaler(feature_range=(0, 1)).fit(X_train_numeric)
 
         X_train_numeric = pd.DataFrame(self.scaler.transform(X_train_numeric), index=train_indices,
                                        columns=self.feature_columns.numeric_columns_all).sort_index()
 
-        X_test_numeric = pd.DataFrame(self.scaler.transform(X_test_numeric), index=test_indices,
-                                      columns=self.feature_columns.numeric_columns_all).sort_index()
+        # X_test_numeric = pd.DataFrame(self.scaler.transform(X_test_numeric), index=test_indices,
+        #                               columns=self.feature_columns.numeric_columns_all).sort_index()
 
         logger.info('  * Numeric variables handling success')
 
@@ -524,14 +546,14 @@ class ChurnPredictionModel(object):
              if column not in self.feature_columns.numeric_columns_all +
              self.feature_columns.config_columns]
         ].sort_index()], axis=1)
-        self.X_test = pd.concat([X_test_numeric.sort_index(), self.X_test[
-            [column for column in self.X_train.columns
-             if column not in self.feature_columns.numeric_columns_all +
-             self.feature_columns.config_columns]
-        ].sort_index()], axis=1)
+        # self.X_test = pd.concat([X_test_numeric.sort_index(), self.X_test[
+        #     [column for column in self.X_train.columns
+        #      if column not in self.feature_columns.numeric_columns_all +
+        #      self.feature_columns.config_columns]
+        # ].sort_index()], axis=1)
 
         self.X_train = self.sort_columns_alphabetically(self.X_train)
-        self.X_test = self.sort_columns_alphabetically(self.X_test)
+        # self.X_test = self.sort_columns_alphabetically(self.X_test)
 
         joblib.dump(
             self.scaler,
@@ -594,18 +616,6 @@ class ChurnPredictionModel(object):
 
         logger.info('  * Model training complete, generating outcome frame')
 
-        self.outcome_frame = self.create_outcome_frame(
-            {
-                'train': self.Y_train,
-                'test': self.Y_test
-            },
-            {
-                'train': self.model.predict(self.X_train),
-                'test': self.model.predict(self.X_test)
-            },
-            self.outcome_labels,
-            self.le
-        )
         try:
             self.variable_importances = pd.Series(
                 data=self.model.feature_importances_,
@@ -615,7 +625,35 @@ class ChurnPredictionModel(object):
             # This handles parameter tuning, when some model types may not have variable importance
             self.variable_importances = pd.Series()
 
+        self.outcome_frame = self.create_outcome_frame(
+            {'train': self.Y_train,},
+            {'train': self.model.predict(self.X_train),},
+            self.outcome_labels,
+            self.le
+        )
+
+        if self.training_split_parameters['split_ratio'] < 1.0:
+            self.collect_accuracies_for_test()
+
         logger.info('  * Outcome frame generated')
+
+    def collect_accuracies_for_test(self):
+        self.batch_predict(self.X_test)
+
+        test_outcome_frame = self.create_outcome_frame(
+            {'test': self.predictions['outcome']},
+            {'test': self.predictions['predicted_outcome']},
+            self.outcome_labels,
+            self.le
+        )
+
+        self.outcome_frame = pd.concat(
+            [
+                self.outcome_frame,
+                test_outcome_frame
+            ],
+            axis=1
+        )
 
     @staticmethod
     def create_outcome_frame(
@@ -696,7 +734,6 @@ class ChurnPredictionModel(object):
         )
 
         return outcome_frame
-
 
     def model_training_pipeline(
             self,
@@ -888,7 +925,7 @@ class ChurnPredictionModel(object):
         self.align_prediction_frame_with_train_columns()
         self.prediction_data = self.sort_columns_alphabetically(self.prediction_data)
         self.prediction_data.fillna(0.0, inplace=True)
-        predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
+        predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data), index=self.prediction_data.index)
         logger.info('  * Prediction generation success, handling artifacts')
 
         label_range = range(len(LABELS))
@@ -896,14 +933,28 @@ class ChurnPredictionModel(object):
         for i in label_range:
             predictions.columns = [re.sub(str(i), self.le.inverse_transform([i])[0] + '_probability', str(column))
                                    for column in predictions.columns]
+        predicted_outcomes = self.model.predict(self.prediction_data)
         # We are adding outcome only for the sake of the batch test approach, we'll be dropping it in the actual
-        # prediction pipeline
-        self.predictions = pd.concat(
-            [self.user_profiles[['date', 'user_id', 'outcome']],
-             predictions],
-            axis=1
-        )
-        self.predictions['predicted_outcome'] = self.le.inverse_transform(self.model.predict(self.prediction_data))
+        # prediction pipeline. Since we're also now using batch predict for train / test, we won't be adding the id
+        # columns back in based on whether that's the case
+        if self.X_train.empty:
+            self.predictions = pd.concat(
+                [
+                    data[['date', 'user_id', 'outcome', 'outcome_date']],
+                    predictions
+                ],
+                axis=1
+            )
+            predictions = self.le.inverse_transform(predicted_outcomes)
+        else:  # We still need the outcome column to collect test accuracies if we're in training
+            self.predictions = pd.concat(
+                [
+                    predictions.sort_index(),
+                    pd.DataFrame(self.Y_test, columns=['outcome'], index=self.Y_test.index)
+                ],
+                axis=1
+            )
+        self.predictions['predicted_outcome'] = predicted_outcomes
 
     @staticmethod
     def sort_columns_alphabetically(df):
@@ -980,8 +1031,9 @@ class ChurnPredictionModel(object):
             )
 
             self.prediction_job_log = self.predictions[
-                ['date', 'model_version', 'created_at']].head(1)
+                ['outcome_date', 'model_version', 'created_at']].head(1)
             self.prediction_job_log['rows_predicted'] = len(self.predictions)
+            self.prediction_job_log.rename({'outcome_date': 'date'}, axis=1, inplace=True)
 
             self.prediction_job_log.to_gbq(
                 destination_table=f'{os.getenv("BIGQUERY_DATASET")}.prediction_job_log',
