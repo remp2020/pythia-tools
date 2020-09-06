@@ -906,7 +906,7 @@ class ChurnPredictionModel(object):
                 ],
                 axis=1
             )
-            predictions = self.le.inverse_transform(predicted_outcomes)
+            predicted_outcomes = self.le.inverse_transform(predicted_outcomes)
         else:  # We still need the outcome column to collect test accuracies if we're in training
             self.predictions = pd.concat(
                 [
