@@ -483,27 +483,13 @@ class ChurnPredictionModel(object):
         split_ratio = self.training_split_parameters['split_ratio']
         if split is SplitType.RANDOM:
             indices = np.random.RandomState(seed=42).permutation(self.user_profiles.index)
-            # train, test = train_test_split(self.user_profiles, test_size=(1 - split_ratio), random_state=42)
-            # train_indices = train.index
-            # test_indices = test.index
-            # del (train, test)
         else:
             indices = self.user_profiles.sort_values('date').index
-            # dates = pd.to_datetime(
-            #     pd.Series([date.date() for date in pd.date_range(
-            #         self.min_date,
-            #         self.max_date)]
-            #         )
-            #     )
 
-        # Reindex based on desired ordering (random vs time based)
         self.user_profiles = self.user_profiles.iloc[indices].reset_index(drop=True)
-        train_cutoff = round(np.max(indices) * split_ratio, 0)
-        train_indices = indices[indices <= train_cutoff]
-        test_indices = indices[indices > train_cutoff]
-            # train_date = dates[0:int(round(len(dates) * split_ratio, 0))].max()
-        # train_indices = self.user_profiles[self.user_profiles['outcome_date'] <= train_date.date()].index
-        # test_indices = self.user_profiles[self.user_profiles['outcome_date'] > train_date.date()].index
+        train_cutoff = int(round(np.max(indices) * split_ratio, 0))
+        train_indices = indices[:train_cutoff]
+        test_indices = indices[train_cutoff:]
 
         self.X_train = self.user_profiles.loc[train_indices].drop(columns=self.util_columns)
         self.X_test = self.user_profiles.loc[test_indices].drop(columns=self.util_columns)
@@ -514,7 +500,6 @@ class ChurnPredictionModel(object):
             json.dump(self.category_list_dict, outfile)
 
         self.X_train = self.replace_dummy_columns_with_dummies(self.X_train)
-        # self.X_test = self.replace_dummy_columns_with_dummies(self.X_test)
 
         self.Y_train = self.user_profiles.loc[train_indices, 'outcome'].sort_index()
         self.Y_test = self.user_profiles.loc[test_indices, 'outcome'].sort_index()
@@ -526,18 +511,11 @@ class ChurnPredictionModel(object):
             train_indices,
             self.feature_columns.numeric_columns_all
         ].fillna(0.0)
-        # X_test_numeric = self.user_profiles.loc[
-        #     test_indices,
-        #     self.feature_columns.numeric_columns_all
-        # ].fillna(0.0)
 
         self.scaler = MinMaxScaler(feature_range=(0, 1)).fit(X_train_numeric)
 
         X_train_numeric = pd.DataFrame(self.scaler.transform(X_train_numeric), index=train_indices,
                                        columns=self.feature_columns.numeric_columns_all).sort_index()
-
-        # X_test_numeric = pd.DataFrame(self.scaler.transform(X_test_numeric), index=test_indices,
-        #                               columns=self.feature_columns.numeric_columns_all).sort_index()
 
         logger.info('  * Numeric variables handling success')
 
@@ -546,14 +524,8 @@ class ChurnPredictionModel(object):
              if column not in self.feature_columns.numeric_columns_all +
              self.feature_columns.config_columns]
         ].sort_index()], axis=1)
-        # self.X_test = pd.concat([X_test_numeric.sort_index(), self.X_test[
-        #     [column for column in self.X_train.columns
-        #      if column not in self.feature_columns.numeric_columns_all +
-        #      self.feature_columns.config_columns]
-        # ].sort_index()], axis=1)
 
         self.X_train = self.sort_columns_alphabetically(self.X_train)
-        # self.X_test = self.sort_columns_alphabetically(self.X_test)
 
         joblib.dump(
             self.scaler,
@@ -759,20 +731,6 @@ class ChurnPredictionModel(object):
         # Make sure we have enough days for training, this statement is behind the condition since sometimes
         # we might be reusing training data from a previous run
         if self.user_profiles is None:
-            # The + 1 is because datetime diff considers an interval open on one side and closed on the other
-            days_in_range = (self.max_date - self.min_date).days + 1
-            # if days_in_range < MIN_TRAINING_DAYS:
-            #     raise ValueError(
-            #         f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data'
-            #     )
-            if min(
-                floor(self.training_split_parameters['split_ratio'] * days_in_range),
-                floor((1 - self.training_split_parameters['split_ratio']) * days_in_range)
-            ) == 0:
-                raise ValueError(
-                    f'The current split ration allows for either a test or train set with 0 days included'
-                )
-
             self.get_full_user_profiles_by_date()
 
         # Some users have no outcome due to having renewed via a non-payment option, thus we need to drop them
@@ -1159,7 +1117,7 @@ if __name__ == "__main__":
     parser.add_argument('--training-split-parameters',
                         help='Speficies split_type (random vs time_based) and split_ratio for train/test split',
                         type=json.loads,
-                        default={'split': 'time_based', 'split_ratio': 5 / 10},
+                        default={'split': 'random', 'split_ratio': 1},
                         required=False)
     parser.add_argument('--model-arguments',
                         help='Parameters for scikit model training',
