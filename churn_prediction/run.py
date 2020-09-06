@@ -487,7 +487,7 @@ class ChurnPredictionModel(object):
             indices = self.user_profiles.sort_values('date').index
 
         self.user_profiles = self.user_profiles.iloc[indices].reset_index(drop=True)
-        train_cutoff = int(round(np.max(indices) * split_ratio, 0))
+        train_cutoff = int(round(len(indices) * split_ratio, 0))
         train_indices = indices[:train_cutoff]
         test_indices = indices[train_cutoff:]
 
@@ -1117,7 +1117,7 @@ if __name__ == "__main__":
     parser.add_argument('--training-split-parameters',
                         help='Speficies split_type (random vs time_based) and split_ratio for train/test split',
                         type=json.loads,
-                        default={'split': 'random', 'split_ratio': 1},
+                        default={'split': 'time_based', 'split_ratio': 0.5},
                         required=False)
     parser.add_argument('--model-arguments',
                         help='Parameters for scikit model training',
