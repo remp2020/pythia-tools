@@ -84,11 +84,11 @@ The output of script should be similar to ours:
 
 ### Train
 
-Job generates *.pkl* model files containing features with weights to be used for prodection. You need to have at least one set of models generated to be able to run prediction. It's recommended to regenerated model files periodically as behavior of your audience might slowly change in time. It should be enough to run it once a week, possibly once a month on a reasonable long period of data.
+Job generates *.pkl* model files containing features with weights to be used for prediction. You need to have at least one set of models generated to be able to run prediction. It's recommended to regenerated model files periodically as behavior of your audience might slowly change in time. It should be enough to run it once a week, possibly once a month on a reasonable long period of data.
 
 Models are trained based on the dataset specified by `--min-date` and `--max-date` options. Greater period will transform to more accurate model, as more data are available for training and testing. You should test the size of *train* period yourself and select the one that suits your execution time and BigQuery cost expectations. Our training models with 30 day training period run for more than an hour.
 
-You should always select your `--max-date` as `NOW()` minus `--positive-event-lookahead` (defaults to 33 days), because models should be trained on resolved datasets.Model needs to know if a pageview on selected day ended up as a churn/renewal a month later. That means that you never train your models on present day data. 
+You should always select your `--max-date` as close to `NOW()` as possible.  The date range for model training and predict is referencing date of the event, we're looking at users that renewed/churned during this time period. 
 
 If you have some statistical background or if you're just curious, you can alter training parameters and test if your models perform better:
 
@@ -155,7 +155,7 @@ Output of the script will be `.pkl` file in the folder you specified in `.env` f
 
 If you have at least one set of models trained, you can un the prediction for users that are close to the churn/renewal.
 
-You can run the prediction for as current data as possible - i.e. yesterday's aggregations. Required options `--min-date` and `--max-date` in combination with optional `--positive-event-lookeahead` (defaults to 33 days) specify set of users to include in the prediction. For example setting the dates from `3rd March` to `5th March` selects users, who have 33 days until end of their subscription during that 3rd-5th March period.
+You run the prediction for days in the future, i.e. predict who's likely to churn 1, 2, 3 ... up to positive event days lookahead in the future (also constrained by the decaying accuracy of your model). Required options `--min-date` and `--max-date` in combination with optional `--positive-event-lookeahead` (defaults to 33 days) specify set of users to include in the prediction. For example setting the dates from `3rd March` to `5th March` selects users, who have 33 days until end of their subscription during that 3rd-5th March period.
 
 *(note: `--positive-event-lookahead` should be same for model training and prediction)*
 
