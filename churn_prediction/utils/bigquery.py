@@ -1043,7 +1043,6 @@ def add_all_time_delta_columns(
 ):
     filtered_w_derived_metrics_w_all_time_delta_columns = bq_session.query(
         filtered_w_derived_metrics,
-        # TODO: This doesn't work for aggregation functions other than sum, need to fix
         *[
             case(
                 [
