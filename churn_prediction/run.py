@@ -31,8 +31,7 @@ from google.oauth2 import service_account
 
 from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
     MIN_TRAINING_DAYS, CURRENT_PIPELINE_VERSION, PROFILE_COLUMNS
-from cmd.prediction_commons.utils.enums import NormalizedFeatureHandling, ArtifactRetentionMode, \
-    ArtifactRetentionCollection
+from prediction_commons.enums import NormalizedFeatureHandling, ArtifactRetentionMode, ArtifactRetentionCollection
 from utils.db_utils import create_connection, DailyProfilesHandler
 from utils.bigquery import get_feature_frame_via_sqlalchemy, insert_daily_feature_frame
 from utils.mysql import get_payment_history_features, get_global_context
@@ -58,28 +57,31 @@ class ChurnPredictionModel(PredictionModel):
     ):
         super().__init__(
             outcome_labels=LABELS,
-            min_date = min_date,
-            max_date = max_date,
-            moving_window_length = moving_window_length,
-            normalization_handling = normalization_handling,
-            overwrite_files = overwrite_files,
-            training_split_parameters = training_split_parameters,
-            artifact_retention_mode = artifact_retention_mode,
-            artifacts_to_retain = artifacts_to_retain,
-            feature_aggregation_functions = feature_aggregation_functions,
-            dry_run = dry_run,
-            path_to_model_files = path_to_model_files,
-            positive_event_lookahead = positive_event_lookahead,
+            min_date=min_date,
+            max_date=max_date,
+            moving_window_length=moving_window_length,
+            normalization_handling=normalization_handling,
+            overwrite_files=overwrite_files,
+            training_split_parameters=training_split_parameters,
+            artifact_retention_mode=artifact_retention_mode,
+            artifacts_to_retain=artifacts_to_retain,
+            feature_aggregation_functions=feature_aggregation_functions,
+            dry_run=dry_run,
+            path_to_model_files=path_to_model_files,
+            positive_event_lookahead=positive_event_lookahead,
+            model_record_id='user_id',
         )
 
-        self.current_model_version = CURRENT_MODEL_VERSION,
-        self.profile_columns = PROFILE_COLUMNS,
+        self.current_model_version = CURRENT_MODEL_VERSION
+        self.profile_columns = PROFILE_COLUMNS
 
         self.feature_columns = FeatureColumns(
             self.feature_aggregation_functions.keys(),
             self.min_date,
             self.max_date
         )
+
+        self.le.fit(list(LABELS.keys()))
 
     def get_full_user_profiles_by_date(
             self

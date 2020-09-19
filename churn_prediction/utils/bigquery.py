@@ -1,5 +1,4 @@
 import re
-import pandas as pd
 from sqlalchemy import select, column
 from sqlalchemy.types import Float, DATE, String, Integer, TIMESTAMP
 from sqlalchemy import and_, func, case, text
@@ -16,7 +15,7 @@ from .config import sanitize_column_name, EXPECTED_DEVICE_TYPES
 from sqlalchemy.engine import Engine
 from google.oauth2 import service_account
 
-from .enums import WindowHalfDirection
+from prediction_commons.enums import WindowHalfDirection
 
 
 def get_sqla_table(table_name, engine):

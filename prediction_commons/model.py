@@ -33,9 +33,9 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
 
-from utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
-from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
-from utils.data_transformations import row_wise_normalization
+from .enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode, ArtifactRetentionMode, \
+    ArtifactRetentionCollection, ModelArtifacts
+from .data_transformations import row_wise_normalization
 
 
 class PredictionModel(object):
@@ -56,6 +56,7 @@ class PredictionModel(object):
             dry_run: bool = False,
             path_to_model_files: str = None,
             positive_event_lookahead: int = 33,
+            model_record_id: str = 'id',
     ):
         def create_util_columns():
             util_columns = ['outcome', 'feature_aggregation_functions', 'date', 'outcome_date', self.id_column]
@@ -65,7 +66,7 @@ class PredictionModel(object):
         self.feature_columns = None,
         self.current_model_version = None,
         self.profile_columns = None,
-        self.id_column = 'id'
+        self.id_column = model_record_id
         self.util_columns = create_util_columns()
         self.min_date = min_date
         self.max_date = max_date
@@ -77,7 +78,6 @@ class PredictionModel(object):
         self.category_list_dict = {}
         self.le = LabelEncoder()
         self.outcome_labels = outcome_labels
-        self.le.fit(outcome_labels)
         self.X_train = pd.DataFrame()
         self.X_test = pd.DataFrame()
         self.X_train_undersampled = pd.DataFrame()
@@ -672,7 +672,7 @@ class PredictionModel(object):
                     self.feature_columns.numeric_columns_all.append(column)
                 # This is a hacky solution, but device brand (and potentially other profile columns
                 # have the most fluctuations in terms of values that translate to new columns:
-                for profile_column_flag in PROFILE_COLUMNS + ['_device_brand_']:
+                for profile_column_flag in self.profile_columns + ['_device_brand_']:
                     if profile_column_flag in column and column:
                         data[column] = 0.0
                         self.feature_columns.numeric_columns_all.append(column)
