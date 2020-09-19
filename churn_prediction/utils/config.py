@@ -1,6 +1,5 @@
 from typing import List, Dict
 from sqlalchemy import func
-from datetime import datetime
 
 
 CATEGORICAL_COLUMNS = ['day_of_week']
