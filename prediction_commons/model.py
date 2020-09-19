@@ -33,21 +33,19 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
 
-from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
-    MIN_TRAINING_DAYS, CURRENT_PIPELINE_VERSION, PROFILE_COLUMNS
 from utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.data_transformations import row_wise_normalization
 
 
-class ChurnPredictionModel(object):
+class PredictionModel(object):
     def __init__(
             self,
+            outcome_labels: List[str],
             min_date: datetime = datetime.utcnow() - timedelta(days=31),
             max_date: datetime = datetime.utcnow() - timedelta(days=1),
             moving_window_length: int = 7,
             normalization_handling: NormalizedFeatureHandling = NormalizedFeatureHandling.REPLACE_WITH,
-            outcome_labels: List[str] = tuple(LABELS.keys()),
             overwrite_files: bool = True,
             training_split_parameters=None,
             # This applies to all model artifacts that are not part of the flow output
@@ -57,13 +55,16 @@ class ChurnPredictionModel(object):
             feature_aggregation_functions: Dict[str, sqlalchemy.func] = {'avg': func.avg},
             dry_run: bool = False,
             path_to_model_files: str = None,
-            positive_event_lookahead: int = 33
+            positive_event_lookahead: int = 33,
     ):
-        def create_util_columns(self):
+        def create_util_columns():
             util_columns = ['outcome', 'feature_aggregation_functions', 'date', 'outcome_date', self.id_column]
 
             return util_columns
 
+        self.feature_columns = None,
+        self.current_model_version = None,
+        self.profile_columns = None,
         self.id_column = 'id'
         self.util_columns = create_util_columns()
         self.min_date = min_date
@@ -73,11 +74,6 @@ class ChurnPredictionModel(object):
         self.user_profiles = None
         self.normalization_handling = normalization_handling
         self.feature_aggregation_functions = feature_aggregation_functions
-        self.feature_columns = FeatureColumns(
-            self.feature_aggregation_functions.keys(),
-            self.min_date,
-            self.max_date
-        )
         self.category_list_dict = {}
         self.le = LabelEncoder()
         self.outcome_labels = outcome_labels
@@ -138,14 +134,10 @@ class ChurnPredictionModel(object):
         logger.info(f'  * {artifact.value} artifact dropped')
 
     def get_full_user_profiles_by_date(self):
-        self.user_profiles = pd.DataFrame()
+        pass
 
     def update_feature_names_from_data(self):
-        self.feature_columns = FeatureColumns(
-            self.user_profiles['feature_aggregation_functions'].tolist()[0].split(','),
-            self.min_date,
-            self.max_date
-        )
+        pass
 
     def introduce_row_wise_normalized_features(self):
         '''
@@ -721,7 +713,7 @@ class ChurnPredictionModel(object):
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data), index=self.prediction_data.index)
         logger.info('  * Prediction generation success, handling artifacts')
 
-        label_range = range(len(LABELS))
+        label_range = range(len(self.outcome_labels))
 
         for i in label_range:
             predictions.columns = [re.sub(str(i), self.le.inverse_transform([i])[0] + '_probability', str(column))
@@ -800,7 +792,7 @@ class ChurnPredictionModel(object):
         self.batch_predict(self.user_profiles)
         logging.info('  * Generatincg predictions')
 
-        self.predictions['model_version'] = CURRENT_MODEL_VERSION
+        self.predictions['model_version'] = self.current_model_version
         self.predictions['created_at'] = datetime.utcnow()
 
         # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
