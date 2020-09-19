@@ -455,16 +455,6 @@ class ChurnPredictionModel(object):
 
         return data
 
-    @classmethod
-    def transform_feature_data_for_model_ingestion(
-            cls,
-            data
-    ):
-
-        data = cls.replace_dummy_columns_with_dummies(data)
-        data = cls.replace_dummy_columns_with_dummies()
-
-        return data
 
     def create_train_test_transformations(self):
         '''
@@ -942,6 +932,38 @@ class ChurnPredictionModel(object):
         # 3. Make sure the columns have the same order as original data, since sklearn ignores column names
         self.prediction_data = self.prediction_data[list(self.variable_importances.index)]
 
+    def upload_predictions(self):
+        logger.info(f'Storing predicted data')
+        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
+        database = os.getenv('BIGQUERY_PROJECT_ID')
+        _, db_connection = create_connection(
+            f'bigquery://{database}',
+            engine_kwargs={'credentials_path': client_secrets_path}
+        )
+
+        credentials = service_account.Credentials.from_service_account_file(
+            client_secrets_path,
+        )
+
+        self.predictions.to_gbq(
+            destination_table=f'{os.getenv("BIGQUERY_DATASET")}.churn_predictions_log',
+            project_id=database,
+            credentials=credentials,
+            if_exists='append'
+        )
+
+        self.prediction_job_log = self.predictions[
+            ['outcome_date', 'model_version', 'created_at']].head(1)
+        self.prediction_job_log['rows_predicted'] = len(self.predictions)
+        self.prediction_job_log.rename({'outcome_date': 'date'}, axis=1, inplace=True)
+
+        self.prediction_job_log.to_gbq(
+            destination_table=f'{os.getenv("BIGQUERY_DATASET")}.prediction_job_log',
+            project_id=database,
+            credentials=credentials,
+            if_exists='append',
+        )
+
     def generate_and_upload_prediction(self):
         '''
         Requires:
@@ -971,37 +993,7 @@ class ChurnPredictionModel(object):
         # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
         if not self.dry_run:
             self.predictions.drop('outcome', axis=1, inplace=True)
-
-            logger.info(f'Storing predicted data')
-            client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
-            database = os.getenv('BIGQUERY_PROJECT_ID')
-            _, db_connection = create_connection(
-                f'bigquery://{database}',
-                engine_kwargs={'credentials_path': client_secrets_path}
-            )
-
-            credentials = service_account.Credentials.from_service_account_file(
-                client_secrets_path,
-            )
-
-            self.predictions.to_gbq(
-                destination_table=f'{os.getenv("BIGQUERY_DATASET")}.churn_predictions_log',
-                project_id=database,
-                credentials=credentials,
-                if_exists='append'
-            )
-
-            self.prediction_job_log = self.predictions[
-                ['outcome_date', 'model_version', 'created_at']].head(1)
-            self.prediction_job_log['rows_predicted'] = len(self.predictions)
-            self.prediction_job_log.rename({'outcome_date': 'date'}, axis=1, inplace=True)
-
-            self.prediction_job_log.to_gbq(
-                destination_table=f'{os.getenv("BIGQUERY_DATASET")}.prediction_job_log',
-                project_id=database,
-                credentials=credentials,
-                if_exists='append',
-            )
+            self.upload_predictions()
         else:
             # Sometimes we're missing the ground truth label due to holes in the logic for outcome resolution
             self.predictions = self.predictions[~self.predictions['outcome'].isna()]
@@ -1020,30 +1012,8 @@ class ChurnPredictionModel(object):
         for artifact in [ModelArtifacts.MODEL, ModelArtifacts.PREDICTION_DATA, ModelArtifacts.USER_PROFILES]:
             self.artifact_handler(artifact)
 
-    def pregaggregate_daily_profiles(
-            self
-    ):
+    def retrieve_and_insert(self):
         dates_for_preaggregation = [date for date in pd.date_range(self.min_date, self.max_date)]
-
-        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
-        database = os.getenv('BIGQUERY_PROJECT_ID')
-        _, db_connection = create_connection(
-            f'bigquery://{database}',
-            engine_kwargs={'credentials_path': client_secrets_path}
-        )
-
-        credentials = service_account.Credentials.from_service_account_file(
-            client_secrets_path,
-        )
-
-        handler = DailyProfilesHandler(
-            database.replace('bigquery://', ''),
-            credentials
-        )
-
-        handler.create_daily_profiles_table(logger)
-        logger.info(f'Starting with preaggregation for date range {self.min_date.date()} - {self.max_date.date()}')
-        # Keep full log for debug purposes
         for date in dates_for_preaggregation:
             if len(dates_for_preaggregation) > 1:
                 logger.setLevel(logging.ERROR)
@@ -1068,6 +1038,33 @@ class ChurnPredictionModel(object):
 
             logger.setLevel(logging.INFO)
             logger.info(f'Date {date} succesfully aggregated & uploaded to BQ')
+
+    @staticmethod
+    def handle_profiles_table():
+        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
+        database = os.getenv('BIGQUERY_PROJECT_ID')
+        _, db_connection = create_connection(
+            f'bigquery://{database}',
+            engine_kwargs={'credentials_path': client_secrets_path}
+        )
+
+        credentials = service_account.Credentials.from_service_account_file(
+            client_secrets_path,
+        )
+
+        handler = DailyProfilesHandler(
+            database.replace('bigquery://', ''),
+            credentials
+        )
+
+        handler.create_daily_profiles_table(logger)
+
+    def pregaggregate_daily_profiles(
+            self
+    ):
+        self.handle_profiles_table()
+        logger.info(f'Starting with preaggregation for date range {self.min_date.date()} - {self.max_date.date()}')
+        self.retrieve_and_insert()
 
     def undersample_majority_class(self):
         sampler = self.sampling_function
