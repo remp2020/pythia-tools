@@ -374,7 +374,8 @@ if __name__ == "__main__":
             training_split_parameters=args['training_split_parameters'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING,
-            positive_event_lookahead=args['positive_event_lookahead']
+            positive_event_lookahead=args['positive_event_lookahead'],
+            dry_run=False
             )
 
         churn_prediction.model_training_pipeline(
@@ -390,7 +391,8 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.PREDICTION,
-            positive_event_lookahead=args['positive_event_lookahead']
+            positive_event_lookahead=args['positive_event_lookahead'],
+            dry_run=False
         )
 
         churn_prediction.generate_and_upload_prediction()
@@ -401,6 +403,7 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING,
-            positive_event_lookahead=args['positive_event_lookahead']
+            positive_event_lookahead=args['positive_event_lookahead'],
+            dry_run=False
         )
         churn_prediction.pregaggregate_daily_profiles()

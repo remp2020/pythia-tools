@@ -56,7 +56,7 @@ class PredictionModel(object):
             # By default everything gets stored (since we expect most runs to still be in experimental model
             artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
             feature_aggregation_functions: Dict[str, sqlalchemy.func] = {'avg': func.avg},
-            dry_run: bool = False,
+            dry_run: bool = True,
             path_to_model_files: str = None,
             positive_event_lookahead: int = 33,
             model_record_id: str = 'id',
@@ -597,7 +597,8 @@ class PredictionModel(object):
             header=False
         )
 
-        self.upload_model_meta()
+        if not self.dry_run:
+            self.upload_model_meta()
 
     def upload_model_meta(self):
         logger.info(f'Storing model metadata')
