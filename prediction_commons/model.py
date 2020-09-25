@@ -1,22 +1,8 @@
 import sys
 
+from google.cloud import bigquery
+from google.oauth2 import service_account
 from imblearn.under_sampling import RandomUnderSampler
-
-sys.path.append("../")
-
-# environment variables
-from dotenv import load_dotenv
-
-load_dotenv('.env')
-
-# logging
-import logging.config
-from utils.config import LOGGING
-
-logger = logging.getLogger(__name__)
-logging.config.dictConfig(LOGGING)
-logger.setLevel(logging.INFO)
-
 import json
 import os
 import re
@@ -33,9 +19,26 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
 
-from .enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode, ArtifactRetentionMode, \
+from prediction_commons.enums import SplitType, NormalizedFeatureHandling, ArtifactRetentionMode, \
     ArtifactRetentionCollection, ModelArtifacts
-from .data_transformations import row_wise_normalization
+from prediction_commons.data_transformations import row_wise_normalization
+from prediction_commons.db_utils import TableHandler, create_connection
+from prediction_commons.bq_schemas import rolling_daily_user_profile
+
+sys.path.append("../")
+
+# environment variables
+from dotenv import load_dotenv
+
+load_dotenv('.env')
+
+# logging
+import logging.config
+from utils.config import LOGGING
+
+logger = logging.getLogger(__name__)
+logging.config.dictConfig(LOGGING)
+logger.setLevel(logging.INFO)
 
 
 class PredictionModel(object):
@@ -828,6 +831,11 @@ class PredictionModel(object):
             self
     ):
         self.handle_profiles_table()
+
+        self.handle_table(
+            rolling_daily_user_profile(self.id_column),
+            'rolling_daily_user_profile'
+        )
         logger.info(f'Starting with preaggregation for date range {self.min_date.date()} - {self.max_date.date()}')
         self.retrieve_and_insert()
 
@@ -837,3 +845,28 @@ class PredictionModel(object):
             self.X_train,
             self.Y_train
         )
+
+    @staticmethod
+    def handle_table(
+            schema: List[bigquery.SchemaField],
+            table_name: str
+    ):
+        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
+        database = os.getenv('BIGQUERY_PROJECT_ID')
+        _, db_connection = create_connection(
+            f'bigquery://{database}',
+            engine_kwargs={'credentials_path': client_secrets_path}
+        )
+
+        credentials = service_account.Credentials.from_service_account_file(
+            client_secrets_path,
+        )
+
+        handler = TableHandler(
+            database.replace('bigquery://', ''),
+            credentials,
+            table_name,
+            schema
+        )
+
+        handler.create_table(logger)
