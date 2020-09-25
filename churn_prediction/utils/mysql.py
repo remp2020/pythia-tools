@@ -3,7 +3,7 @@ from sqlalchemy.types import DATE
 from sqlalchemy import and_, func
 from datetime import datetime
 from sqlalchemy import MetaData, Table
-from .db_utils import create_connection
+from prediction_commons.db_utils import create_connection
 from sqlalchemy.orm import sessionmaker
 from typing import List, Dict
 import os

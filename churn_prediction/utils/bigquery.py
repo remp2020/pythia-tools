@@ -10,7 +10,8 @@ from typing import List, Dict, Any
 import os
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData, Table
-from .db_utils import create_connection, UserIdHandler
+from .db_utils import UserIdHandler
+from prediction_commons.db_utils import create_connection
 from .config import sanitize_column_name, EXPECTED_DEVICE_TYPES
 from sqlalchemy.engine import Engine
 from google.oauth2 import service_account

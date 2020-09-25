@@ -1,25 +1,5 @@
 import sys
-
 import sqlalchemy
-from typing import Dict
-
-from sqlalchemy import func
-
-from prediction_commons.model import PredictionModel
-
-sys.path.append("../")
-
-# environment variables
-from dotenv import load_dotenv
-load_dotenv('.env')
-
-# logging
-import logging.config
-from utils.config import LOGGING
-logger = logging.getLogger(__name__)
-logging.config.dictConfig(LOGGING)
-logger.setLevel(logging.INFO)
-
 import argparse
 import json
 import os
@@ -28,13 +8,29 @@ import pandas as pd
 from datetime import datetime, timedelta
 from dateutil.parser import parse
 from google.oauth2 import service_account
-
+from typing import Dict
+from sqlalchemy import func
+import logging.config
 from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
     MIN_TRAINING_DAYS, CURRENT_PIPELINE_VERSION, PROFILE_COLUMNS
 from prediction_commons.enums import NormalizedFeatureHandling, ArtifactRetentionMode, ArtifactRetentionCollection
-from utils.db_utils import create_connection, DailyProfilesHandler
-from utils.bigquery import get_feature_frame_via_sqlalchemy, insert_daily_feature_frame
+from prediction_commons.db_utils import create_connection
 from utils.mysql import get_payment_history_features, get_global_context
+from prediction_commons.model import PredictionModel
+from utils.config import LOGGING
+
+sys.path.append("../")
+
+# environment variables
+from dotenv import load_dotenv
+load_dotenv('.env')
+
+from utils.bigquery import get_feature_frame_via_sqlalchemy, insert_daily_feature_frame
+
+# logging
+logger = logging.getLogger(__name__)
+logging.config.dictConfig(LOGGING)
+logger.setLevel(logging.INFO)
 
 
 class ChurnPredictionModel(PredictionModel):
