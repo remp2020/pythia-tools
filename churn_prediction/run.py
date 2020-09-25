@@ -68,6 +68,7 @@ class ChurnPredictionModel(PredictionModel):
             model_record_id='user_id',
         )
 
+        self.model_type = 'churn'
         self.current_model_version = CURRENT_MODEL_VERSION
         self.profile_columns = PROFILE_COLUMNS
 
@@ -305,26 +306,6 @@ class ChurnPredictionModel(PredictionModel):
 
             logger.setLevel(logging.INFO)
             logger.info(f'Date {date} succesfully aggregated & uploaded to BQ')
-
-    @staticmethod
-    def handle_profiles_table():
-        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
-        database = os.getenv('BIGQUERY_PROJECT_ID')
-        _, db_connection = create_connection(
-            f'bigquery://{database}',
-            engine_kwargs={'credentials_path': client_secrets_path}
-        )
-
-        credentials = service_account.Credentials.from_service_account_file(
-            client_secrets_path,
-        )
-
-        handler = DailyProfilesHandler(
-            database.replace('bigquery://', ''),
-            credentials
-        )
-
-        handler.create_daily_profiles_table(logger)
 
 
 def mkdatetime(datestr: str) -> datetime:
