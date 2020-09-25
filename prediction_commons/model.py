@@ -66,6 +66,7 @@ class PredictionModel(object):
 
             return util_columns
 
+        self.model_type = 'generic'
         self.feature_columns = None,
         self.current_model_version = None,
         self.profile_columns = None,
@@ -281,14 +282,14 @@ class PredictionModel(object):
         :return:
         '''
         for column in self.feature_columns.categorical_columns:
+            dummies = self.generate_dummy_columns_from_categorical_column(data[column])
             data = pd.concat(
                 [
                     data,
-                    self.generate_dummy_columns_from_categorical_column(
-                        data[column])
+                    dummies
                 ],
                 axis=1)
-        data.drop(columns=self.feature_columns.categorical_columns, axis=1, inplace=True)
+            data.drop(labels=column, axis=1, inplace=True)
 
         return data
 
@@ -596,6 +597,78 @@ class PredictionModel(object):
             header=False
         )
 
+        self.upload_model_meta()
+
+    def upload_model_meta(self):
+        logger.info(f'Storing model metadata')
+        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
+        database = os.getenv('BIGQUERY_PROJECT_ID')
+        _, db_connection = create_connection(
+            f'bigquery://{database}',
+            engine_kwargs={'credentials_path': client_secrets_path}
+        )
+
+        credentials = service_account.Credentials.from_service_account_file(
+            client_secrets_path,
+        )
+
+        models = pd.DataFrame(
+            {
+                'train_date': datetime.utcnow().date(),
+                'min_date': self.min_date,
+                'max_date': self.max_date,
+                'model_type': self.model_type,
+                'model_version': self.current_model_version,
+                'window_days': self.moving_window,
+                'event_lookahead': self.positive_event_lookahead,
+
+            },
+            index=[0]
+        )
+
+        for feature_set_name, feature_set in {
+            'numeric_columns': self.feature_columns.numeric_columns,
+            'profile_numeric_columns_from_json_fields': self.feature_columns.profile_numeric_columns_from_json_fields,
+            'time_based_columns': self.feature_columns.time_based_columns,
+            'categorical_columns': self.feature_columns.categorical_columns,
+            'bool_columns': self.feature_columns.bool_columns,
+            'numeric_columns_with_window_variants': self.feature_columns.numeric_columns_window_variants,
+            'device_based_columns': self.feature_columns.device_based_features
+        }.items():
+            if isinstance(feature_set, list):
+                if feature_set_name != 'categorical_columns':
+                    feature_set_elements = feature_set
+                else:
+                    # Categorical variables get transformed into dummy variables with <column_name>_<column_value>
+                    # naming
+                    feature_set_elements = [
+                        column for column in self.variable_importances.index
+                        for column_prefix in feature_set_name
+                        if column_prefix in column
+                    ]
+
+                models[f'importances__{feature_set_name}'] = str(
+                    self.variable_importances[
+                        feature_set_elements
+                    ].to_dict()
+                )
+            elif isinstance(feature_set, dict):
+                feature_set_elements = sum(feature_set.values(), [])
+                models[f'importances__{feature_set_name}'] = str(
+                    self.variable_importances[
+                        feature_set_elements
+                    ].to_dict()
+                )
+
+        models.to_gbq(
+            destination_table=f'{os.getenv("BIGQUERY_DATASET")}.models',
+            project_id=database,
+            credentials=credentials,
+            if_exists='append'
+        )
+
+        logger.info(f'Model metadata stored')
+
     def remove_model_training_artefacts(self):
         for artifact in [
             ModelArtifacts.TRAIN_DATA_FEATURES, ModelArtifacts.TRAIN_DATA_OUTCOME,
@@ -830,7 +903,6 @@ class PredictionModel(object):
     def pregaggregate_daily_profiles(
             self
     ):
-        self.handle_profiles_table()
 
         self.handle_table(
             rolling_daily_user_profile(self.id_column),
