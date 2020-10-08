@@ -165,9 +165,9 @@ while [ "$di" != "$end_on" ]; do
 
             echo "File ${cur_file_gz} not found, downloading from Elastic ($ELASTIC_ADDR): ${idx} [ ${di} TO ${di} ]"
             # aggregate CSV file from elastic
-            if [ -z "$ELASTIC_AUTH" ]
+            if [ -z "$ELASTIC_AUTH" ]; then
                 authstring=''
-            then
+            else
                 authstring="-a $ELASTIC_AUTH"
             fi
 
