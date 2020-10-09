@@ -157,7 +157,7 @@ while [ "$di" != "$end_on" ]; do
 
         if [ ! -f $cur_file_gz ]; then
 
-            if [ "$onlyaggregate" -eq "1" ]; then
+            if [ -n "$onlyaggregate" ]; then
                 echo "File ${cur_file_gz} not found, --onlyaggregate mode is turned on, skipping the date"
                 skip_date=1
                 break
