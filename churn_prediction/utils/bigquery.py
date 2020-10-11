@@ -418,8 +418,7 @@ def add_outcomes(
         events.c['type'].in_(
             list(LABELS.keys())
         ),
-        cast(events.c['time'], DATE) > cast(start_time, DATE),
-        cast(events.c['time'], DATE) <= cast(start_time + timedelta(days=positive_event_lookahead), DATE)
+        cast(events.c['time'], DATE) == cast(start_time, DATE)
     ).subquery()
 
     # TODO: Remove deduplication, once the event table doesn't contain any
@@ -456,11 +455,7 @@ def add_outcomes(
         relevant_events_deduplicated,
         and_(
             feature_query.c['user_id'] == relevant_events_deduplicated.c['user_id'],
-            feature_query.c['date'] >= func.date_sub(
-                relevant_events_deduplicated.c['date'],
-                text(f'interval {positive_event_lookahead} day')
-            ),
-            feature_query.c['date'] <= relevant_events_deduplicated.c['date']
+            feature_query.c['date'] == relevant_events_deduplicated.c['date']
         )
     ).subquery('feature_query_w_outcome')
 
