@@ -1,4 +1,5 @@
 import pandas as pd
+from sqlalchemy.sql.elements import Cast
 from sqlalchemy.types import DATE
 from sqlalchemy import and_, func
 from datetime import datetime
@@ -182,8 +183,7 @@ def get_users_with_expirations(
     ).filter(
         and_(
             payments.c['status'] == 'paid',
-            func.datediff(subscriptions.c['end_time'], aggregation_date) <= expiration_lookahead,
-            func.datediff(subscriptions.c['end_time'], aggregation_date) > 0,
+            Cast(subscriptions.c['end_time'], DATE) == aggregation_date
         )
     ).group_by(
         subscriptions.c['user_id']
