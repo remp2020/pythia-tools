@@ -162,7 +162,7 @@ def run(file_date, csv_folder):
     date_col_partitioning = bigquery.TimePartitioning(
         type_=bigquery.TimePartitioningType.DAY,
         field="date",
-        expiration_ms=15552000000,  # 180 days
+        expiration_ms=31536000000,  # 365 days
     )
 
     # aggregated_browser_days tables
