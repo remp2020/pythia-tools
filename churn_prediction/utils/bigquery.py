@@ -84,7 +84,6 @@ def get_feature_frame_via_sqlalchemy(
             outcome_date >= @start_time
             AND outcome_date <= @end_time
             AND window_days = @window_days
-            AND event_lookahead = @event_lookahead
     '''
 
     client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
