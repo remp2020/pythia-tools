@@ -5,13 +5,11 @@ import os
 class UserIdHandler:
     def __init__(
             self,
-            date,
-            expiration_lookahead: int=30
+            date
     ):
         from .mysql import get_users_with_expirations
         self.user_ids = get_users_with_expirations(
-            date,
-            expiration_lookahead
+            date
         )
         self.user_ids_frame = pd.DataFrame()
 

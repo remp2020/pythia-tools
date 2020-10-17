@@ -48,8 +48,7 @@ class ChurnPredictionModel(PredictionModel):
             artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
             feature_aggregation_functions: Dict[str, sqlalchemy.func] = {'avg': func.avg},
             dry_run: bool = False,
-            path_to_model_files: str = None,
-            positive_event_lookahead: int = 33,
+            path_to_model_files: str = None
     ):
         super().__init__(
             outcome_labels=LABELS,
@@ -64,7 +63,6 @@ class ChurnPredictionModel(PredictionModel):
             feature_aggregation_functions=feature_aggregation_functions,
             dry_run=dry_run,
             path_to_model_files=path_to_model_files,
-            positive_event_lookahead=positive_event_lookahead,
             model_record_id='user_id',
         )
 
@@ -223,8 +221,7 @@ class ChurnPredictionModel(PredictionModel):
         self.user_profiles = get_feature_frame_via_sqlalchemy(
             self.min_date,
             self.max_date,
-            self.moving_window,
-            self.positive_event_lookahead
+            self.moving_window
         )
 
         logger.info(f'  * Processing user profiles')
@@ -294,7 +291,6 @@ class ChurnPredictionModel(PredictionModel):
                         'pipeline_version': CURRENT_PIPELINE_VERSION,
                         'created_at': datetime.utcnow(),
                         'window_days': self.moving_window,
-                        'event_lookahead': self.positive_event_lookahead,
                         'feature_aggregation_functions': ','.join(
                             list(self.feature_aggregation_functions.keys())
                         )
@@ -340,11 +336,6 @@ if __name__ == "__main__":
                         type=int,
                         default=30,
                         required=False)
-    parser.add_argument('--positive-event-lookahead',
-                        help='We predict and event is going to occur within k-days after the time of prediction',
-                        type=int,
-                        default=33,
-                        required=False)
     parser.add_argument('--training-split-parameters',
                         help='Speficies split_type (random vs time_based) and split_ratio for train/test split',
                         type=json.loads,
@@ -374,7 +365,6 @@ if __name__ == "__main__":
             training_split_parameters=args['training_split_parameters'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING,
-            positive_event_lookahead=args['positive_event_lookahead'],
             dry_run=False
             )
 
@@ -391,7 +381,6 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.PREDICTION,
-            positive_event_lookahead=args['positive_event_lookahead'],
             dry_run=False
         )
 
@@ -403,7 +392,6 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING,
-            positive_event_lookahead=args['positive_event_lookahead'],
             dry_run=False
         )
         churn_prediction.pregaggregate_daily_profiles()

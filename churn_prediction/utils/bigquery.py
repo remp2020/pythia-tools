@@ -65,8 +65,7 @@ browsers = bq_mappings['browsers']
 def get_feature_frame_via_sqlalchemy(
         start_time: datetime,
         end_time: datetime,
-        moving_window_length: int = 30,
-        positive_event_lookahead: int = 33
+        moving_window_length: int = 30
 ):
     rolling_daily_user_profile = get_user_profiles_table()
 
@@ -84,7 +83,6 @@ def get_feature_frame_via_sqlalchemy(
             outcome_date >= @start_time
             AND outcome_date <= @end_time
             AND window_days = @window_days
-            AND event_lookahead = @event_lookahead
     '''
 
     client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
@@ -123,11 +121,6 @@ def get_feature_frame_via_sqlalchemy(
                         'parameterType': {'type': 'INT64'},
                         'parameterValue': {'value': moving_window_length}
                     },
-                    {
-                        'name': 'event_lookahead',
-                        'parameterType': {'type': 'INT64'},
-                        'parameterValue': {'value': positive_event_lookahead}
-                    },
                 ]
             }
         }
@@ -148,20 +141,18 @@ def insert_daily_feature_frame(
         date: datetime = datetime.utcnow().date(),
         moving_window_length: int = 7,
         feature_aggregation_functions: Dict[str, func] = None,
-        positive_event_lookahead: int = 33,
         meta_columns_w_values: Dict[str, Any] = {}
 ):
     full_query = get_full_features_query(
         date,
         date,
         moving_window_length,
-        feature_aggregation_functions,
-        positive_event_lookahead
+        feature_aggregation_functions
     )
 
     meta_columns = [
         'date', 'user_id', 'outcome', 'outcome_date', 'pipeline_version',
-        'created_at', 'window_days', 'event_lookahead', 'feature_aggregation_functions'
+        'created_at', 'window_days', 'feature_aggregation_functions'
     ]
 
     features_in_data = [column.name for column in full_query.columns if column.name not in meta_columns]
@@ -187,7 +178,6 @@ def insert_daily_feature_frame(
         literal(meta_columns_w_values['pipeline_version']).cast(String).label('pipeline_version'),
         literal(meta_columns_w_values['created_at']).cast(TIMESTAMP).label('created_at'),
         literal(meta_columns_w_values['window_days']).cast(Integer).label('window_days'),
-        literal(meta_columns_w_values['event_lookahead']).cast(Integer).label('event_lookahead'),
         literal(meta_columns_w_values['feature_aggregation_functions']).cast(String).label(
             'feature_aggregation_functions'
         ),
@@ -340,8 +330,7 @@ def get_full_features_query(
         start_time: datetime,
         end_time: datetime,
         moving_window_length: int = 7,
-        feature_aggregation_functions: Dict[str, func] = None,
-        positive_event_lookahead: int = 1
+        feature_aggregation_functions: Dict[str, func] = None
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'avg': func.avg}
@@ -397,8 +386,7 @@ def get_full_features_query(
 
     full_query = add_outcomes(
         feature_query,
-        start_time,
-        positive_event_lookahead
+        start_time
     )
 
     return full_query
@@ -406,8 +394,7 @@ def get_full_features_query(
 
 def add_outcomes(
         feature_query,
-        start_time: datetime,
-        positive_event_lookahead: int = 1,
+        start_time: datetime
 ):
     # The events table holds all the events, not just conversion ones
     relevant_events = bq_session.query(

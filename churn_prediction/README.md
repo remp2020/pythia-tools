@@ -92,7 +92,6 @@ You should always select your `--max-date` as close to `NOW()` as possible.  The
 
 If you have some statistical background or if you're just curious, you can alter training parameters and test if your models perform better:
 
-- `--positive-event-lookahead`. Number of days to look ahead of pageview to see the resulting action during training (churn/renewal).
 - `--training-split-parameters`. JSON-representation of training configuration:
     - `split_type`. Defines how data is split for training/testing. Possible values are `time_based` and `random`. Defaults to `time_based`.
     - `split_ratio`. Defines a portion of data used for training and for testing. Possible value is any number within `0..1` interval. Defaults to `0.5`.

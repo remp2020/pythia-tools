@@ -58,7 +58,6 @@ class PredictionModel(object):
             feature_aggregation_functions: Dict[str, sqlalchemy.func] = {'avg': func.avg},
             dry_run: bool = True,
             path_to_model_files: str = None,
-            positive_event_lookahead: int = 33,
             model_record_id: str = 'id',
     ):
         def create_util_columns():
@@ -106,7 +105,6 @@ class PredictionModel(object):
         self.variable_importances = pd.Series()
         self.dry_run = dry_run
         self.prediction_job_log = None
-        self.positive_event_lookahead = positive_event_lookahead
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -621,8 +619,6 @@ class PredictionModel(object):
                 'model_type': self.model_type,
                 'model_version': self.current_model_version,
                 'window_days': self.moving_window,
-                'event_lookahead': self.positive_event_lookahead,
-
             },
             index=[0]
         )

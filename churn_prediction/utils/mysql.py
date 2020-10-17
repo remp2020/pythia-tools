@@ -162,8 +162,7 @@ def get_global_context(start_time, end_time):
 
 
 def get_users_with_expirations(
-        aggregation_date: datetime.date = datetime.utcnow().date(),
-        expiration_lookahead: int = 30
+        aggregation_date: datetime.date = datetime.utcnow().date()
 ) -> List[str]:
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_CRM_CONNECTION_STRING',

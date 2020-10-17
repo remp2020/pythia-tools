@@ -65,8 +65,7 @@ def get_feature_frame_via_sqlalchemy(
         end_time: datetime,
         moving_window_length: int = 7,
         feature_aggregation_functions: Dict[str, func] = None,
-        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA,
-        positive_event_lookahead: int = 1
+        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'avg': func.avg}
@@ -76,8 +75,7 @@ def get_feature_frame_via_sqlalchemy(
         end_time,
         moving_window_length,
         feature_aggregation_functions,
-        data_retrieval_mode,
-        positive_event_lookahead
+        data_retrieval_mode
     ))
 
     feature_frame = pd.read_sql(full_query.statement, full_query.session.bind)
@@ -94,8 +92,7 @@ def get_full_features_query(
         end_time: datetime,
         moving_window_length: int = 7,
         feature_aggregation_functions: Dict[str, func] = None,
-        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA,
-        positive_event_lookahead: int = 1
+        data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA
 ):
     if feature_aggregation_functions is None:
         feature_aggregation_functions = {'count': func.sum}
@@ -152,8 +149,7 @@ def get_full_features_query(
 
 
 def add_outcomes(
-        feature_query,
-        positive_event_lookahead: int = 1
+        feature_query
 ):
     # The events table holds all the events, not just conversion ones
     relevant_events = bq_session.query(
