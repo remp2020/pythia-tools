@@ -140,7 +140,7 @@ export $(grep -v '^#' $env | xargs)
 
 echo "Searching for aggregated files in $dir"
 
-files=("pageviews_time_spent" "pageviews" "commerce" "events")
+files=("pageviews_time_spent" "pageviews" "pageviews_progress" "commerce" "events")
 
 # For every date, aggregate CSV files into Postgres (optionally download CSV files from elastic)
 while [ "$di" != "$end_on" ]; do
