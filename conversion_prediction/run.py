@@ -25,15 +25,16 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from sqlalchemy import func
+from google.oauth2 import service_account
 
-from utils.db_utils import create_predictions_table, create_predictions_job_log
-from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES
-from utils.enums import SplitType, NormalizedFeatureHandling
+from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
+    MIN_TRAINING_DAYS
+from utils.enums import SplitType, NormalizedFeatureHandling, DataRetrievalMode
 from utils.enums import ArtifactRetentionMode, ArtifactRetentionCollection, ModelArtifacts
 from utils.db_utils import create_connection
-from utils.queries import queries
-from utils.queries import get_feature_frame_via_sqlalchemy, get_payment_history_features, get_global_context, \
-    get_browser_days_count, get_negative_browser_count
+from utils.bigquery import get_feature_frame_via_sqlalchemy
+from utils.mysql import get_payment_history_features, get_global_context
 from utils.data_transformations import unique_list, row_wise_normalization
 
 
@@ -47,13 +48,14 @@ class ConversionPredictionModel(object):
             outcome_labels: List[str] = tuple(LABELS.keys()),
             overwrite_files: bool = True,
             training_split_parameters=None,
-            model_arguments=None,
             undersampling_factor=300,
             # This applies to all model artifacts that are not part of the flow output
             artifact_retention_mode: ArtifactRetentionMode = ArtifactRetentionMode.DUMP,
             # By default everything gets stored (since we expect most runs to still be in experimental model
             artifacts_to_retain: ArtifactRetentionCollection = ArtifactRetentionCollection.MODEL_TUNING,
-            feature_aggregation_functions: Dict[str, sqlalchemy.func] = AGGREGATION_FUNCTIONS_w_ALIASES
+            feature_aggregation_functions: Dict[str, sqlalchemy.func] = {'avg': func.avg},
+            dry_run: bool = False,
+            path_to_model_files: str = None
     ):
         self.min_date = min_date
         self.max_date = max_date
@@ -62,8 +64,6 @@ class ConversionPredictionModel(object):
         self.user_profiles = None
         self.normalization_handling = normalization_handling
         self.feature_aggregation_functions = feature_aggregation_functions
-        # next(iter())) returns the first element (defined by the dict attribute specified), since our
-        # feature_aggregation_function is a one element dict, this way we get a single element
         self.feature_columns = FeatureColumns(self.feature_aggregation_functions.keys())
         self.category_list_dict = {}
         self.le = LabelEncoder()
@@ -76,27 +76,29 @@ class ConversionPredictionModel(object):
         self.scaler = MinMaxScaler()
         self.model_date = None
         self.training_split_parameters = training_split_parameters
-        self.model_arguments = model_arguments
         self.undersampling_factor = undersampling_factor
         self.model = None
         self.outcome_frame = None
         self.scoring_date = datetime.utcnow()
-        self.model = None
         self.prediction_data = pd.DataFrame()
         self.predictions = pd.DataFrame()
         self.artifact_retention_mode = artifact_retention_mode
         self.artifacts_to_retain = [artifact.value for artifact in artifacts_to_retain.value]
-        self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', '')
+        self.path_to_model_files = os.getenv('PATH_TO_MODEL_FILES', path_to_model_files)
+        if not os.path.exists(self.path_to_model_files):
+            os.mkdir(self.path_to_model_files)
         self.path_to_commerce_csvs = os.getenv('PATH_TO_COMMERCE_CSV_FILES')
         self.negative_outcome_frame = pd.DataFrame()
         self.browser_day_combinations_original_set = pd.DataFrame()
         self.variable_importances = pd.Series()
+        self.dry_run = dry_run
+        self.prediction_job_log = None
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
         :param artifact:
         :return:
-        Requires:
+        Requires::w
             - artifact_retention_mode
             - path_to_model_files
             - if model artifact
@@ -108,7 +110,6 @@ class ConversionPredictionModel(object):
         A function that handles model artifacts that we don't need as an output currently by either
         storing and dumping or by straight up dumping them
         '''
-        print()
         if self.artifact_retention_mode == ArtifactRetentionMode.DUMP:
             if artifact == ModelArtifacts.MODEL:
                 joblib.dump(
@@ -124,7 +125,7 @@ class ConversionPredictionModel(object):
 
     def get_user_profiles_by_date(
             self,
-            offset_limit_tuple: Tuple = None
+            data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
     ):
         '''
         Requires:
@@ -144,14 +145,15 @@ class ConversionPredictionModel(object):
             self.max_date,
             self.moving_window,
             self.feature_aggregation_functions,
-            self.undersampling_factor,
-            offset_limit_tuple
+            data_retrieval_mode
         )
+
+        logger.info(f'  * Query finished, processing retrieved data')
 
         for column in [column for column in self.feature_columns.return_feature_list()
                        if column not in self.user_profiles.columns
                        and column not in [
-                              'checkout', 'payment', 'clv', 'days_since_last_subscription', 'article_pageviews_count',
+                              'clv', 'days_since_last_subscription', 'article_pageviews_count',
                               'sum_paid', 'avg_price'] +
                        [  # Iterate over all aggregation function types
                               f'pageviews_{aggregation_function_alias}'
@@ -159,7 +161,6 @@ class ConversionPredictionModel(object):
                        ]
                        ]:
             self.user_profiles[column] = 0.0
-
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
         try:
@@ -167,21 +168,28 @@ class ConversionPredictionModel(object):
             self.feature_columns.add_global_context_features()
             logger.info('Successfully added global context features from mysql')
         except Exception as e:
-             logger.info(
-                f'''Failed adding global context features from mysql with exception:
-               {e};
-               proceeding with remaining features''')
-
-        try:
-            self.get_payment_window_features_from_csvs()
-            self.feature_columns.add_commerce_csv_features()
-            logger.info('Successfully added commerce flow features from csvs')
-        except Exception as e:
             logger.info(
-                f'''Failed adding commerce flow features from csvs with exception: 
+                f'''Failed adding global context features from mysql with exception:
                 {e};
                 proceeding with remaining features''')
-        
+            # To make sure these columns are filled in case of failure to retrieve
+            # We want them appearing in the same order to avoid having to reorder columns
+            for column in ['article_pageviews_count', 'sum_paid', 'pageviews_count', 'avg_price']:
+                self.user_profiles[column] = 0.0
+
+        # try:
+        #     self.get_payment_window_features_from_csvs()
+        #     self.feature_columns.add_commerce_csv_features()
+        #     logger.info('Successfully added commerce flow features from csvs')
+        # except Exception as e:
+        #     logger.info(
+        #         f'''Failed adding commerce flow features from csvs with exception:
+        #         {e};
+        #         proceeding with remaining features''')
+        #     # To make sure these columns are filled in case of failure to retrieve
+        #     for column in ['checkout', 'payment', 'purchase']:
+        #         self.user_profiles[column] = 0.0
+
         self.user_profiles['date'] = pd.to_datetime(self.user_profiles['date']).dt.date
 
         try:
@@ -190,11 +198,13 @@ class ConversionPredictionModel(object):
             logger.info('Successfully added user payment history features from mysql')
         except Exception as e:
             logger.info(
-                f'''Failed adding payment history features from mysql with exception: 
+                f'''Failed adding payment history features from mysql with exception:
                 {e};
-                proceedingi with remaining features''')
+                proceeding with remaining features''')
+            for column in ['clv', 'days_since_last_subscription']:
+                self.user_profiles[column] = 0.0
 
-        self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0, inplace=True)
+        self.user_profiles[self.feature_columns.numeric_columns_with_window_variants].fillna(0.0, inplace=True)
         self.user_profiles['user_ids'] = self.user_profiles['user_ids'].apply(unique_list)
         logger.info('  * Initial data validation success')
 
@@ -207,11 +217,16 @@ class ConversionPredictionModel(object):
         to the main feature frame
         '''
         commerce = pd.DataFrame()
-        dates = [date.date() for date in pd.date_range(self.min_date - timedelta(days=7), self.max_date)]
+        # TODO: remove commented out code in case testing the line below is a success
+        dates = [date.date()
+                 for date in pd.date_range(self.user_profiles['date'].min() - timedelta(days=7), self.max_date.date())]
         dates = [re.sub('-', '', str(date)) for date in dates]
         for date in dates:
             commerce_daily = pd.read_csv(f'{self.path_to_commerce_csvs}commerce_{date}.csv.gz')
-            commerce = commerce.append(commerce_daily)
+            commerce = commerce.append(
+                    commerce_daily,
+                    sort=False
+                    )
 
         commerce = commerce[commerce['browser_id'].isin(self.user_profiles['browser_id'].unique())]
         commerce['date'] = pd.to_datetime(commerce['time']).dt.date
@@ -341,11 +356,10 @@ class ConversionPredictionModel(object):
         context.index = context['date']
         context.drop('date', axis=1, inplace=True)
         context.index = pd.to_datetime(context.index)
-        dates = [date.date() for date in pd.date_range(context.index.min(), context.index.max())]
         rolling_context = (context.groupby('date')
-                                             .fillna(0)  # fill each missing group with 0
-                                             .rolling(7, min_periods=1)
-                                             .sum())  # do a rolling sum
+                           .fillna(0)  # fill each missing group with 0
+                           .rolling(7, min_periods=1)
+                           .sum())  # do a rolling sum
         rolling_context.reset_index(inplace=True)
         rolling_context['avg_price'] = rolling_context['sum_paid'] / rolling_context['payment_count']
         rolling_context['date'] = pd.to_datetime(rolling_context['date']).dt.date
@@ -372,29 +386,31 @@ class ConversionPredictionModel(object):
         Adds normalized profile based features (normalized always within group, either replacing the original profile based
         features in group, or adding them onto the original dataframe
         '''
-        merge_columns = ['date', 'browser_id']
         self.add_missing_json_columns()
-        for column_set_list in self.feature_columns.profile_numeric_columns_from_json_fields.values():
-            for column_set in column_set_list:
-                self.user_profiles[column_set] = self.user_profiles[column_set].astype(float)
-                normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
-                normalized_data.fillna(0.0, inplace=True)
-                normalized_data.columns = column_set
+        column_sets = list(self.feature_columns.profile_numeric_columns_from_json_fields.values()) + \
+            [time_column_variant for time_column_variant in self.feature_columns.time_based_columns.values()]
+        for column_set in column_sets:
+            self.user_profiles[column_set] = self.user_profiles[column_set].astype(float)
+            normalized_data = pd.DataFrame(row_wise_normalization(np.array(self.user_profiles[column_set])))
+            normalized_data.fillna(0.0, inplace=True)
+            normalized_data.columns = column_set
 
-                if self.normalization_handling is NormalizedFeatureHandling.REPLACE_WITH:
-                    self.user_profiles.drop(column_set, axis=1, inplace=True)
-                elif self.normalization_handling is NormalizedFeatureHandling.ADD:
-                    self.feature_columns.add_normalized_profile_features_version()
-                else:
-                    raise ValueError('Unknown normalization handling parameter')
-
-                self.user_profiles = pd.concat(
-                    [
-                        self.user_profiles,
-                        normalized_data
-                    ],
-                    axis=1
+            if self.normalization_handling is NormalizedFeatureHandling.REPLACE_WITH:
+                self.user_profiles.drop(column_set, axis=1, inplace=True)
+            elif self.normalization_handling is NormalizedFeatureHandling.ADD:
+                self.feature_columns.add_normalized_profile_features_version(
+                    list(self.feature_aggregation_functions.keys())
                 )
+            else:
+                raise ValueError('Unknown normalization handling parameter')
+
+            self.user_profiles = pd.concat(
+                [
+                    self.user_profiles,
+                    normalized_data
+                ],
+                axis=1
+            )
         logger.info('  * Feature normalization success')
 
     def add_missing_json_columns(self):
@@ -418,7 +434,8 @@ class ConversionPredictionModel(object):
 
     def create_feature_frame(
             self,
-            offset_limit_tuple: Tuple = None
+            offset_limit_tuple: Tuple = None,
+            data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.MODEL_TRAIN_DATA
     ):
         '''
         Requires:
@@ -431,7 +448,7 @@ class ConversionPredictionModel(object):
         that were active a day ago
         '''
         logger.info(f'  * Loading user profiles')
-        self.get_user_profiles_by_date(offset_limit_tuple)
+        self.get_user_profiles_by_date(data_retrieval_mode)
         logger.info(f'  * Processing user profiles')
         test_outcome = self.user_profiles['outcome'].fillna(
             self.user_profiles.groupby('browser_id')['outcome'].fillna(method='bfill')
@@ -456,13 +473,13 @@ class ConversionPredictionModel(object):
         Transform True / False columns into 0/1 columns
         '''
         for column in [column for column in self.feature_columns.bool_columns]:
-            self.user_profiles[column] = self.user_profiles[column].astype(int)
+            self.user_profiles[column] = self.user_profiles[column].apply(lambda value: True if value == 't' else False).astype(int)
 
     def encode_uncommon_categories(self):
         '''
         Requires:
             - user_profiles
-        Categories for columns such as browser with less than 5 % frequency get lumped into 'Other'
+        categorie for columns such as browser with less than 5 % frequency get lumped into 'Other'
         '''
         self.user_profiles.loc[self.user_profiles['device'] == 0, 'device'] = 'Desktop'
         for column in self.feature_columns.categorical_columns:
@@ -471,7 +488,7 @@ class ConversionPredictionModel(object):
                 ].value_counts(normalize=True)[self.user_profiles[column].value_counts(normalize=True) < 0.05].index)
             self.user_profiles.loc[self.user_profiles[column].isin(column_values_to_recode), column] = 'Other'
 
-    def generate_category_lists_dict(self) -> Dict:
+    def generate_category_list_dict(self) -> Dict:
         '''
         Requires:
             - user_profiles
@@ -481,9 +498,9 @@ class ConversionPredictionModel(object):
         for column in self.feature_columns.categorical_columns:
             self.category_list_dict[column] = list(self.user_profiles[column].unique()) + ['Unknown']
 
-    def encode_unknown_categories(self, data: pd.Series):
+    def encode_unknown_categorie(self, data: pd.Series):
         '''
-        In train and predictiom set, we mighr encounter categories that weren't present in the test set, in order
+        In train and predictiom set, we mighr encounter categorie that weren't present in the test set, in order
         to allow for the prediction algorithm to handle these, we create an Unknown category
         :param data:
         :return:
@@ -496,12 +513,12 @@ class ConversionPredictionModel(object):
         '''
         Requires:
             - category_lists_dict
-        Generate 0/1 columns from categorical columns handling the logic for Others and Unknown categories. Always drops
-        the Unknown columns (since we only need k-1 columns for k categories)
+        Generate 0/1 columns from categorical columns handling the logic for Others and Unknown categorie. Always drops
+        the Unknown columns (since we only need k-1 columns for k categorie)
         :param data: A column to encode
         :return:
         '''
-        data = self.encode_unknown_categories(data)
+        data = self.encode_unknown_categorie(data)
         dummies = pd.get_dummies(pd.Categorical(data, categories=self.category_list_dict[data.name]))
         dummies.columns = [data.name + '_' + dummy_column for dummy_column in dummies.columns]
         dummies.drop(columns=data.name + '_Unknown', axis=1, inplace=True)
@@ -564,7 +581,7 @@ class ConversionPredictionModel(object):
 
         self.X_train = self.user_profiles.iloc[train_indices].drop(columns=['outcome', 'user_ids'])
         self.X_test = self.user_profiles.iloc[test_indices].drop(columns=['outcome', 'user_ids'])
-        self.generate_category_lists_dict()
+        self.generate_category_list_dict()
 
         with open(
                 f'{self.path_to_model_files}category_lists_{self.model_date}.json', 'w') as outfile:
@@ -637,12 +654,16 @@ class ConversionPredictionModel(object):
         else:
             suffix = 'json'
 
-        if f'scaler_{self.model_date}.pkl' in os.listdir(
-                None if self.path_to_model_files == '' else self.path_to_model_files):
-            os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
+        if self.path_to_model_files in os.listdir(None):
+            if f'scaler_{self.model_date}.pkl' in os.listdir(
+                    None if self.path_to_model_files == '' else self.path_to_model_files):
+                os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
 
     def train_model(
-            self):
+            self,
+            model_function,
+            model_arguments
+    ):
         '''
         Requires:
             - user_profiles
@@ -652,7 +673,6 @@ class ConversionPredictionModel(object):
             - artifact_retention_mode
         Trains a new model given a full dataset
         '''
-        label_range = list(range(0, len(self.outcome_labels)))
         if 0 not in self.user_profiles['outcome'].unique():
             self.user_profiles['outcome'] = self.le.transform(self.user_profiles['outcome'])
 
@@ -662,78 +682,113 @@ class ConversionPredictionModel(object):
 
         logger.info('  * Commencing model training')
 
-        classifier_instance = RandomForestClassifier(**self.model_arguments)
+        classifier_instance = model_function(**model_arguments)
         self.model = classifier_instance.fit(self.X_train, self.Y_train)
 
         logger.info('  * Model training complete, generating outcome frame')
 
-        self.outcome_frame = pd.concat([
-            pd.DataFrame(list(precision_recall_fscore_support(
-                self.Y_train,
-                self.model.predict(self.X_train),
-                labels=label_range))
-            ),
-            pd.DataFrame(list(
-                precision_recall_fscore_support(
-                    self.Y_test,
-                    self.model.predict(self.X_test),
-                    labels=label_range))
-            )
-        ],
-            axis=1)
-
-        # TODO: Remove after testing flow change
-        # self.collect_outcomes_for_all_negatives()
-
-        self.format_outcome_frame(
-            self.outcome_frame,
-            label_range,
+        self.outcome_frame = self.create_outcome_frame(
+            {
+                'train': self.Y_train,
+                'test': self.Y_test
+            },
+            {
+                'train': self.model.predict(self.X_train),
+                'test': self.model.predict(self.X_test)
+            },
+            self.outcome_labels,
             self.le
         )
-
-        self.variable_importances = pd.Series(
-            data=self.model.feature_importances_,
-            index=self.X_train.columns
-        )
+        try:
+            self.variable_importances = pd.Series(
+                data=self.model.feature_importances_,
+                index=self.X_train.columns
+            )
+        except:
+            # This handles parameter tuning, when some model types may not have variable importance
+            self.variable_importances = pd.Series()
 
         logger.info('  * Outcome frame generated')
 
     @staticmethod
-    def format_outcome_frame(
-            outcome_frame: pd.DataFrame,
-            label_range: List[str],
-            label_encoder: LabelEncoder,
-            sets_in_outcome: List[str] = ['train', 'test']
+    def create_outcome_frame(
+            labels_actual: Dict[str, np.array],
+            labels_predicted: Dict[str, np.array],
+            outcome_labels,
+            label_encoder
     ):
-        '''
-        Takes a given outcome frame and polishes the row & column names
-        :param outcome_frame:
-        :param label_range:
-        :param label_encoder:
-        :param sets_in_outcome
-        :return:
-        '''
-        train_outcome_columns = (
-            [str(label) + '_train' for label in outcome_frame.columns[0:len(label_range)]]
-            if 'train' in sets_in_outcome
-            else []
-        )
-        test_outcome_columns = (
-            [
-                str(label) + '_test' for label in outcome_frame.columns[
-                    # We either have 6 columns (3 for train and 3 for test) or 3 (test only), therefore we need to adjust indexing 
-                    len(label_range) * (len(sets_in_outcome) - 1 ):(len(sets_in_outcome)*len(label_range))]
-            ]
-            if 'test' in sets_in_outcome
-            else []
-        )
-        outcome_frame.columns = train_outcome_columns + test_outcome_columns
+        if len(labels_actual) != len(labels_predicted):
+            raise ValueError('Trying to pass differing lengths of actual and predicted data')
+        elif labels_actual.keys() != labels_predicted.keys():
+            raise ValueError('Unaligned number of outcome sets provided')
 
-        for i in label_range:
-            outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform([i])[0], column)
-                                     for column in outcome_frame.columns]
+        def format_outcome_frame(
+                sets_in_outcome: List[str] = ['train', 'test']
+        ):
+            '''
+            Takes a given outcome frame and polishes the row & column names
+            :param outcome_frame:
+            :param label_range:
+            :param label_encoder:
+            :param sets_in_outcome
+            :return:
+            '''
+            train_outcome_columns = (
+                [str(label) + '_train' for label in outcome_frame.columns[0:len(label_range)]]
+                if 'train' in sets_in_outcome
+                else []
+            )
 
-        outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
+            test_outcome_columns = (
+                [
+                    str(label) + '_test' for label in outcome_frame.columns[
+                                                      # We either have 6 columns (3 for train and 3 for test) or 3 (test only), therefore we need to adjust indexing
+                                                      len(label_range) * (len(sets_in_outcome) - 1):(
+                                                                  len(sets_in_outcome) * len(label_range))]
+                ]
+                if 'test' in sets_in_outcome
+                else []
+            )
+
+            outcome_frame.columns = train_outcome_columns + test_outcome_columns
+
+            for i in label_range:
+                outcome_frame.columns = [re.sub(str(i), label_encoder.inverse_transform([i])[0], column)
+                                         for column in outcome_frame.columns]
+
+            outcome_frame.index = ['precision', 'recall', 'f-score', 'support']
+
+        label_range = list(range(0, len(outcome_labels)))
+        outcome_frame = pd.DataFrame()
+        for i in range(0, len(labels_actual)):
+            actual = list(labels_actual.values())[i]
+            predicted = list(labels_predicted.values())[i]
+            outcome_frame_partial = pd.DataFrame(
+                list(
+                    precision_recall_fscore_support(
+                        actual,
+                        predicted,
+                        labels=label_range
+                    )
+                )
+            )
+
+            if outcome_frame.empty:
+                outcome_frame = outcome_frame_partial
+            else:
+                outcome_frame = pd.concat(
+                    [
+                        outcome_frame,
+                        outcome_frame_partial
+                    ],
+                    axis=1
+                )
+
+        format_outcome_frame(
+            sets_in_outcome=list(labels_actual.keys())
+        )
+
+        return outcome_frame
 
     def remove_rows_from_original_flow(self):
         logger.info('  * Commencing accuracy metrics for negatives calculation')
@@ -750,71 +805,10 @@ class ConversionPredictionModel(object):
 
         self.user_profiles.drop('used_in_training', axis=1, inplace=True)
 
-    def collect_outcomes_for_all_negatives(self):
-        '''
-        Due to a potential memmory constraint, we only pull a sample of data for training a model. For
-        the purpose of evaluating our algorithm we would however like to know how it would do on the full
-        dataset. This method iterates over the undersampled class returning a result for the full population.
-        In the future we might also make this a sample (although a larger one compared to the one used in train)
-        :return:
-        '''
-        # TODO: Consider doing a sample, but a larger one (such as 10 % of all negatives)
-        browsers_expected = get_negative_browser_count(
-            self.min_date,
-            self.max_date
-        )
-
-        logger.info(f'Test set contains {browsers_expected} browsers')
-
-        data_row_range = range(
-            0,
-            int(browsers_expected),
-            int(browsers_expected / 5)
-        )
-    
-        for i in data_row_range:
-            logging.info('  * Fetching negatives chunk')
-            logger.setLevel(logging.ERROR)
-            self.create_feature_frame((i, int(browsers_expected / 5)))
-            logger.setLevel(logging.INFO)
-            self.remove_rows_from_original_flow()
-            logging.info('  * Removing negative outcomes from training set from negatives chunk')
-            if not self.user_profiles.empty:
-                self.batch_predict(self.user_profiles)
-                logging.info('  * Generatincg predictions for negatives chunk')
-                if i == 0:
-                    negative_outcome_frame = pd.DataFrame(
-                        list(precision_recall_fscore_support(
-                            self.predictions['outcome'],
-                            self.predictions['predicted_outcome'])
-                        )
-                    )
-                else:
-                    negative_outcome_frame = negative_outcome_frame + pd.DataFrame(
-                        list(precision_recall_fscore_support(
-                            self.predictions['outcome'],
-                            self.predictions['predicted_outcome'])
-                            )
-                    )
-
-            logging.info(f'*  Collected negative outcome accuracies at {str(100 * (i + browsers_expected / 5) / browsers_expected)} %')
-
-        self.negative_outcome_frame = negative_outcome_frame / len(data_row_range)
-
-        self.format_outcome_frame(
-            self.negative_outcome_frame,
-            list(range(0, len(self.outcome_labels))),
-            self.le,
-            ['test']
-        )
-
-        self.negative_outcome_frame.loc['support', 'no_conversion_test'] = self.negative_outcome_frame.loc['support', 'no_conversion_test'] * len(data_row_range)
-        self.outcome_frame['no_conversion_test'] = self.negative_outcome_frame.loc[:, 'no_conversion_test']
-        logger.info('  * Finished accuracy metrics for negatives calculation')
-
     def model_training_pipeline(
             self,
-            sampled_negatives_results: bool = False
+            model_function=RandomForestClassifier,
+            model_arguments={'n_estimators': 250}
     ):
         '''
         Requires:
@@ -833,13 +827,22 @@ class ConversionPredictionModel(object):
         '''
         logger.info(f'Executing training pipeline')
         if self.user_profiles is None:
-            self.create_feature_frame()
+
+            # Make sure we have enough days for training, this statement is behind the condition since sometimes
+            # we might be reusing training data from a previous run
+            #if (self.max_date - self.min_date).days < MIN_TRAINING_DAYS:
+            #    raise ValueError(f'Date range too small. Please provide at least {MIN_TRAINING_DAYS} days of data')
+
+            self.create_feature_frame(data_retrieval_mode=DataRetrievalMode.MODEL_TRAIN_DATA)
 
         if self.overwrite_files:
             for model_file in ['category_lists', 'scaler', 'model']:
                 self.delete_existing_model_file_for_same_date(model_file)
 
-        self.train_model()
+        self.train_model(
+            model_function,
+            model_arguments
+        )
 
         logger.info(f'Training ready, dumping to file')
 
@@ -850,9 +853,13 @@ class ConversionPredictionModel(object):
 
         logger.info(f'Saved to {self.path_to_model_files}model_{self.model_date}.pkl')
 
-        if sampled_negatives_results:
-            self.collect_outcomes_for_all_negatives()
         self.remove_model_training_artefacts()
+        # TODO: This would eventually be replaced with storing variable importances to DB
+        self.variable_importances.to_csv(
+            f'{self.path_to_model_files}variable_importances_{self.model_date}.csv',
+            index=True,
+            header=False
+        )
 
     def remove_model_training_artefacts(self):
         for artifact in [
@@ -872,9 +879,9 @@ class ConversionPredictionModel(object):
 
         model_related_file_list = os.listdir(self.path_to_model_files)
         last_model_related_files = {}
-        for model_related_file in ['category_lists', 'scaler', 'model']:
-            last_file_date = {parse(re.sub(f'{model_related_file}_|.json|.pkl|None', '', filename)):
-                              abs(parse(re.sub(f'{model_related_file}_|.json|.pkl|None', '', filename)).date()
+        for model_related_file in ['category_lists', 'scaler', 'model', 'variable_importances']:
+            last_file_date = {parse(re.sub(f'{model_related_file}_|.json|.pkl|.csv|None', '', filename)):
+                              abs(parse(re.sub(f'{model_related_file}_|.json|.pkl|.csv|None', '', filename)).date()
                                   - self.scoring_date.date())
                               for filename in model_related_file_list
                               if re.search(f'{model_related_file}_', filename)}
@@ -885,15 +892,24 @@ class ConversionPredictionModel(object):
                 category_list date: {last_model_related_files['category_lists']}
                 scaler date: {last_model_related_files['scaler']}
                 model date: {last_model_related_files['model']}
+                'variable importances': {last_model_related_files['variable_importances']}
                 ''')
+
         if not self.path_to_model_files:
             self.path_to_model_files = ''
         with open(self.path_to_model_files +
                   'category_lists_' + str(last_model_related_files['category_lists']) + '.json', 'r') as outfile:
             self.category_list_dict = json.load(outfile)
 
-        self.scaler = joblib.load(self.path_to_model_files + 'scaler_' + str(last_model_related_files['scaler']) + '.pkl')
-        self.model = joblib.load(self.path_to_model_files + 'model_' + str(last_model_related_files['model']) + '.pkl')
+        self.scaler = joblib.load(f"{self.path_to_model_files}scaler_{str(last_model_related_files['scaler'])}.pkl")
+        self.model = joblib.load(f"{self.path_to_model_files}model_{str(last_model_related_files['model'])}.pkl")
+        #TODO: This would eventually be replaced with loading variable importances from DB
+        self.variable_importances = pd.read_csv(
+                f"{self.path_to_model_files}variable_importances_{str(last_model_related_files['variable_importances'])}.csv",
+                squeeze=True,
+                index_col=0,
+                header=None
+        )
 
         logger.info('  * Model constructs loaded')
 
@@ -933,14 +949,14 @@ class ConversionPredictionModel(object):
 
         self.prediction_data = self.replace_dummy_columns_with_dummies(self.prediction_data)
 
-        self.prediction_data = self.prediction_data.drop(['outcome', 'user_ids'], axis=1)
-        logger.info('  * Prediction data ready')
+        self.align_prediction_frame_with_train_columns()
 
+        logger.info('  * Prediction data ready')
         self.prediction_data.fillna(0.0, inplace=True)
         if not self.X_train.empty:
             for column in [column for column in self.X_train.columns if column not in self.prediction_data.columns]:
                 self.prediction_data[column] = 0.0
-        self.prediction_data = self.prediction_data[list(self.X_train.columns)]
+            self.prediction_data = self.prediction_data[list(self.X_train.columns)]
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data))
         logger.info('  * Prediction generation success, handling artifacts')
 
@@ -950,13 +966,30 @@ class ConversionPredictionModel(object):
             predictions.columns = [re.sub(str(i), self.le.inverse_transform([i])[0] + '_probability', str(column))
                                    for column in predictions.columns]
         # We are adding outcome only for the sake of the batch test approach, we'll be dropping it in the actual
-        # prediciton pipeline
+        # prediction pipeline
         self.predictions = pd.concat(
             [self.user_profiles[['date', 'browser_id', 'user_ids', 'outcome']],
              predictions],
             axis=1
         )
         self.predictions['predicted_outcome'] = self.le.inverse_transform(self.model.predict(self.prediction_data))
+
+    def align_prediction_frame_with_train_columns(self):
+        # Sometimes the columns used to train a model don't align with columns im prediction set
+        # 1. Drop columns that are in new data, but weren't used in training
+        self.prediction_data.drop(
+            [column for column in self.prediction_data.columns if column not in self.variable_importances.index],
+            axis=1,
+            inplace=True
+        )
+
+        # 2. Add 0 columns that were in train, but aren't in new data
+        for column in [column for column in self.variable_importances.index
+                       if column not in self.prediction_data.columns]:
+            self.prediction_data[column] = 0.0
+
+        # 3. Make sure the columns have the same order as original data, since sklearn ignores column names
+        self.prediction_data = self.prediction_data[list(self.variable_importances.index)]
 
     def generate_and_upload_prediction(self):
         '''
@@ -973,28 +1006,62 @@ class ConversionPredictionModel(object):
         Generates outcome prediction for conversion and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-        self.create_feature_frame()
+        self.create_feature_frame(data_retrieval_mode=DataRetrievalMode.PREDICT_DATA)
+        self.artifact_retention_mode = ArtifactRetentionMode.DROP
+
+        logger.setLevel(logging.INFO)
+
         self.batch_predict(self.user_profiles)
+        logging.info('  * Generatincg predictions')
 
         self.predictions['model_version'] = CURRENT_MODEL_VERSION
         self.predictions['created_at'] = datetime.utcnow()
-        self.predictions['updated_at'] = datetime.utcnow()
-        self.predictions.drop('outcome', axis=1, inplace=True)
+        self.predictions.loc[
+            self.predictions['user_ids'].astype(str) == '[]',
+            'user_ids'] = None
 
-        logger.info(f'Storing predicted data')
-        _, postgres = create_connection(os.getenv('POSTGRES_CONNECTION_STRING'))
-        create_predictions_table(postgres)
-        create_predictions_job_log(postgres)
-        postgres.execute(
-            sqlalchemy.sql.text(queries['upsert_predictions']), self.predictions.to_dict('records')
-        )
+        # Dry run tends to be used for testing new models, so we want to be able to calculate accuracy metrics
+        if not self.dry_run:
+            self.predictions.drop('outcome', axis=1, inplace=True)
 
-        prediction_job_log = self.predictions[
-            ['date', 'model_version', 'created_at', 'updated_at']].head(1).to_dict('records')[0]
-        prediction_job_log['rows_predicted'] = len(self.predictions)
-        postgres.execute(
-            sqlalchemy.sql.text(queries['upsert_prediction_job_log']), [prediction_job_log]
-        )
+            logger.info(f'Storing predicted data')
+            database = os.getenv('BIGQUERY_PROJECT_ID')
+            _, db_connection = create_connection(
+                f'bigquery://{database}',
+                engine_kwargs={'credentials_path': '../../gcloud_client_secrets.json'}
+            )
+
+
+            credentials = service_account.Credentials.from_service_account_file(
+                '../../gcloud_client_secrets.json',
+            )
+
+            self.predictions.to_gbq(
+                destination_table='pythia.conversion_predictions_log',
+                project_id=database,
+                credentials=credentials,
+                if_exists='append'
+            )
+
+            self.prediction_job_log = self.predictions[
+                ['date', 'model_version', 'created_at']].head(1)
+            self.prediction_job_log['rows_predicted'] = len(self.predictions)
+
+            self.prediction_job_log.to_gbq(
+                destination_table='pythia.prediction_job_log',
+                project_id=database,
+                credentials=credentials,
+                if_exists='append',
+            )
+        else:
+            actual_labels = {'test': self.predictions['outcome']}
+            predicted_labels = {'test': self.predictions['predicted_outcome']}
+            self.outcome_frame = self.create_outcome_frame(
+                actual_labels,
+                predicted_labels,
+                self.outcome_labels,
+                self.le
+            )
 
         logger.info('Predictions are now ready')
 
@@ -1018,7 +1085,7 @@ if __name__ == "__main__":
     logger.info(f'CONVERSION PREDICTION')
     parser = argparse.ArgumentParser()
     parser.add_argument('--action',
-                        help='Should either be "train" for model training or "predict for prediction"',
+                        help='Should either be "train" for model training or "predict" for prediction',
                         type=str)
     parser.add_argument('--min-date',
                         help='Min date denoting from when to fetch data',
@@ -1061,12 +1128,14 @@ if __name__ == "__main__":
             moving_window_length=args['moving_window_length'],
             overwrite_files=args['overwrite_files'],
             training_split_parameters=args['training_split_parameters'],
-            model_arguments={'n_estimators': 250},
             undersampling_factor=500,
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING
             )
-        conversion_prediction.model_training_pipeline()
+
+        conversion_prediction.model_training_pipeline(
+            model_arguments={'n_estimators': 250}
+        )
 
         metrics = ['precision', 'recall', 'f1_score', 'suport']
         print({metrics[i]: conversion_prediction.outcome_frame.to_dict('records')[i] for i in range(0, len(metrics))})
@@ -1074,7 +1143,10 @@ if __name__ == "__main__":
         conversion_prediction = ConversionPredictionModel(
             min_date=args['min_date'],
             max_date=args['max_date'],
+            undersampling_factor=1,
             moving_window_length=args['moving_window_length'],
             artifact_retention_mode=ArtifactRetentionMode.DROP,
             artifacts_to_retain=ArtifactRetentionCollection.PREDICTION
         )
+
+        conversion_prediction.generate_and_upload_prediction()

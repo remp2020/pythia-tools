@@ -85,3 +85,8 @@ class ArtifactRetentionCollection(Enum):
     PREDICTION =[
         ModelArtifacts.PREDICTIONS
     ]
+
+
+class DataRetrievalMode(Enum):
+    MODEL_TRAIN_DATA = 'model_train_data'
+    PREDICT_DATA = 'predict_data'

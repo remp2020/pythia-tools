@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/goadesign/goa/design"
 	"github.com/goadesign/goa/goagen/codegen"
@@ -99,12 +99,7 @@ func (g *Generator) Generate() (_ []string, err error) {
 	g.genfiles = append(g.genfiles, swaggerFile)
 
 	// YAML
-	var yamlSource interface{}
-	if err = json.Unmarshal(rawJSON, &yamlSource); err != nil {
-		return nil, err
-	}
-
-	rawYAML, err := yaml.Marshal(yamlSource)
+	rawYAML, err := jsonToYAML(rawJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -123,4 +118,13 @@ func (g *Generator) Cleanup() {
 		os.Remove(f)
 	}
 	g.genfiles = nil
+}
+
+func jsonToYAML(rawJSON []byte) ([]byte, error) {
+	var yamlSource interface{}
+	if err := yaml.Unmarshal(rawJSON, &yamlSource); err != nil {
+		return nil, err
+	}
+
+	return yaml.Marshal(yamlSource)
 }

@@ -1,7 +1,7 @@
 import pandas as pd
 import sqlalchemy
 import os
-from typing import List, Dict
+from typing import List, Dict, Any
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData, Table
 
@@ -9,18 +9,18 @@ from sqlalchemy import MetaData, Table
 CUSTOM_USER_DEFINED_TYPES = ['conversion_prediction_outcomes', 'conversion_prediction_model_versions']
 
 
-def create_connection(connection_string: str, autocommit: bool=True):
+def create_connection(connection_string: str, engine_kwargs: Dict[str, Any] = {}):
     '''
     Creates a connection to a DB based on a connection string in .env file
     :param connection_string: connection string to connect to
-    :param autocommit:
+    :param engine_kwargs:
     :return:
     '''
     if connection_string is None:
         raise ValueError(f'Unknown connection, please check if .env contains connection string')
 
     engine = sqlalchemy \
-        .create_engine(connection_string)
+        .create_engine(connection_string, **engine_kwargs)
 
     connection = engine \
         .connect() \
@@ -46,23 +46,12 @@ def retrieve_data_for_query_key(
     return data
 
 
-def get_sqla_table(table_name, engine, schema='public'):
-    meta = MetaData()
-    table = Table(table_name, meta, schema=schema, autoload=True,
-                  autoload_with=engine)
+def get_sqla_table(table_name, engine, kwargs: Dict[str, str] = None):
+    if not kwargs:
+        kwargs = {}
+    meta = MetaData(bind=engine)
+    table = Table(table_name, meta, autoload=True, autoload_with=engine, **kwargs)
     return table
-
-
-def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str, table_names: List[str]) -> Dict:
-    table_mapping = {}
-    _, db_connection = create_connection(os.getenv(db_connection_string_name))
-
-    for table in table_names:
-        table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=schema)
-
-    table_mapping['session'] = sessionmaker(bind=db_connection)()
-
-    return table_mapping
 
 
 def create_predictions_table(connection: sqlalchemy.engine):
