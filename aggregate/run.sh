@@ -11,6 +11,8 @@ function usage {
     echo "  --env=<FILE>, specifying .env file for sourcing" >&2
     echo "  --onlyaggregate, specifying not to download data from Elastic if not present" >&2
     echo "  --dryrun, specifying to check/save the CSVs, but prevent execution of aggregation" >&2
+    echo "  --delimiter, specifying CSV column delimiter character" >&2
+    echo "  --quotechar, specifying CSV column enclosure (wrapper) character" >&2
     echo "Date format is YYYY-MM-DD" >&2
 }
 
@@ -60,6 +62,12 @@ while [ $# -gt 0 ]; do
     --env=*)
       env="${1#*=}"
       ;;
+    --delimiter=*)
+      delimiter="${1#*=}"
+      ;;
+    --quotechar=*)
+      quotechar="${1#*=}"
+      ;;
     --)
       break
       ;;
@@ -81,6 +89,14 @@ fi
 if [ -z $date ] && ([ -z $min_date ] || [ -z $max_date ]) ; then
     usage
     exit 1
+fi
+
+# Defaults
+if [ -z $delimiter ] ; then
+    delimiter=';'
+fi
+if [ -z $quotechar ] ; then
+    quotechar='"'
 fi
 
 # Arguments validation
@@ -173,7 +189,7 @@ while [ "$di" != "$end_on" ]; do
 
             indexname="${ELASTIC_PREFIX}${idx}"
 
-            echo "es2csv -u ${ELASTIC_ADDR} ${authstring} -i ${indexname} -q \"time: [ ${di} TO ${di} ]\" -s 10000 -o ${cur_file_csv}"
+            echo "es2csv -u ${ELASTIC_ADDR} ${authstring} -i ${indexname} -q \"time: [ ${di} TO ${di} ]\" -s 10000 -o ${cur_file_csv} --quotechar='${quotechar}' --delimiter='${delimiter}'"
 
             es2csv -u $ELASTIC_ADDR $authstring -i "${indexname}" -q "time: [ ${di} TO ${di} ]" -s 10000 -o $cur_file_csv
             # pack file to .gz if it was downloaded (at least one record was present for the day)
