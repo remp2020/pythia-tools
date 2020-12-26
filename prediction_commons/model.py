@@ -19,11 +19,13 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
 
-from prediction_commons.enums import SplitType, NormalizedFeatureHandling, ArtifactRetentionMode, \
-    ArtifactRetentionCollection, ModelArtifacts
-from prediction_commons.data_transformations import row_wise_normalization
-from prediction_commons.db_utils import TableHandler, create_connection
-from prediction_commons.bq_schemas import rolling_daily_user_profile
+from prediction_commons.utils.config import ModelFeatures
+from prediction_commons.utils.bigquery import get_model_meta
+from prediction_commons.utils.enums import SplitType, NormalizedFeatureHandling, ArtifactRetentionMode, \
+    ArtifactRetentionCollection, ModelArtifacts, DataRetrievalMode
+from prediction_commons.utils.data_transformations import row_wise_normalization
+from prediction_commons.utils.db_utils import TableHandler, create_connection
+from prediction_commons.utils.bq_schemas import rolling_daily_model_record_level_profile
 
 sys.path.append("../")
 
@@ -34,7 +36,7 @@ load_dotenv('.env')
 
 # logging
 import logging.config
-from utils.config import LOGGING
+from prediction_commons.utils.config import LOGGING
 
 logger = logging.getLogger(__name__)
 logging.config.dictConfig(LOGGING)
@@ -42,6 +44,8 @@ logger.setLevel(logging.INFO)
 
 
 class PredictionModel(object):
+    model_features = ModelFeatures()
+
     def __init__(
             self,
             outcome_labels: List[str],
@@ -58,7 +62,7 @@ class PredictionModel(object):
             feature_aggregation_functions: Dict[str, sqlalchemy.func] = {'avg': func.avg},
             dry_run: bool = True,
             path_to_model_files: str = None,
-            model_record_id: str = 'id',
+            model_record_level: str = '',
     ):
         def create_util_columns():
             util_columns = ['outcome', 'feature_aggregation_functions', 'date', 'outcome_date', self.id_column]
@@ -66,10 +70,11 @@ class PredictionModel(object):
             return util_columns
 
         self.model_type = 'generic'
-        self.feature_columns = None,
-        self.current_model_version = None,
-        self.profile_columns = None,
-        self.id_column = model_record_id
+        self.feature_columns = None
+        self.current_model_version = None
+        self.profile_columns = None
+        self.model_record_level = model_record_level
+        self.id_column = f'{model_record_level}_id'
         self.util_columns = create_util_columns()
         self.min_date = min_date
         self.max_date = max_date
@@ -83,10 +88,8 @@ class PredictionModel(object):
         self.outcome_labels = outcome_labels
         self.X_train = pd.DataFrame()
         self.X_test = pd.DataFrame()
-        self.X_train_undersampled = pd.DataFrame()
         self.Y_train = pd.Series()
         self.Y_test = pd.Series()
-        self.Y_train_undersampled = pd.DataFrame()
         self.sampling_function = RandomUnderSampler()
         self.scaler = MinMaxScaler()
         self.model_date = None
@@ -126,17 +129,63 @@ class PredictionModel(object):
             if artifact == ModelArtifacts.MODEL:
                 joblib.dump(
                     self.model,
-                    f'{self.path_to_model_files}model_{self.model_date}.pkl'
+                    f'{self.path_to_model_files}{self.model_type}_'
+                    f'{self.model_record_level}_model_{self.model_date}.pkl'
                 )
             else:
                 getattr(self, artifact.value, pd.DataFrame()) \
-                    .to_csv(f'{self.path_to_model_files}artifact_{artifact.value}_{self.min_date}_{self.max_date}.csv')
+                    .to_csv(
+                    f'{self.path_to_model_files}{self.model_type}_{self.model_record_level}_artifact_'
+                    f'{artifact.value}_{self.min_date}_{self.max_date}.csv'
+                )
                 logger.info(f'  * {artifact.value} artifact dumped to {self.path_to_model_files}')
         delattr(self, artifact.value)
         logger.info(f'  * {artifact.value} artifact dropped')
 
-    def get_full_user_profiles_by_date(self):
+    def get_full_user_profiles_by_date(self, data_retrieval_mode: DataRetrievalMode):
         pass
+
+    def unpack_feature_frame(
+            self
+    ):
+        '''
+        Requires:
+            - normalization_handling
+            - feature_columns
+        Feature frame applies basic sanitization (Unknown / bool columns transformation) and keeps only users
+        that were active a day ago
+        '''
+        logger.info(f'  * Processing user profiles')
+
+        if self.user_profiles.empty:
+            raise ValueError(f'No data retrieved for {self.min_date} - {self.max_date} aborting model training')
+
+        self.unpack_json_columns()
+
+        for column in [column for column in self.feature_columns.return_feature_list()
+                       if column not in self.user_profiles.columns
+                       and column not in ['clv', 'article_pageviews_count', 'sum_paid', 'avg_price'] +
+                          [  # Iterate over all aggregation function types
+                              f'pageviews_{aggregation_function_alias}'
+                              for aggregation_function_alias in self.feature_aggregation_functions.keys()
+                          ]
+                       ]:
+            self.user_profiles[column] = 0.0
+
+        self.update_feature_names_from_data()
+        self.user_profiles['is_active_on_date'] = self.user_profiles['is_active_on_date'].astype(bool)
+        for date_column in ['date', 'outcome_date']:
+            self.user_profiles[date_column] = pd.to_datetime(
+                self.user_profiles[date_column]
+            ).dt.tz_localize(None).dt.date
+
+        self.transform_bool_columns_to_int()
+
+        if self.normalization_handling is not NormalizedFeatureHandling.IGNORE:
+            logger.info(f'  * Normalizing user profiles')
+            self.introduce_row_wise_normalized_features()
+
+        self.user_profiles[self.feature_columns.numeric_columns_all].fillna(0.0, inplace=True)
 
     def update_feature_names_from_data(self):
         pass
@@ -201,7 +250,7 @@ class PredictionModel(object):
             self.user_profiles[missing_json_column] = 0.0
 
     def unpack_json_columns(self):
-        for column in [column for column in self.user_profiles.columns if 'features' in column]:
+        for column in self.model_features.get_expected_table_column_names('rolling_profiles'):
             expansion_frame = self.user_profiles[column].apply(json.loads)
             # We need special handling for jsons with len of 1
             if expansion_frame.apply(len).max() == 1:
@@ -227,7 +276,7 @@ class PredictionModel(object):
             - user_profiles
         Transform True / False columns into 0/1 columns
         '''
-        for column in [column for column in self.feature_columns.bool_columns]:
+        for column in [column for column in self.feature_columns.BOOL_COLUMNS]:
             self.user_profiles[column] = self.user_profiles[column].apply(
                 lambda value: True if value == 't' else False).astype(int)
 
@@ -236,9 +285,9 @@ class PredictionModel(object):
         Requires:
             - user_profiles
         Create lists of individual category variables for consistent encoding between train set, test set and
-        prediciton set
+        prediction set
         '''
-        for column in self.feature_columns.categorical_columns:
+        for column in self.feature_columns.CATEGORICAL_COLUMNS:
             self.category_list_dict[column] = list(self.user_profiles[column].unique()) + ['Unknown']
 
     def encode_unknown_categories(self, data: pd.Series):
@@ -279,8 +328,9 @@ class PredictionModel(object):
         :param category_lists_dict:
         :return:
         '''
-        for column in self.feature_columns.categorical_columns:
+        for column in self.feature_columns.CATEGORICAL_COLUMNS:
             dummies = self.generate_dummy_columns_from_categorical_column(data[column])
+            self.feature_columns.extend_categorical_variants(dummies.columns)
             data = pd.concat(
                 [
                     data,
@@ -321,17 +371,19 @@ class PredictionModel(object):
         self.generate_category_list_dict()
 
         with open(
-                f'{self.path_to_model_files}category_lists_{self.model_date}.json', 'w') as outfile:
+                f'{self.path_to_model_files}{self.model_type}_{self.model_record_level}_category_lists_'
+                f'{self.model_date}.json', 'w') as outfile:
             json.dump(self.category_list_dict, outfile)
 
         self.X_train = self.replace_dummy_columns_with_dummies(self.X_train)
 
+        logger.info('  * Dummy variables generation success')
+
         self.Y_train = self.user_profiles.loc[train_indices, 'outcome'].sort_index()
         self.Y_test = self.user_profiles.loc[test_indices, 'outcome'].sort_index()
 
-        logger.info('  * Dummy variables generation success')
-
         self.feature_columns.numeric_columns_all.sort()
+
         X_train_numeric = self.user_profiles.loc[
             train_indices,
             self.feature_columns.numeric_columns_all
@@ -344,17 +396,19 @@ class PredictionModel(object):
 
         logger.info('  * Numeric variables handling success')
 
-        self.X_train = pd.concat([X_train_numeric.sort_index(), self.X_train[
-            [column for column in self.X_train.columns
-             if column not in self.feature_columns.numeric_columns_all +
-             self.feature_columns.config_columns]
-        ].sort_index()], axis=1)
+        self.X_train = pd.concat(
+            [
+                X_train_numeric.sort_index(),
+                self.X_train[self.feature_columns.categorical_features + self.feature_columns.BOOL_COLUMNS].sort_index()
+            ],
+            axis=1
+        )
 
         self.X_train = self.sort_columns_alphabetically(self.X_train)
 
         joblib.dump(
             self.scaler,
-            f'{self.path_to_model_files}scaler_{self.model_date}.pkl'
+            f'{self.path_to_model_files}{self.model_type}_{self.model_record_level}_scaler_{self.model_date}.pkl'
         )
 
         if ModelArtifacts.USER_PROFILES.value not in self.artifacts_to_retain:
@@ -373,9 +427,10 @@ class PredictionModel(object):
             suffix = 'json'
 
         if self.path_to_model_files in os.listdir(None):
-            if f'scaler_{self.model_date}.pkl' in os.listdir(
+            if f'{self.model_type}_{self.model_record_level}_scaler_{self.model_date}.pkl' in os.listdir(
                     None if self.path_to_model_files == '' else self.path_to_model_files):
-                os.remove(f'{self.path_to_model_files}{filename}_{self.model_date}.{suffix}')
+                os.remove(f'{self.path_to_model_files}{self.model_type}_'
+                          f'{self.model_record_level}_{filename}_{self.model_date}.{suffix}')
 
     def preprocess_and_train(
             self,
@@ -390,6 +445,8 @@ class PredictionModel(object):
             - artifact_retention_mode
         Trains a new model given a full dataset
         '''
+        # This is necessary in case we're re-using the data, in some flows the outcome gets rewritten by its numeric
+        # encoding and the encoding itself would fail
         if 0 not in self.user_profiles['outcome'].unique():
             self.user_profiles['outcome'] = self.le.transform(self.user_profiles['outcome'])
 
@@ -401,15 +458,13 @@ class PredictionModel(object):
             model_function,
             model_arguments
     ):
-        self.undersample_majority_class()
         self.X_train.fillna(0.0, inplace=True)
-        self.X_train_undersampled.fillna(0.0, inplace=True)
         self.X_test.fillna(0.0, inplace=True)
 
         logger.info('  * Commencing model training')
 
         classifier_instance = model_function(**model_arguments)
-        self.model = classifier_instance.fit(self.X_train_undersampled, self.Y_train_undersampled)
+        self.model = classifier_instance.fit(self.X_train, self.Y_train)
 
         logger.info('  * Model training complete, generating outcome frame')
 
@@ -428,6 +483,8 @@ class PredictionModel(object):
             self.outcome_labels,
             self.le
         )
+
+        self.upload_model_meta()
 
         if self.training_split_parameters['split_ratio'] < 1.0:
             self.collect_accuracies_for_test()
@@ -556,22 +613,27 @@ class PredictionModel(object):
         logger.info(f'Executing training pipeline')
         # Make sure we have enough days for training, this statement is behind the condition since sometimes
         # we might be reusing training data from a previous run
-        if self.user_profiles is None:
-            self.get_full_user_profiles_by_date()
+        self.get_full_user_profiles_by_date(DataRetrievalMode.MODEL_TRAIN_DATA)
 
         # Some users have no outcome due to having renewed via a non-payment option, thus we need to drop them
         # for the purpose of training a model
         self.user_profiles = self.user_profiles[~self.user_profiles['outcome'].isna()]
 
-        if self.overwrite_files:
-            for model_file in ['category_lists', 'scaler', 'model']:
-                self.delete_existing_model_file_for_same_date(model_file)
-
         if sampling_function:
             try:
                 self.sampling_function = sampling_function(n_jobs=-1)
-            except:
-                self.sampling_function = sampling_function()
+            except Exception as e:
+                if e == "__init__() got an unexpected keyword argument 'n_jobs'":
+                    self.sampling_function = sampling_function()
+                else:
+                    raise TypeError(f'Failed initializing sampler with error: {e}')
+
+        self.undersample_majority_class()
+        self.unpack_feature_frame()
+
+        if self.overwrite_files:
+            for model_file in ['category_lists', 'scaler', 'model']:
+                self.delete_existing_model_file_for_same_date(model_file)
 
         self.preprocess_and_train(
             model_function,
@@ -582,21 +644,12 @@ class PredictionModel(object):
 
         joblib.dump(
             self.model,
-            f'{self.path_to_model_files}model_{self.model_date}.pkl'
+            f'{self.path_to_model_files}{self.model_type}_{self.model_record_level}_model_{self.model_date}.pkl'
         )
 
         logger.info(f'Saved to {self.path_to_model_files}model_{self.model_date}.pkl')
 
         self.remove_model_training_artefacts()
-        # TODO: This would eventually be replaced with storing variable importances to DB
-        self.variable_importances.to_csv(
-            f'{self.path_to_model_files}variable_importances_{self.model_date}.csv',
-            index=True,
-            header=False
-        )
-
-        if not self.dry_run:
-            self.upload_model_meta()
 
     def upload_model_meta(self):
         logger.info(f'Storing model metadata')
@@ -613,7 +666,7 @@ class PredictionModel(object):
 
         models = pd.DataFrame(
             {
-                'train_date': datetime.utcnow().date(),
+                'train_date': datetime.utcnow(),
                 'min_date': self.min_date,
                 'max_date': self.max_date,
                 'model_type': self.model_type,
@@ -627,22 +680,16 @@ class PredictionModel(object):
             'numeric_columns': self.feature_columns.numeric_columns,
             'profile_numeric_columns_from_json_fields': self.feature_columns.profile_numeric_columns_from_json_fields,
             'time_based_columns': self.feature_columns.time_based_columns,
-            'categorical_columns': self.feature_columns.categorical_columns,
-            'bool_columns': self.feature_columns.bool_columns,
+            'categorical_columns': [
+                column for column in self.variable_importances.index
+                for category in self.feature_columns.CATEGORICAL_COLUMNS if f'{category}_' in column
+            ],
+            'bool_columns': self.feature_columns.BOOL_COLUMNS,
             'numeric_columns_with_window_variants': self.feature_columns.numeric_columns_window_variants,
             'device_based_columns': self.feature_columns.device_based_features
         }.items():
             if isinstance(feature_set, list):
-                if feature_set_name != 'categorical_columns':
-                    feature_set_elements = feature_set
-                else:
-                    # Categorical variables get transformed into dummy variables with <column_name>_<column_value>
-                    # naming
-                    feature_set_elements = [
-                        column for column in self.variable_importances.index
-                        for column_prefix in feature_set_name
-                        if column_prefix in column
-                    ]
+                feature_set_elements = feature_set
 
                 models[f'importances__{feature_set_name}'] = str(
                     self.variable_importances[
@@ -682,14 +729,23 @@ class PredictionModel(object):
         Serves for the prediction pipeline in order to load model & additional transformation config objects
         '''
 
-        model_related_file_list = os.listdir(self.path_to_model_files)
+        model_definition_prefix = f'{self.model_type}_{self.model_record_level}'
+        model_related_file_list = [
+            file for file in os.listdir(self.path_to_model_files)
+            if model_definition_prefix in file
+        ]
+
         last_model_related_files = {}
-        for model_related_file in ['category_lists', 'scaler', 'model', 'variable_importances']:
-            last_file_date = {parse(re.sub(f'{model_related_file}_|.json|.pkl|.csv|None', '', filename)):
-                                  abs(parse(re.sub(f'{model_related_file}_|.json|.pkl|.csv|None', '', filename)).date()
-                                      - self.scoring_date.date())
-                              for filename in model_related_file_list
-                              if re.search(f'{model_related_file}_', filename)}
+        for model_related_file in ['category_lists', 'scaler', 'model']:
+            non_date_file_name_part = f'{model_definition_prefix}_{model_related_file}_|.json|.pkl|None'
+
+            last_file_date = {
+                parse(re.sub(non_date_file_name_part, '', filename)):
+                abs(parse(re.sub(non_date_file_name_part, '', filename)).date() - self.scoring_date.date())
+                for filename in model_related_file_list
+                if re.search(f'{model_related_file}_', filename)
+            }
+
             last_file_date = [date for date, diff in last_file_date.items() if diff == min(last_file_date.values())][0]
             last_model_related_files[model_related_file] = last_file_date.date()
         if len(set(last_model_related_files.values())) > 1:
@@ -703,18 +759,11 @@ class PredictionModel(object):
         if not self.path_to_model_files:
             self.path_to_model_files = ''
         with open(self.path_to_model_files +
-                  'category_lists_' + str(last_model_related_files['category_lists']) + '.json', 'r') as outfile:
+                  f'{model_definition_prefix}_category_lists_' + str(last_model_related_files['category_lists']) + '.json', 'r') as outfile:
             self.category_list_dict = json.load(outfile)
 
-        self.scaler = joblib.load(f"{self.path_to_model_files}scaler_{str(last_model_related_files['scaler'])}.pkl")
-        self.model = joblib.load(f"{self.path_to_model_files}model_{str(last_model_related_files['model'])}.pkl")
-        # TODO: This would eventually be replaced with loading variable importances from DB
-        self.variable_importances = pd.read_csv(
-            f"{self.path_to_model_files}variable_importances_{str(last_model_related_files['variable_importances'])}.csv",
-            squeeze=True,
-            index_col=0,
-            header=None
-        )
+        self.scaler = joblib.load(f"{self.path_to_model_files}{model_definition_prefix}_scaler_{str(last_model_related_files['scaler'])}.pkl")
+        self.model = joblib.load(f"{self.path_to_model_files}{model_definition_prefix}_model_{str(last_model_related_files['model'])}.pkl")
 
         logger.info('  * Model constructs loaded')
 
@@ -737,25 +786,40 @@ class PredictionModel(object):
         if self.model is None:
             self.load_model_related_constructs()
 
-        # Add missing columns that were in the train set
-        for column in self.variable_importances.index:
-            if column not in data.columns:
-                if column in self.feature_columns.numeric_columns_all:
-                    data[column] = 0.0
-                    self.feature_columns.numeric_columns_all.append(column)
-                # This is a hacky solution, but device brand (and potentially other profile columns
-                # have the most fluctuations in terms of values that translate to new columns:
-                for profile_column_flag in self.profile_columns + ['_device_brand_']:
-                    if profile_column_flag in column and column:
-                        data[column] = 0.0
-                        self.feature_columns.numeric_columns_all.append(column)
+        model_meta = get_model_meta(
+            self.min_date,
+            self.model_type,
+            self.current_model_version,
+            self.moving_window
+        )
 
-        # Remove new columns (such as new devices appearing in shorter time ranges)
-        for column in [
-            column for column in data.columns
-            if column not in self.variable_importances.index
-               and column in self.feature_columns.numeric_columns_all
-        ]:
+        numeric_columns_train = []
+        categorical_columns_train = []
+        for column in self.model_features.get_expected_table_column_names('models'):
+            feature_set = column.replace('importances__', '')
+            if feature_set in self.model_features.numeric_features:
+                expected_features = json.loads(
+                    model_meta[column].str.replace("'", '"').values[0]
+                )
+
+                numeric_columns_train.extend(list(expected_features.keys()))
+            elif feature_set in self.model_features.categorical_features:
+                expected_features = json.loads(
+                    model_meta[column].str.replace("'", '"').values[0]
+                )
+
+                categorical_columns_train.extend(list(expected_features.keys()))
+
+        numeric_columns_train = set(numeric_columns_train)
+        categorical_columns_train = set(categorical_columns_train)
+
+        # Add columns present in train, missing in predict
+        for column in numeric_columns_train.difference(set(self.feature_columns.numeric_columns_all)):
+            data[column] = 0.0
+            self.feature_columns.numeric_columns_all.append(column)
+
+        # Remove columns present in predict, missing in train
+        for column in set(self.feature_columns.numeric_columns_all).difference(numeric_columns_train):
             data.drop(column, axis=1, inplace=True)
             self.feature_columns.numeric_columns_all.remove(column)
 
@@ -771,16 +835,23 @@ class PredictionModel(object):
             index=data.index,
             columns=self.feature_columns.numeric_columns_all).sort_index()
 
-        self.prediction_data = pd.concat([
-            feature_frame_numeric, data[
-                [column for column in data.columns
-                 if column not in self.feature_columns.numeric_columns_all +
-                 self.feature_columns.config_columns
-                 ]].sort_index()], axis=1)
+        self.prediction_data = pd.concat(
+            [
+                feature_frame_numeric.sort_index(),
+                data[self.feature_columns.BOOL_COLUMNS + self.feature_columns.CATEGORICAL_COLUMNS].sort_index()
+            ],
+            axis=1
+        )
 
         self.prediction_data = self.replace_dummy_columns_with_dummies(self.prediction_data)
 
-        self.align_prediction_frame_with_train_columns()
+        for categorical_column in self.category_list_dict.keys():
+            for categorical_column_value in self.category_list_dict[categorical_column]:
+                categorical_feature = f'{categorical_column}_{categorical_column_value}'
+                if categorical_feature not in self.prediction_data \
+                        and categorical_feature in categorical_columns_train:
+                    self.prediction_data[categorical_feature] = 0
+
         self.prediction_data = self.sort_columns_alphabetically(self.prediction_data)
         self.prediction_data.fillna(0.0, inplace=True)
         predictions = pd.DataFrame(self.model.predict_proba(self.prediction_data), index=self.prediction_data.index)
@@ -822,23 +893,6 @@ class PredictionModel(object):
 
         return df
 
-    def align_prediction_frame_with_train_columns(self):
-        # Sometimes the columns used to train a model don't align with columns im prediction set
-        # 1. Drop columns that are in new data, but weren't used in training
-        self.prediction_data.drop(
-            [column for column in self.prediction_data.columns if column not in self.variable_importances.index],
-            axis=1,
-            inplace=True
-        )
-
-        # 2. Add 0 columns that were in train, but aren't in new data
-        for column in [column for column in self.variable_importances.index
-                       if column not in self.prediction_data.columns]:
-            self.prediction_data[column] = 0.0
-
-        # 3. Make sure the columns have the same order as original data, since sklearn ignores column names
-        self.prediction_data = self.prediction_data[list(self.variable_importances.index)]
-
     def upload_predictions(self):
         pass
 
@@ -857,7 +911,8 @@ class PredictionModel(object):
         Generates outcome prediction for churn and uploads them to the DB
         '''
         logger.info(f'Executing prediction generation')
-        self.get_full_user_profiles_by_date()
+        self.get_full_user_profiles_by_date(DataRetrievalMode.PREDICT_DATA)
+        self.unpack_feature_frame()
         self.artifact_retention_mode = ArtifactRetentionMode.DROP
 
         logger.setLevel(logging.INFO)
@@ -902,19 +957,29 @@ class PredictionModel(object):
     ):
 
         self.handle_table(
-            rolling_daily_user_profile(self.id_column),
-            'rolling_daily_user_profile'
+            rolling_daily_model_record_level_profile(self.id_column),
+            f'rolling_daily_{self.model_record_level}_profile'
         )
         logger.info(f'Starting with preaggregation for date range {self.min_date.date()} - {self.max_date.date()}')
         self.retrieve_and_insert()
 
     def undersample_majority_class(self):
         sampler = self.sampling_function
-        self.X_train_undersampled, self.Y_train_undersampled = sampler.fit_resample(
-            self.X_train,
-            self.Y_train
+        Y = self.user_profiles['outcome']
+        self.user_profiles.drop('outcome', axis=1, inplace=True)
+        X_undersampled, Y_undersampled = sampler.fit_resample(
+            self.user_profiles,
+            Y
         )
 
+        self.user_profiles = pd.concat(
+            [
+                X_undersampled,
+                Y_undersampled
+            ],
+            axis=1
+        )
+    
     @staticmethod
     def handle_table(
             schema: List[bigquery.SchemaField],

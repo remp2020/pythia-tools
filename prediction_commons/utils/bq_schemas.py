@@ -1,7 +1,7 @@
 from google.cloud import bigquery
 
 
-def rolling_daily_user_profile(id_column: str):
+def rolling_daily_model_record_level_profile(id_column: str):
     schema = [
         bigquery.SchemaField('date', 'DATE'),
         bigquery.SchemaField(id_column, 'STRING'),
@@ -19,8 +19,13 @@ def rolling_daily_user_profile(id_column: str):
         bigquery.SchemaField('features__categorical_columns', 'STRING'),
         bigquery.SchemaField('features__bool_columns', 'STRING'),
         bigquery.SchemaField('features__numeric_columns_with_window_variants', 'STRING'),
-        bigquery.SchemaField('features__device_based_columns', 'STRING')
     ]
+
+    # For browsers level predictions, we only have one device per record, which means device based features are
+    # categorical. For user level features where a user can have multiple devices, we're using a separate feature
+    # category containing counts for most popular device types in a given period
+    if id_column == 'user_id':
+        schema.append(bigquery.SchemaField('features__device_based_columns', 'STRING'))
 
     return schema
 

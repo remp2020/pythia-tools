@@ -1,8 +1,5 @@
-import pandas as pd
 import sqlalchemy
-import os
 from typing import List, Dict, Any
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData, Table
 
 
@@ -27,23 +24,6 @@ def create_connection(connection_string: str, engine_kwargs: Dict[str, Any] = {}
         .execution_options(autocommit=True)
 
     return engine, connection
-
-
-def retrieve_data_for_query_key(
-        query_string: str,
-        query_arguments: dict,
-        connection: sqlalchemy.engine
-) -> pd.DataFrame:
-    query_string = sqlalchemy.sql.text(query_string)
-    query = connection.execute(query_string, **query_arguments)
-    data = pd.DataFrame(query.fetchall())
-
-    if data.empty:
-        raise ValueError(f'No data available')
-
-    data.columns = query.keys()
-
-    return data
 
 
 def get_sqla_table(table_name, engine, kwargs: Dict[str, str] = None):
