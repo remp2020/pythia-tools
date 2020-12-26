@@ -98,3 +98,9 @@ class WindowHalfDirection(Enum):
     FULL = 'full'
     FIRST_HALF = 'first_half'
     LAST_HALF = 'last_half'
+
+
+class OutcomeLabelCategory(Enum):
+    POSITIVE = 'positive'
+    NEGATIVE = 'negative'
+    UNKNOWN = 'unknown'

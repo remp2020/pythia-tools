@@ -1,9 +1,12 @@
 import pandas as pd
 import sqlalchemy
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 from sqlalchemy import MetaData, Table
 from google.cloud import bigquery
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import sessionmaker
+
 from bigquery_export.upload import BigQueryUploader
 
 
@@ -25,6 +28,26 @@ def create_connection(connection_string: str, engine_kwargs: Dict[str, Any] = {}
         .execution_options(autocommit=True)
 
     return engine, connection
+
+
+def get_sqlalchemy_tables_w_session(
+        table_names: List[str] = None
+) -> (Dict, Engine):
+    table_mapping = {}
+    database = os.getenv('BIGQUERY_PROJECT_ID')
+    _, db_connection = create_connection(
+        f'bigquery://{database}',
+        {'credentials_path': os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')}
+    )
+    schema = os.getenv('BIGQUERY_DATASET')
+    for table in table_names:
+        table_mapping[table] = get_sqla_table(
+            table_name=f'{database}.{schema}.{table}', engine=db_connection,
+        )
+
+    table_mapping['session'] = sessionmaker(bind=db_connection)()
+
+    return table_mapping, db_connection
 
 
 def retrieve_data_for_query_key(

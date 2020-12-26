@@ -11,13 +11,10 @@ from google.oauth2 import service_account
 from typing import Dict
 from sqlalchemy import func
 import logging.config
-from utils.config import LABELS, FeatureColumns, CURRENT_MODEL_VERSION, AGGREGATION_FUNCTIONS_w_ALIASES, \
-    MIN_TRAINING_DAYS, CURRENT_PIPELINE_VERSION, PROFILE_COLUMNS
-from prediction_commons.enums import NormalizedFeatureHandling, ArtifactRetentionMode, ArtifactRetentionCollection
-from prediction_commons.db_utils import create_connection
-from utils.mysql import get_payment_history_features, get_global_context
-from prediction_commons.model import PredictionModel
-from utils.config import LOGGING
+from utils.config import LABELS, CURRENT_MODEL_VERSION, CURRENT_PIPELINE_VERSION
+from utils.config import ChurnFeatureColumns as FeatureColumns
+
+from churn_prediction.utils.config import ChurnModelFeatures
 
 sys.path.append("../")
 
@@ -25,7 +22,14 @@ sys.path.append("../")
 from dotenv import load_dotenv
 load_dotenv('.env')
 
-from utils.bigquery import get_feature_frame_via_sqlalchemy, insert_daily_feature_frame
+from churn_prediction.utils.bigquery import ChurnDataDownloader
+from prediction_commons.utils.config import PROFILE_COLUMNS, LOGGING
+from prediction_commons.utils.enums import NormalizedFeatureHandling, ArtifactRetentionMode, \
+    ArtifactRetentionCollection, DataRetrievalMode, OutcomeLabelCategory
+from prediction_commons.utils.db_utils import create_connection
+from utils.mysql import get_payment_history_features, get_global_context
+from prediction_commons.model import PredictionModel
+from utils.bigquery import ChurnFeatureBuilder
 
 # logging
 logger = logging.getLogger(__name__)
@@ -34,6 +38,8 @@ logger.setLevel(logging.INFO)
 
 
 class ChurnPredictionModel(PredictionModel):
+    model_features = ChurnModelFeatures()
+
     def __init__(
             self,
             min_date: datetime = datetime.utcnow() - timedelta(days=31),
@@ -63,7 +69,7 @@ class ChurnPredictionModel(PredictionModel):
             feature_aggregation_functions=feature_aggregation_functions,
             dry_run=dry_run,
             path_to_model_files=path_to_model_files,
-            model_record_id='user_id',
+            model_record_level='user',
         )
 
         self.model_type = 'churn'
@@ -72,14 +78,14 @@ class ChurnPredictionModel(PredictionModel):
 
         self.feature_columns = FeatureColumns(
             self.feature_aggregation_functions.keys(),
-            self.min_date,
             self.max_date
         )
 
         self.le.fit(list(LABELS.keys()))
 
     def get_full_user_profiles_by_date(
-            self
+            self,
+            data_retrieval_mode: DataRetrievalMode = DataRetrievalMode.PREDICT_DATA
     ):
         '''
         Requires:
@@ -90,28 +96,30 @@ class ChurnPredictionModel(PredictionModel):
         Retrieves rolling window user profiles from the db
         using row-wise normalized features
         '''
-
+        self.user_profiles = pd.DataFrame()
         self.min_date = self.min_date.replace(hour=0, minute=0, second=0, microsecond=0)
         self.max_date = self.max_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        self.retrieve_feature_frame()
-        logger.info(f'  * Query finished, processing retrieved data')
 
-        for column in [column for column in self.feature_columns.return_feature_list()
-                       if column not in self.user_profiles.columns
-                       and column not in [
-                              'clv', 'article_pageviews_count',
-                              'sum_paid', 'avg_price'] +
-                       [  # Iterate over all aggregation function types
-                              f'pageviews_{aggregation_function_alias}'
-                              for aggregation_function_alias in self.feature_aggregation_functions.keys()
-                       ]
-                       ]:
-            self.user_profiles[column] = 0.0
+        if data_retrieval_mode == DataRetrievalMode.MODEL_TRAIN_DATA:
+            historically_oversampled_outcome_type = OutcomeLabelCategory.NEGATIVE
+        else:
+            historically_oversampled_outcome_type = None
+
+        data_downloader = ChurnDataDownloader(
+            start_time=self.min_date,
+            end_time=self.max_date,
+            moving_window_length=self.moving_window,
+            model_record_level=self.model_record_level,
+            historically_oversampled_outcome_type=historically_oversampled_outcome_type
+        )
+
+        self.user_profiles = data_downloader.get_feature_frame_via_sqlalchemy(
+        )
+
         logger.info(f'  * Retrieved initial user profiles frame from DB')
 
         try:
             self.get_contextual_features_from_mysql()
-            self.feature_columns.add_global_context_features()
             logger.info('Successfully added global context features from mysql')
         except Exception as e:
             logger.info(
@@ -125,7 +133,6 @@ class ChurnPredictionModel(PredictionModel):
 
         try:
             self.get_user_history_features_from_mysql()
-            self.feature_columns.add_payment_history_features()
             logger.info('Successfully added user payment history features from mysql')
         except Exception as e:
             logger.info(
@@ -135,13 +142,12 @@ class ChurnPredictionModel(PredictionModel):
             for column in ['clv']:
                 self.user_profiles[column] = 0.0
 
-        self.user_profiles[self.feature_columns.numeric_columns_all].fillna(0.0, inplace=True)
-        logger.info('  * Initial data validation success')
+        self.feature_columns.add_payment_history_features()
+        self.feature_columns.add_global_context_features()
 
     def update_feature_names_from_data(self):
         self.feature_columns = FeatureColumns(
             self.user_profiles['feature_aggregation_functions'].tolist()[0].split(','),
-            self.min_date,
             self.max_date
         )
 
@@ -185,7 +191,7 @@ class ChurnPredictionModel(PredictionModel):
         context.index = pd.to_datetime(context.index)
         rolling_context = (context.groupby('date')
                            .fillna(0)  # fill each missing group with 0
-                           .rolling(7, min_periods=1)
+                           .rolling(self.moving_window, min_periods=1)
                            .sum())  # do a rolling sum
         rolling_context.reset_index(inplace=True)
         rolling_context['avg_price'] = rolling_context['sum_paid'] / rolling_context['payment_count']
@@ -204,46 +210,6 @@ class ChurnPredictionModel(PredictionModel):
         self.user_profiles.drop(['date_str', 'date_y'], axis=1, inplace=True)
         self.user_profiles.rename(columns={'date_x': 'date'}, inplace=True)
 
-    def retrieve_feature_frame(
-            self
-    ):
-        '''
-        Requires:
-            - min_date
-            - max_date
-            - moving_window
-            - normalization_handling
-            - feature_columns
-        Feature frame applies basic sanitization (Unknown / bool columns transformation) and keeps only users
-        that were active a day ago
-        '''
-        logger.info(f'  * Loading user profiles')
-        self.user_profiles = get_feature_frame_via_sqlalchemy(
-            self.min_date,
-            self.max_date,
-            self.moving_window
-        )
-
-        logger.info(f'  * Processing user profiles')
-
-        if self.user_profiles.empty:
-            raise ValueError(f'No data retrieved for {self.min_date} - {self.max_date} aborting model training')
-
-        self.unpack_json_columns()
-        self.update_feature_names_from_data()
-        self.user_profiles['is_active_on_date'] = self.user_profiles['is_active_on_date'].astype(bool)
-        for date_column in ['date', 'outcome_date']:
-            self.user_profiles[date_column] = pd.to_datetime(
-                self.user_profiles[date_column]
-            ).dt.tz_localize(None).dt.date
-
-        self.transform_bool_columns_to_int()
-        logger.info('  * Filtering user profiles')
-        self.user_profiles = self.user_profiles[self.user_profiles['days_active_count'] >= 1].reset_index(drop=True)
-
-        if self.normalization_handling is not NormalizedFeatureHandling.IGNORE:
-            logger.info(f'  * Normalizing user profiles')
-            self.introduce_row_wise_normalized_features()
 
     def upload_predictions(self):
         logger.info(f'Storing predicted data')
@@ -283,10 +249,12 @@ class ChurnPredictionModel(PredictionModel):
             if len(dates_for_preaggregation) > 1:
                 logger.setLevel(logging.ERROR)
             try:
-                insert_daily_feature_frame(
-                    date,
-                    self.moving_window,
-                    self.feature_aggregation_functions,
+                churn_feature_builder = ChurnFeatureBuilder(
+                    aggregation_time=date,
+                    moving_window_length=self.moving_window,
+                    feature_aggregation_functions=self.feature_aggregation_functions
+                )
+                churn_feature_builder.insert_daily_feature_frame(
                     meta_columns_w_values={
                         'pipeline_version': CURRENT_PIPELINE_VERSION,
                         'created_at': datetime.utcnow(),
