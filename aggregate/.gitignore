@@ -1,8 +1,11 @@
 .env
 .virtualenv
+pyvenv.cfg
+download.sh
 bin/*
 lib/*
 commerce/*
 events/*
 pageviews/*
 pageviews_time_spent/*
+pageviews_progress/*

@@ -164,7 +164,6 @@ while [ "$di" != "$end_on" ]; do
     skip_date=0
 
     for idx in "${files[@]}"; do
-        echo "Processing ${idx}, date: ${di}"
         cur_dir="$dir/$idx"
         cur_tmp_dir="$tmp/$idx"
         mkdir -p $cur_tmp_dir # create directory if does not exist
@@ -172,7 +171,6 @@ while [ "$di" != "$end_on" ]; do
         cur_file_csv="${cur_tmp_dir}/${idx}_${file_date}.csv"
 
         if [ ! -f $cur_file_gz ]; then
-
             if [ -n "$onlyaggregate" ]; then
                 echo "File ${cur_file_gz} not found, --onlyaggregate mode is turned on, skipping the date"
                 skip_date=1
@@ -192,10 +190,12 @@ while [ "$di" != "$end_on" ]; do
             es2csv -u ${ELASTIC_ADDR} ${authstring} -i "${indexname}" -q "time: [ ${di} TO ${di} ]" -s 10000 -o ${cur_file_csv} --quotechar='${quotechar}' --delimiter='${delimiter}'
             # pack file to .gz if it was downloaded (at least one record was present for the day)
             if [ -f $cur_file_csv ]; then
+                echo "Unpacking ${idx}, date: ${di}"
                 gzip -k -f -c $cur_file_csv > $cur_file_gz
             fi
         else
             # unpack .csv.gz file
+            echo "Unpacking ${idx}, date: ${di}"
             gzip -k -f -d -c $cur_file_gz > $cur_file_csv
         fi
     done
