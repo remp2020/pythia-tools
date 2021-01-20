@@ -108,20 +108,15 @@ def run(file_date, aggregate_folder):
     browser_parser = BrowserParser()
     browser_parser.process_files(pageviews_file, pageviews_time_spent_file, commerce_file)
     browser_parser.upload_to_bq(bq_uploader, cur_date)
-
+    browser_parser = None
     using("After BrowserParser")
 
+    user_parser = UserParser()
+    user_parser.process_files(pageviews_file, pageviews_time_spent_file)
+    user_parser.upload_to_bq(bq_uploader, cur_date)
+    user_parser = None
+    using("After UserParser")
 
-
-
-    #  TODO: UNCOMMENT!!
-    #
-    # user_parser = UserParser()
-    # user_parser.process_files(pageviews_file, pageviews_time_spent_file)
-    # # user_parser.store_in_db(conn, cur, date(year, month, day))
-    #
-    # using("After UserParser")
-    #
     # commerce_parser = CommerceParser(cur_date)
     # commerce_parser.process_file(commerce_file)
     #

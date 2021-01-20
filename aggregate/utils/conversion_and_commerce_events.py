@@ -22,7 +22,6 @@ class CommerceParser:
         self.user_id_browser_id = {}
         self.data = []
         self.cur_date = cur_date
-        self.browser_steps = {}
         self.events_to_save = []
         pass
 
@@ -31,20 +30,6 @@ class CommerceParser:
             r = csv.DictReader(csv_file, delimiter=',')
             for row in r:
                 self.data.append(Commerce(row))
-
-                if row['browser_id']:
-                    if row['browser_id'] not in self.browser_steps:
-                        self.browser_steps[row['browser_id']] = {
-                            'checkout': 0,
-                            'payment': 0,
-                            'purchase': 0,
-                            'refund': 0
-                        }
-
-                    if row['step'] not in ['checkout', 'payment', 'purchase', 'refund']:
-                        raise Exception("unknown commerce step: " + row['step'] + ' for browser_id: ' + row['browser_id'])
-                    else:
-                        self.browser_steps[row['browser_id']][row['step']] += 1
 
     # def __save_events_to_separate_table(self):
     #     sql = '''
@@ -58,6 +43,7 @@ class CommerceParser:
     #     self.cursor.connection.commit()
 
     def process_file(self, commerce_file):
+        # TODO: rely on `commerce_session_id` instead of `browser_id` to identify commerce session
         print("Processing file: " + commerce_file)
         self.__load_data(commerce_file)
         self.data.sort(key=lambda x: x.time)
@@ -78,7 +64,6 @@ class CommerceParser:
                 # purchase event within 5 minutes of payment
                 if purchase_time_minus_5 <= payment_time:
                     browser_id = self.user_id_browser_id[c.user_id]
-                    # self.__mark_conversion_event(browser_id, purchase_time)
                     self.events_to_save.append({
                         "user_id": c.user_id,
                         "browser_id": browser_id,
@@ -87,55 +72,6 @@ class CommerceParser:
                     })
 
         # self.__save_events_to_separate_table()
-        # self.__save_commerce_steps_count()
-
-    def get_browser_commerce_steps_count(self, browser_id):
-        if browser_id in self.browser_steps:
-            return {
-                "commerce_checkouts": self.browser_steps[browser_id]['checkout'],
-                "commerce_payments": self.browser_steps[browser_id]['payment'],
-                "commerce_purchases": self.browser_steps[browser_id]['purchase'],
-                "commerce_refunds": self.browser_steps[browser_id]['refund'],
-            }
-        return None
-
-    # def __save_commerce_steps_count(self):
-    #     sql = '''
-    #         UPDATE aggregated_browser_days
-    #         SET commerce_checkouts = %s, commerce_payments = %s, commerce_purchases = %s, commerce_refunds = %s
-    #         WHERE date = %s AND browser_id = %s
-    #     '''
-    #
-    #     psycopg2.extras.execute_batch(self.cursor, sql, [
-    #         (self.browser_steps[browser_id]['checkout'],
-    #          self.browser_steps[browser_id]['payment'],
-    #          self.browser_steps[browser_id]['purchase'],
-    #          self.browser_steps[browser_id]['refund'],
-    #          self.cur_date.isoformat(),
-    #          browser_id) for browser_id in self.browser_steps
-    #     ])
-    #     self.cursor.connection.commit()
-
-    # def __mark_conversion_event(self, browser_id, purchase_time):
-    #     # first delete that particular day
-    #     # we don't want conversion day to be included in aggregated data
-    #     self.cursor.execute('''
-    #         DELETE FROM aggregated_browser_days WHERE browser_id = %s and date = %s
-    #     ''', (browser_id, self.cur_date))
-    #
-    #     # then mark 7_days_event to 'conversion'
-    #     # for 7 previous days
-    #     end = arrow.get(self.cur_date).shift(days=-1)
-    #     start = end.shift(days=-6)
-    #     sql = '''
-    #         UPDATE aggregated_browser_days
-    #         SET next_7_days_event = 'conversion', next_event_time = %s
-    #         WHERE date = %s AND browser_id = %s AND next_7_days_event = 'no_conversion'
-    #     '''
-    #     psycopg2.extras.execute_batch(self.cursor, sql, [
-    #         (purchase_time.isoformat(), day[0].date(), browser_id) for day in arrow.Arrow.span_range('day', start, end)
-    #     ])
-    #     self.cursor.connection.commit()
 
 
 class PageView:

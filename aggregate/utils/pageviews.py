@@ -8,12 +8,13 @@ import math
 import pandas
 from collections import OrderedDict
 from user_agents import parse as ua_parse
-from utils.conversion_and_commerce_events import CommerceParser, SharedLoginParser
+
 
 def add_one(arr, key):
     if key not in arr:
         arr[key] = 0
     arr[key] += 1
+
 
 def empty_data_entry(data_to_merge=None):
     data = {
@@ -96,6 +97,7 @@ def aggregated_pageviews_row_accessors(accessors_to_merge=None):
 
     return accessors
 
+
 class UserParser:
     def __init__(self):
         self.data = {}
@@ -144,75 +146,82 @@ class UserParser:
         else:
             print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 
-    # def store_in_db(self, conn, cur, processed_date):
-    #     print("Deleting data for date " + str(processed_date))
-    #
-    #     tables_to_del = [
-    #         'aggregated_user_days',
-    #         'aggregated_user_days_tags',
-    #         'aggregated_user_days_categories',
-    #         'aggregated_user_days_referer_mediums'
-    #     ]
-    #
-    #     for t in tables_to_del:
-    #         cur.execute('DELETE FROM ' + t + ' WHERE date = %s', (processed_date,))
-    #         conn.commit()
-    #
-    #     print("Storing data for date " + str(processed_date))
-    #
-    #     self.__save_to_aggregated_user_days(conn, cur, processed_date)
-    #     self.__save_to_aggregated_user_days_tags(conn, cur, processed_date)
-    #     self.__save_to_aggregated_user_days_categories(conn, cur, processed_date)
-    #     self.__save_to_aggregated_user_days_referer_mediums(conn, cur, processed_date)
+    def upload_to_bq(self, bq_uploader, processed_date):
+        print("UserParser - uploading data to BigQuery")
+        # TODO: delete data first?
+        self.__save_to_aggregated_user_days(bq_uploader, processed_date)
+        self.__save_to_aggregated_user_days_tags(bq_uploader, processed_date)
+        self.__save_to_aggregated_user_days_categories(bq_uploader, processed_date)
+        self.__save_to_aggregated_user_days_referer_mediums(bq_uploader, processed_date)
 
-    # def __save_to_aggregated_user_days(self, conn, cur, processed_date):
-    #     accessors = aggregated_pageviews_row_accessors({
-    #         'browser_ids': lambda d: list(d['browser_ids'])
-    #     })
-    #
-    #     ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
-    #     sql = make_insert_update_sql('aggregated_user_days', ['date', 'user_id'], list(ordered_accessors.keys()))
-    #
-    #     data_to_insert = []
-    #     for user_id, user_data in self.data.items():
-    #         computed_values = tuple([func(user_data) for key, func in ordered_accessors.items()])
-    #         data_to_insert.append((processed_date, user_id) + computed_values)
-    #
-    #     psycopg2.extras.execute_batch(cur, sql, data_to_insert)
-    #     conn.commit()
-    #
-    # def __save_to_aggregated_user_days_tags(self, conn, cur, processed_date):
-    #     sql = make_insert_update_sql('aggregated_user_days_tags', ['date', 'user_id', 'tags'], ['pageviews'])
-    #
-    #     data_to_insert = []
-    #     for user_id, user_data in self.data.items():
-    #         for key in user_data['article_tags_pageviews']:
-    #             data_to_insert.append((processed_date, user_id, key, user_data['article_tags_pageviews'][key]))
-    #
-    #     psycopg2.extras.execute_batch(cur, sql, data_to_insert)
-    #     conn.commit()
-    #
-    # def __save_to_aggregated_user_days_categories(self, conn, cur, processed_date):
-    #     sql = make_insert_update_sql('aggregated_user_days_categories', ['date', 'user_id', 'categories'], ['pageviews'])
-    #
-    #     data_to_insert = []
-    #     for user_id, user_data in self.data.items():
-    #         for key in user_data['article_categories_pageviews']:
-    #             data_to_insert.append((processed_date, user_id, key, user_data['article_categories_pageviews'][key]))
-    #
-    #     psycopg2.extras.execute_batch(cur, sql, data_to_insert)
-    #     conn.commit()
-    #
-    # def __save_to_aggregated_user_days_referer_mediums(self, conn, cur, processed_date):
-    #     sql = make_insert_update_sql('aggregated_user_days_referer_mediums', ['date', 'user_id', 'referer_mediums'], ['pageviews'])
-    #
-    #     data_to_insert = []
-    #     for user_id, user_data in self.data.items():
-    #         for key in user_data['referer_mediums_pageviews']:
-    #             data_to_insert.append((processed_date, user_id, key, user_data['referer_mediums_pageviews'][key]))
-    #
-    #     psycopg2.extras.execute_batch(cur, sql, data_to_insert)
-    #     conn.commit()
+    def __save_to_aggregated_user_days(self, bq_uploader, processed_date):
+        accessors = aggregated_pageviews_row_accessors({
+            'browser_ids': lambda d: list(d['browser_ids'])
+        })
+        ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
+        records = []
+        for user_id, user_data in self.data.items():
+            row = {
+                "date": str(processed_date),
+                "user_id": user_id,
+            }
+            for key, func in ordered_accessors.items():
+                row[key] = func(user_data)
+            records.append(row)
+
+        df = pandas.DataFrame(
+            records,
+            columns=["date", "user_id"] + list(ordered_accessors.keys())
+        )
+        bq_uploader.upload_to_table('aggregated_user_days', data_source=df)
+
+    def __save_to_aggregated_user_days_tags(self, bq_uploader, processed_date):
+        records = []
+        for user_id, user_data in self.data.items():
+            for key in user_data['article_tags_pageviews']:
+                records.append({
+                    "date": str(processed_date),
+                    "user_id": user_id,
+                    "tags": key,
+                    "pageviews": user_data['article_tags_pageviews'][key]
+                })
+        df = pandas.DataFrame(
+            records,
+            columns=["date", "user_id", "tags", "pageviews"]
+        )
+        bq_uploader.upload_to_table('aggregated_user_days_tags', data_source=df)
+
+    def __save_to_aggregated_user_days_categories(self, bq_uploader, processed_date):
+        records = []
+        for user_id, user_data in self.data.items():
+            for key in user_data['article_categories_pageviews']:
+                records.append({
+                    "date": str(processed_date),
+                    "user_id": user_id,
+                    "categories": key,
+                    "pageviews": user_data['article_categories_pageviews'][key]
+                })
+        df = pandas.DataFrame(
+            records,
+            columns=["date", "user_id", "categories", "pageviews"]
+        )
+        bq_uploader.upload_to_table('aggregated_user_days_categories', data_source=df)
+
+    def __save_to_aggregated_user_days_referer_mediums(self, bq_uploader, processed_date):
+        records = []
+        for user_id, user_data in self.data.items():
+            for key in user_data['referer_mediums_pageviews']:
+                records.append({
+                    "date": str(processed_date),
+                    "user_id": user_id,
+                    "referer_mediums": key,
+                    "pageviews": user_data['referer_mediums_pageviews'][key]
+                })
+        df = pandas.DataFrame(
+            records,
+            columns=["date", "user_id", "referer_mediums", "pageviews"]
+        )
+        bq_uploader.upload_to_table('aggregated_user_days_referer_mediums', data_source=df)
 
 
 class BrowserParser:
@@ -223,7 +232,6 @@ class BrowserParser:
 
     def __process_commerce(self, commerce_file):
         print("BrowserParser - processing commerce data from: " + commerce_file)
-        # TODO: rely on `commerce_session_id` instead of `browser_id` to identify commerce session
         with open(commerce_file) as csv_file:
             r = csv.DictReader(csv_file, delimiter=',')
             for row in r:
@@ -240,7 +248,6 @@ class BrowserParser:
                         raise Exception(
                             "unknown commerce step: " + row['step'] + ' for browser_id: ' + row['browser_id'])
                     else:
-                        # print("browser '" + row['browser_id'] + "' has a commerce step '" + row['step'] + "'")
                         self.browser_commerce_steps[row['browser_id']][row['step']] += 1
 
     def __process_pageviews(self, f):
@@ -378,7 +385,6 @@ class BrowserParser:
 
             # commerce data
             if browser_id in self.browser_commerce_steps:
-                print("browser " + browser_id + " saving commerce step!")
                 row["commerce_checkouts"] = self.browser_commerce_steps[browser_id]['checkout']
                 row["commerce_payments"] = self.browser_commerce_steps[browser_id]['payment']
                 row["commerce_purchases"] = self.browser_commerce_steps[browser_id]['purchase']
