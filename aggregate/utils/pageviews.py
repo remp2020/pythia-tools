@@ -5,7 +5,10 @@ import os.path
 import arrow
 import json
 import math
+import pandas
+from collections import OrderedDict
 from user_agents import parse as ua_parse
+from utils.conversion_and_commerce_events import CommerceParser, SharedLoginParser
 
 def add_one(arr, key):
     if key not in arr:
@@ -92,25 +95,6 @@ def aggregated_pageviews_row_accessors(accessors_to_merge=None):
         accessors.update(accessors_to_merge)
 
     return accessors
-
-
-# def make_insert_update_sql(table, primary_keys, keys):
-#     concatenated_primary_keys = string.join(primary_keys, ', ')
-#     all_keys = string.join(primary_keys + keys, ', ')
-#     all_key_placeholders = string.join(['%s'] * (len(primary_keys) + len(keys)), ', ')
-#     update_keys = string.join(["{} = EXCLUDED.{}".format(key, key) for key in keys], ', ')
-#
-#     if len(keys) > 0:
-#         return '''INSERT INTO {} ({})
-#                         VALUES ({})
-#                         ON CONFLICT ({}) DO UPDATE SET {}
-#                     '''.format(table, all_keys, all_key_placeholders, concatenated_primary_keys, update_keys)
-#     else:
-#         return '''INSERT INTO {} ({})
-#                         VALUES ({})
-#                         ON CONFLICT ({}) DO NOTHING
-#                     '''.format(table, all_keys, all_key_placeholders, concatenated_primary_keys)
-
 
 class UserParser:
     def __init__(self):
@@ -234,20 +218,43 @@ class UserParser:
 class BrowserParser:
     def __init__(self):
         self.browsers_with_users = {}
+        self.browser_commerce_steps = {}
         self.data = {}
-        self.ua_cache = {}
+
+    def __process_commerce(self, commerce_file):
+        print("BrowserParser - processing commerce data from: " + commerce_file)
+        # TODO: rely on `commerce_session_id` instead of `browser_id` to identify commerce session
+        with open(commerce_file) as csv_file:
+            r = csv.DictReader(csv_file, delimiter=',')
+            for row in r:
+                if row['browser_id']:
+                    if row['browser_id'] not in self.browser_commerce_steps:
+                        self.browser_commerce_steps[row['browser_id']] = {
+                            'checkout': 0,
+                            'payment': 0,
+                            'purchase': 0,
+                            'refund': 0
+                        }
+
+                    if row['step'] not in ['checkout', 'payment', 'purchase', 'refund']:
+                        raise Exception(
+                            "unknown commerce step: " + row['step'] + ' for browser_id: ' + row['browser_id'])
+                    else:
+                        # print("browser '" + row['browser_id'] + "' has a commerce step '" + row['step'] + "'")
+                        self.browser_commerce_steps[row['browser_id']][row['step']] += 1
 
     def __process_pageviews(self, f):
-        print("Processing file: " + f)
+        print("BrowserParser - processing pageviews from: " + f)
 
+        ua_cache = {}
         with open(f) as csvfile:
             r = csv.DictReader(csvfile, delimiter=',')
+
             for row in r:
                 # save UA to cache
-                # user_agent = unidecode(row['user_agent'].decode("utf8"))
                 user_agent = row['user_agent']
-                if user_agent not in self.ua_cache:
-                    self.ua_cache[user_agent] = ua_parse(user_agent)
+                if user_agent not in ua_cache:
+                    ua_cache[user_agent] = ua_parse(user_agent)
 
                 # save all user devices for (user <-> device mapping)
                 browser_id = row['browser_id']
@@ -255,7 +262,7 @@ class BrowserParser:
                     self.browsers_with_users[browser_id] = {'user_ids': set()}
                 if row['user_id']:
                     self.browsers_with_users[browser_id]['user_ids'].add(row['user_id'])
-                self.browsers_with_users[browser_id]['ua'] = self.ua_cache[user_agent]
+                self.browsers_with_users[browser_id]['ua'] = ua_cache[user_agent]
 
                 # continue with pageviews only for subscribers
                 if row['subscriber'] == 'True':
@@ -274,12 +281,13 @@ class BrowserParser:
 
                 if row['user_id']:
                     record['user_ids'].add(row['user_id'])
-                record['ua'] = self.ua_cache[user_agent]
+                record['ua'] = ua_cache[user_agent]
 
                 self.data[browser_id] = record
 
+
     def __process_timespent(self, f):
-        print("Processing file: " + f)
+        print("BrowserParser - processing timespent data from: " + f)
         with open(f) as csvfile:
             r = csv.DictReader(csvfile, delimiter=',')
             for row in r:
@@ -287,125 +295,167 @@ class BrowserParser:
                 if browser_id in self.data:
                     self.data[browser_id]['timespent'] += int(row['timespent'])
 
-    def process_files(self, pageviews_file, pageviews_timespent_file):
+    def process_files(self, pageviews_file, pageviews_timespent_file, commerce_file):
         self.__process_pageviews(pageviews_file)
+        self.__process_commerce(commerce_file)
         if os.path.isfile(pageviews_timespent_file):
             self.__process_timespent(pageviews_timespent_file)
         else:
             print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 
-    # def __save_to_browsers_and_browser_users(self, conn, cur, processed_date):
-    #     accessors = {
-    #         'browser_family': lambda d: d['ua'].browser.family,
-    #         'browser_version': lambda d: d['ua'].browser.version_string,
-    #         'os_family': lambda d: d['ua'].os.family,
-    #         'os_version': lambda d: d['ua'].os.version_string,
-    #         'device_family': lambda d: d['ua'].device.family,
-    #         'device_brand': lambda d: d['ua'].device.brand,
-    #         'device_model': lambda d: d['ua'].device.model,
-    #         'is_desktop': lambda d: d['ua'].is_pc,
-    #         'is_tablet': lambda d: d['ua'].is_tablet,
-    #         'is_mobile': lambda d: d['ua'].is_mobile,
-    #     }
-    #
-    #     ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
-    #     sql_browsers = make_insert_update_sql('browsers', ['date', 'browser_id'], list(ordered_accessors.keys()))
-    #     sql_browser_users = make_insert_update_sql('browser_users', ['date', 'browser_id', 'user_id'], [])
-    #
-    #     browsers_to_insert = []
-    #     browser_users_to_insert = []
-    #     for browser_id, browser_data in self.browsers_with_users.items():
-    #         computed_values = tuple([func(browser_data) for key, func in ordered_accessors.items()])
-    #         browsers_to_insert.append((processed_date, browser_id) + computed_values)
-    #
-    #         for user_id in list(browser_data['user_ids']):
-    #             browser_users_to_insert.append((processed_date, browser_id, user_id))
-    #
-    #     psycopg2.extras.execute_batch(cur, sql_browsers, browsers_to_insert)
-    #     conn.commit()
-    #
-    #     psycopg2.extras.execute_batch(cur, sql_browser_users, browser_users_to_insert)
-    #     conn.commit()
-    #
-    # def __save_to_aggregated_browser_days(self, conn, cur, processed_date):
-    #     accessors = aggregated_pageviews_row_accessors({
-    #         'browser_family': lambda d: d['ua'].browser.family,
-    #         'browser_version': lambda d: d['ua'].browser.version_string,
-    #         'os_family': lambda d: d['ua'].os.family,
-    #         'os_version': lambda d: d['ua'].os.version_string,
-    #         'device_family': lambda d: d['ua'].device.family,
-    #         'device_brand': lambda d: d['ua'].device.brand,
-    #         'device_model': lambda d: d['ua'].device.model,
-    #         'is_desktop': lambda d: d['ua'].is_pc,
-    #         'is_tablet': lambda d: d['ua'].is_tablet,
-    #         'is_mobile': lambda d: d['ua'].is_mobile,
-    #         'user_ids': lambda d: list(d['user_ids'])
-    #     })
-    #
-    #     ordered_accessors = OrderedDict([(key, accessors[key]) for key in accessors])
-    #     sql = make_insert_update_sql('aggregated_browser_days', ['date', 'browser_id'], list(ordered_accessors.keys()))
-    #
-    #     data_to_insert = []
-    #     for browser_id, browser_data in self.data.items():
-    #         computed_values = tuple([func(browser_data) for key, func in ordered_accessors.items()])
-    #         data_to_insert.append((processed_date, browser_id) + computed_values)
-    #
-    #     psycopg2.extras.execute_batch(cur, sql, data_to_insert)
-    #     conn.commit()
-    #
-    # def __save_to_aggregated_browser_days_tags(self, conn, cur, processed_date):
-    #     sql = make_insert_update_sql('aggregated_browser_days_tags', ['date', 'browser_id', 'tags'], ['pageviews'])
-    #
-    #     data_to_insert = []
-    #     for browser_id, browser_data in self.data.items():
-    #         for key in browser_data['article_tags_pageviews']:
-    #             data_to_insert.append((processed_date, browser_id, key, browser_data['article_tags_pageviews'][key]))
-    #
-    #     psycopg2.extras.execute_batch(cur, sql, data_to_insert)
-    #     conn.commit()
-    #
-    # def __save_to_aggregated_browser_days_categories(self, conn, cur, processed_date):
-    #     sql = make_insert_update_sql('aggregated_browser_days_categories', ['date', 'browser_id', 'categories'], ['pageviews'])
-    #
-    #     data_to_insert = []
-    #     for browser_id, browser_data in self.data.items():
-    #         for key in browser_data['article_categories_pageviews']:
-    #             data_to_insert.append((processed_date, browser_id, key, browser_data['article_categories_pageviews'][key]))
-    #
-    #     psycopg2.extras.execute_batch(cur, sql, data_to_insert)
-    #     conn.commit()
-    #
-    # def __save_to_aggregated_browser_days_referer_mediums(self, conn, cur, processed_date):
-    #     sql = make_insert_update_sql('aggregated_browser_days_referer_mediums', ['date', 'browser_id', 'referer_mediums'], ['pageviews'])
-    #
-    #     data_to_insert = []
-    #     for browser_id, browser_data in self.data.items():
-    #         for key in browser_data['referer_mediums_pageviews']:
-    #             data_to_insert.append((processed_date, browser_id, key, browser_data['referer_mediums_pageviews'][key]))
-    #
-    #     psycopg2.extras.execute_batch(cur, sql, data_to_insert)
-    #     conn.commit()
-    #
-    # def store_in_db(self, conn, cur, processed_date):
-    #     print("Deleting data for date " + str(processed_date))
-    #
-    #     tables_to_del = [
-    #         'browsers',
-    #         'browser_users',
-    #         'aggregated_browser_days',
-    #         'aggregated_browser_days_tags',
-    #         'aggregated_browser_days_categories',
-    #         'aggregated_browser_days_referer_mediums'
-    #     ]
-    #
-    #     for t in tables_to_del:
-    #         cur.execute('DELETE FROM ' + t + ' WHERE date = %s', (processed_date,))
-    #         conn.commit()
-    #
-    #     print("Storing data for date " + str(processed_date))
-    #
-    #     self.__save_to_browsers_and_browser_users(conn, cur, processed_date)
-    #     self.__save_to_aggregated_browser_days(conn, cur, processed_date)
-    #     self.__save_to_aggregated_browser_days_tags(conn, cur, processed_date)
-    #     self.__save_to_aggregated_browser_days_categories(conn, cur, processed_date)
-    #     self.__save_to_aggregated_browser_days_referer_mediums(conn, cur, processed_date)
+    def __save_to_browsers_and_browser_users(self, bq_uploader, processed_date):
+        accessors = {
+            'browser_family': lambda d: d['ua'].browser.family,
+            'browser_version': lambda d: d['ua'].browser.version_string,
+            'os_family': lambda d: d['ua'].os.family,
+            'os_version': lambda d: d['ua'].os.version_string,
+            'device_family': lambda d: d['ua'].device.family,
+            'device_brand': lambda d: d['ua'].device.brand,
+            'device_model': lambda d: d['ua'].device.model,
+            'is_desktop': lambda d: str(d['ua'].is_pc), # Uploader expects bools as strings
+            'is_tablet': lambda d: str(d['ua'].is_tablet),
+            'is_mobile': lambda d: str(d['ua'].is_mobile),
+        }
+        ordered_accessors = OrderedDict(accessors.items())
+
+        browsers_records = []
+        browser_users_records = []
+        for browser_id, browser_data in self.browsers_with_users.items():
+            row = {
+                "date": str(processed_date),
+                "browser_id": browser_id,
+            }
+            for key, func in ordered_accessors.items():
+                row[key] = func(browser_data)
+            browsers_records.append(row)
+
+            for user_id in list(browser_data['user_ids']):
+                browser_users_records.append({
+                    "date": str(processed_date),
+                    "browser_id": browser_id,
+                    "user_id": user_id
+                })
+
+        # 'browser' table
+        df = pandas.DataFrame(
+            browsers_records,
+            columns=["date", "browser_id"] + list(ordered_accessors.keys())
+        )
+        bq_uploader.upload_to_table('browsers', data_source=df)
+
+        # 'browser_users' table
+        df = pandas.DataFrame(
+            browser_users_records,
+            columns=["date", "browser_id", "user_id"]
+        )
+        bq_uploader.upload_to_table('browser_users', data_source=df)
+
+    def __save_to_aggregated_browser_days(self, bq_uploader, processed_date):
+        accessors = aggregated_pageviews_row_accessors({
+            'browser_family': lambda d: d['ua'].browser.family,
+            'browser_version': lambda d: d['ua'].browser.version_string,
+            'os_family': lambda d: d['ua'].os.family,
+            'os_version': lambda d: d['ua'].os.version_string,
+            'device_family': lambda d: d['ua'].device.family,
+            'device_brand': lambda d: d['ua'].device.brand,
+            'device_model': lambda d: d['ua'].device.model,
+            'is_desktop': lambda d: str(d['ua'].is_pc),
+            'is_tablet': lambda d: str(d['ua'].is_tablet),
+            'is_mobile': lambda d: str(d['ua'].is_mobile),
+            'user_ids': lambda d: list(d['user_ids']),
+        })
+
+        ordered_accessors = OrderedDict(accessors.items())
+
+        records = []
+        for browser_id, browser_data in self.data.items():
+            row = {
+                "date": str(processed_date),
+                "browser_id": browser_id,
+            }
+            for key, func in ordered_accessors.items():
+                row[key] = func(browser_data)
+
+            # commerce data
+            if browser_id in self.browser_commerce_steps:
+                print("browser " + browser_id + " saving commerce step!")
+                row["commerce_checkouts"] = self.browser_commerce_steps[browser_id]['checkout']
+                row["commerce_payments"] = self.browser_commerce_steps[browser_id]['payment']
+                row["commerce_purchases"] = self.browser_commerce_steps[browser_id]['purchase']
+                row["commerce_refunds"] = self.browser_commerce_steps[browser_id]['refund']
+            else:
+                row["commerce_checkouts"] = 0
+                row["commerce_payments"] = 0
+                row["commerce_purchases"] = 0
+                row["commerce_refunds"] = 0
+
+            records.append(row)
+
+        df = pandas.DataFrame(
+            records,
+            columns=["date", "browser_id"] + list(ordered_accessors.keys()) + ["commerce_checkouts", "commerce_payments", "commerce_purchases", "commerce_refunds"]
+        )
+        bq_uploader.upload_to_table('aggregated_browser_days', data_source=df)
+
+    def __save_to_aggregated_browser_days_tags(self, bq_uploader, processed_date):
+        records = []
+        for browser_id, browser_data in self.data.items():
+            for key in browser_data['article_tags_pageviews']:
+                records.append({
+                    "date": str(processed_date),
+                    "browser_id": browser_id,
+                    "tags": key,
+                    "pageviews": browser_data['article_tags_pageviews'][key]
+                })
+
+        df = pandas.DataFrame(
+            records,
+            columns=["date", "browser_id", "tags", "pageviews"]
+        )
+        bq_uploader.upload_to_table('aggregated_browser_days_tags', data_source=df)
+
+    def __save_to_aggregated_browser_days_categories(self, bq_uploader, processed_date):
+        records = []
+        for browser_id, browser_data in self.data.items():
+            for key in browser_data['article_categories_pageviews']:
+                records.append({
+                    "date": str(processed_date),
+                    "browser_id": browser_id,
+                    "categories": key,
+                    "pageviews": browser_data['article_categories_pageviews'][key],
+                })
+
+        df = pandas.DataFrame(
+            records,
+            columns=["date", "browser_id", "categories", "pageviews"]
+        )
+        bq_uploader.upload_to_table('aggregated_browser_days_categories', data_source=df)
+
+    def __save_to_aggregated_browser_days_referer_mediums(self, bq_uploader, processed_date):
+        records = []
+        for browser_id, browser_data in self.data.items():
+            for key in browser_data['referer_mediums_pageviews']:
+                records.append(
+                    {
+                        "date": str(processed_date),
+                        "browser_id": browser_id,
+                        "referer_mediums": key,
+                        "pageviews": browser_data['referer_mediums_pageviews'][key],
+                    }
+                )
+        df = pandas.DataFrame(
+            records,
+            columns=["date", "browser_id", "referer_mediums", "pageviews"]
+        )
+        bq_uploader.upload_to_table('aggregated_browser_days_referer_mediums', data_source=df)
+
+    def upload_to_bq(self, bq_uploader, processed_date):
+        print("BrowserParser - uploading data to BigQuery")
+
+        # TODO: delete data first?
+
+        self.__save_to_browsers_and_browser_users(bq_uploader, processed_date)
+        self.__save_to_aggregated_browser_days(bq_uploader, processed_date)
+        self.__save_to_aggregated_browser_days_tags(bq_uploader, processed_date)
+        self.__save_to_aggregated_browser_days_categories(bq_uploader, processed_date)
+        self.__save_to_aggregated_browser_days_referer_mediums(bq_uploader, processed_date)

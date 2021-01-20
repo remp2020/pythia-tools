@@ -75,7 +75,7 @@ class CommerceParser:
 
                 payment_time = self.user_id_payment_time[c.user_id]
 
-                # purchase event too far from payment event
+                # purchase event within 5 minutes of payment
                 if purchase_time_minus_5 <= payment_time:
                     browser_id = self.user_id_browser_id[c.user_id]
                     # self.__mark_conversion_event(browser_id, purchase_time)
@@ -88,6 +88,16 @@ class CommerceParser:
 
         # self.__save_events_to_separate_table()
         # self.__save_commerce_steps_count()
+
+    def get_browser_commerce_steps_count(self, browser_id):
+        if browser_id in self.browser_steps:
+            return {
+                "commerce_checkouts": self.browser_steps[browser_id]['checkout'],
+                "commerce_payments": self.browser_steps[browser_id]['payment'],
+                "commerce_purchases": self.browser_steps[browser_id]['purchase'],
+                "commerce_refunds": self.browser_steps[browser_id]['refund'],
+            }
+        return None
 
     # def __save_commerce_steps_count(self):
     #     sql = '''

@@ -7,7 +7,7 @@ from google.cloud import bigquery
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from bigquery_export.upload import BigQueryUploader
+from aggregate.utils.bq_upload import BigQueryUploader
 
 
 def create_connection(connection_string: str, engine_kwargs: Dict[str, Any] = {}):
@@ -117,7 +117,7 @@ class TableHandler:
     def upload_data(self, data):
         data['date'] = data['date'].astype(str)
         data['created_at'] = data['created_at'].astype(str)
-        self.uploader.upload_csv_to_table(
+        self.uploader.upload_to_table(
             table_id='rolling_daily_user_profile',
             data_source=data
         )

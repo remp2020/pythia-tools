@@ -36,8 +36,8 @@ def aggregated_browser_days():
         bigquery.SchemaField("is_mobile", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("is_tablet", "STRING", mode="NULLABLE"),
 
-        bigquery.SchemaField("next_7_days_event", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("next_event_time", "TIMESTAMP", mode="NULLABLE"),
+        # bigquery.SchemaField("next_7_days_event", "STRING", mode="REQUIRED"),
+        # bigquery.SchemaField("next_event_time", "TIMESTAMP", mode="NULLABLE"),
 
         bigquery.SchemaField("referer_mediums_pageviews", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("article_categories_pageviews", "STRING", mode="NULLABLE"),
@@ -123,8 +123,8 @@ def aggregated_user_days():
         bigquery.SchemaField("sessions", "INTEGER", mode="REQUIRED"),
         bigquery.SchemaField("sessions_without_ref", "INTEGER", mode="REQUIRED"),
 
-        bigquery.SchemaField("next_30_days", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("next_event_time", "TIMESTAMP", mode="NULLABLE"),
+        # bigquery.SchemaField("next_30_days", "STRING", mode="REQUIRED"),
+        # bigquery.SchemaField("next_event_time", "TIMESTAMP", mode="NULLABLE"),
 
         bigquery.SchemaField("referer_mediums_pageviews", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("article_categories_pageviews", "STRING", mode="NULLABLE"),

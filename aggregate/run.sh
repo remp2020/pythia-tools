@@ -3,7 +3,7 @@
 export PATH=".virtualenv/bin:$PATH"
 
 function usage {
-    echo "Aggregation script processing data from Elastic storage to PostgreSQL DB for Pythia processing"
+    echo "Aggregation script processing data from Elastic to BigQuery DB for further (machine learning) processing"
     echo "Usage: $0 --min_date=<DATE> --max_date=<DATE> | $0 --date=<DATE>" >&2
     echo "Optional arguments:"
     echo "  --dir=<DIR>, specifying where to look for/save aggregated (.gz) elastic CSV files" >&2
@@ -207,9 +207,7 @@ while [ "$di" != "$end_on" ]; do
 
     # Run aggregation
     if [ -z $dryrun ]; then
-        python utils/aggregate.py ${file_date} --dir=$tmp
-        python utils/conversion_and_commerce_events.py ${file_date} --dir=$tmp
-        python utils/subscriptions_churn_events.py ${file_date}
+        python aggregate.py ${file_date} --dir=$tmp
     fi
 
     # Delete csv files
