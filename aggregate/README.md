@@ -1,20 +1,19 @@
 # Data Aggregation for Pythia
 
-Aggregation script exporting Elastic data to gziped csv files and aggregating them to BigQuery for further Pythia processing.
+Aggregation script exporting Elasticsearch data to gziped CSV files and aggregating them to [BigQuery database](https://cloud.google.com/bigquery) for further Pythia processing.
 
 ## Requirements
 
-`python2` and `pip2` are required because of support for `es2csv` package used to export the data.
+`python3` and `pip3` are required and also instance of [BigQuery](https://cloud.google.com/bigquery).
 
 All other required Python packages are described in `requirements.txt` file and are handled by the following installation steps..
 
 ## Installation
 
 ```
-pip2 install --user virtualenv
-python2 -m virtualenv .virtualenv
+python3 -m venv .virtualenv
 source .virtualenv/bin/activate
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 Create `.env` file based on `.env.example` file and fill the configuration options.

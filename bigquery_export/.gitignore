@@ -1,5 +1,0 @@
-.env
-.virtualenv
-pyvenv.cfg
-bin/*
-lib/*
