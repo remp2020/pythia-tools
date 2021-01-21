@@ -15,8 +15,8 @@ from utils.subscriptions_churn_events import ChurnEventsParser
 from utils.bq_upload import BigQueryUploader
 
 BASE_PATH = os.path.dirname(os.path.realpath(__file__))
-BQ_STORAGE_DATA_EXPIRATION_MS = 63072000000 # 730 days (2 years) in milliseconds
-
+# tables EXPIRATION currently turned OFF
+# BQ_STORAGE_DATA_EXPIRATION_MS = 63072000000 # 730 days (2 years) in milliseconds
 
 def using_memory(point=""):
     # debug defined in main()
@@ -47,7 +47,7 @@ def init_big_query_uploader(project_id, dataset_id):
     date_col_partitioning = bigquery.TimePartitioning(
         type_=bigquery.TimePartitioningType.DAY,
         field="date",
-        expiration_ms=BQ_STORAGE_DATA_EXPIRATION_MS,
+        # expiration_ms=BQ_STORAGE_DATA_EXPIRATION_MS,
     )
 
     tables_and_schemas = {
@@ -73,7 +73,7 @@ def init_big_query_uploader(project_id, dataset_id):
     time_col_partitioning = bigquery.TimePartitioning(
         type_=bigquery.TimePartitioningType.DAY,
         field="time",
-        expiration_ms=BQ_STORAGE_DATA_EXPIRATION_MS,
+        # expiration_ms=BQ_STORAGE_DATA_EXPIRATION_MS,
     )
     if not uploader.table_exists('events'):
         uploader.create_table('events', bq_schema.events(), time_col_partitioning)
