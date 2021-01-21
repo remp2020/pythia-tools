@@ -80,10 +80,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-if ! [ -x "$(command -v es2csv)" ]; then
-    echo 'Error: es2csv is not installed.' >&2
-    exit 1
-fi
+# Temporarily turned off
+#if ! [ -x "$(command -v es2csv)" ]; then
+#    echo 'Error: es2csv is not installed.' >&2
+#    exit 1
+#fi
 
 # Required arguments check
 if [ -z $date ] && ([ -z $min_date ] || [ -z $max_date ]) ; then
