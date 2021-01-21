@@ -103,7 +103,7 @@ class UserParser:
         self.data = {}
 
     def __process_pageviews(self, f):
-        print("Processing file: " + f)
+        print("UserParser - processing file: " + f)
 
         with open(f) as csvfile:
             r = csv.DictReader(csvfile, delimiter=',')
@@ -131,7 +131,7 @@ class UserParser:
                 self.data[user_id] = record
 
     def __process_timespent(self, f):
-        print("Processing file: " + f)
+        print("UserParser - processing file: " + f)
         with open(f) as csvfile:
             r = csv.DictReader(csvfile, delimiter=',')
             for row in r:
@@ -457,9 +457,7 @@ class BrowserParser:
 
     def upload_to_bq(self, bq_uploader, processed_date):
         print("BrowserParser - uploading data to BigQuery")
-
         # TODO: delete data first?
-
         self.__save_to_browsers_and_browser_users(bq_uploader, processed_date)
         self.__save_to_aggregated_browser_days(bq_uploader, processed_date)
         self.__save_to_aggregated_browser_days_tags(bq_uploader, processed_date)

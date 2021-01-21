@@ -14,10 +14,14 @@ from utils.conversion_and_commerce_events import CommerceParser, SharedLoginPars
 from utils.subscriptions_churn_events import ChurnEventsParser
 from utils.bq_upload import BigQueryUploader
 
-
 BASE_PATH = os.path.dirname(os.path.realpath(__file__))
+BQ_STORAGE_DATA_EXPIRATION_MS = 63072000000 # 730 days (2 years) in milliseconds
 
-def using(point=""):
+
+def using_memory(point=""):
+    # debug defined in main()
+    if not debug:
+        return
     pid = os.getpid()
     py = psutil.Process(pid)
     memory_use = py.memory_info()[0] / 2. ** 20  # memory use in MB
@@ -43,7 +47,7 @@ def init_big_query_uploader(project_id, dataset_id):
     date_col_partitioning = bigquery.TimePartitioning(
         type_=bigquery.TimePartitioningType.DAY,
         field="date",
-        expiration_ms=31536000000,  # 365 days
+        expiration_ms=BQ_STORAGE_DATA_EXPIRATION_MS,
     )
 
     tables_and_schemas = {
@@ -69,7 +73,7 @@ def init_big_query_uploader(project_id, dataset_id):
     time_col_partitioning = bigquery.TimePartitioning(
         type_=bigquery.TimePartitioningType.DAY,
         field="time",
-        expiration_ms=31536000000,  # 365 days
+        expiration_ms=BQ_STORAGE_DATA_EXPIRATION_MS,
     )
     if not uploader.table_exists('events'):
         uploader.create_table('events', bq_schema.events(), time_col_partitioning)
@@ -99,7 +103,7 @@ def run(file_date, aggregate_folder):
     day = int(date_str[6:8])
     cur_date = date(year, month, day)
 
-    using("init")
+    using_memory("init")
 
     bq_uploader = init_big_query_uploader(os.getenv("BIGQUERY_PROJECT_ID"), os.getenv("BIGQUERY_DATASET_ID"))
     if bq_uploader is None:
@@ -108,53 +112,54 @@ def run(file_date, aggregate_folder):
     browser_parser = BrowserParser()
     browser_parser.process_files(pageviews_file, pageviews_time_spent_file, commerce_file)
     browser_parser.upload_to_bq(bq_uploader, cur_date)
-    browser_parser = None
-    using("After BrowserParser")
+    using_memory("After BrowserParser")
 
     user_parser = UserParser()
     user_parser.process_files(pageviews_file, pageviews_time_spent_file)
     user_parser.upload_to_bq(bq_uploader, cur_date)
-    user_parser = None
-    using("After UserParser")
+    using_memory("After UserParser")
 
-    # commerce_parser = CommerceParser(cur_date)
-    # commerce_parser.process_file(commerce_file)
-    #
-    # using("After CommerceParser")
-    #
-    # pageviews_parser = SharedLoginParser(cur_date)
-    # pageviews_parser.process_file(pageviews_file)
-    #
-    # using("After SharedLoginParser")
-    #
-    # if os.getenv("CRM_DB_HOST") is None:
-    #     print('CRM database connection settings not set in .env file, skipping churn/renewal data aggregation')
-    #     return
-    #
-    # crm_db_conn, crm_db_cur = create_mysql_connection(
-    #     os.getenv("CRM_DB_USER"),
-    #     os.getenv("CRM_DB_PASS"),
-    #     os.getenv("CRM_DB_DB"),
-    #     os.getenv("CRM_DB_HOST")
-    # )
-    #
-    # churn_events_parser = ChurnEventsParser(cur_date, crm_db_cur)
-    # churn_events_parser.parse()
-    #
-    # using("After ChurnEventsParser")
-    #
-    # crm_db_cur.close()
-    # crm_db_conn.close()
+    commerce_parser = CommerceParser()
+    commerce_parser.process_file(commerce_file)
+    commerce_parser.upload_to_bq(bq_uploader, cur_date)
+    using_memory("After CommerceParser")
+
+    shared_login_parser = SharedLoginParser()
+    shared_login_parser.process_file(pageviews_file)
+    shared_login_parser.upload_to_bq(bq_uploader, cur_date)
+    using_memory("After SharedLoginParser")
+
+    if os.getenv("CRM_DB_HOST") is None:
+        print('CRM database connection settings not set in .env file, skipping churn/renewal data aggregation')
+        return
+
+    crm_db_conn, crm_db_cur = create_mysql_connection(
+        os.getenv("CRM_DB_USER"),
+        os.getenv("CRM_DB_PASS"),
+        os.getenv("CRM_DB_DB"),
+        os.getenv("CRM_DB_HOST")
+    )
+
+    churn_events_parser = ChurnEventsParser(cur_date, crm_db_cur)
+    churn_events_parser.load_data()
+
+    using_memory("After ChurnEventsParser")
+
+    crm_db_cur.close()
+    crm_db_conn.close()
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Script to parse elastic CSV export, process it and insert into BigQuery DB for further processing')
+    parser = argparse.ArgumentParser(description='Script to parse elastic CSV export, process it and insert into BigQuery for further processing')
     parser.add_argument('date', metavar='date', help='Aggregate date, format YYYYMMDD')
     parser.add_argument('--dir', metavar='AGGREGATE_DIRECTORY', dest='dir', default=BASE_PATH, help='where to look for aggregated CSV files')
+    parser.add_argument('--debug', action='store_true', default=False, dest='debug', help='Print debug information (e.g. memory usage)')
 
     args = parser.parse_args()
+    global debug
+    debug = args.debug
     run(args.date, args.dir)
+
 
 if __name__ == '__main__':
     main()
-

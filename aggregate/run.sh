@@ -3,7 +3,7 @@
 export PATH=".virtualenv/bin:$PATH"
 
 function usage {
-    echo "Aggregation script processing data from Elastic to BigQuery DB for further (machine learning) processing"
+    echo "Aggregation script processing data from Elastic to BigQuery DB for further Pythia computations"
     echo "Usage: $0 --min_date=<DATE> --max_date=<DATE> | $0 --date=<DATE>" >&2
     echo "Optional arguments:"
     echo "  --dir=<DIR>, specifying where to look for/save aggregated (.gz) elastic CSV files" >&2
