@@ -201,6 +201,7 @@ def events():
         bigquery.SchemaField("browser_id", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("time", "TIMESTAMP", mode="REQUIRED"),
         bigquery.SchemaField("type", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("computed_for_date", "DATE", mode="NULLABLE"),
     ]
     return schema
 

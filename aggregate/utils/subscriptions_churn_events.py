@@ -71,12 +71,12 @@ class ChurnEventsParser:
         for event in self.events_list:
             records.append({
                 "user_id": event.user_id,
-                "time": event.time,
-                "type": event.time,
-                "computed_for": self.cur_date,
+                "time": str(event.time),
+                "type": event.type,
+                "computed_for_date": str(self.cur_date),
             })
         df = pandas.DataFrame(
             records,
-            columns=["user_id", "time", "type", "computed_for"]
+            columns=["user_id", "time", "type", "computed_for_date"]
         )
         bq_uploader.upload_to_table('events', data_source=df)

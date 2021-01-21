@@ -69,13 +69,13 @@ class CommerceParser:
             records.append({
                 "user_id": event["user_id"],
                 "browser_id": event["browser_id"],
-                "time": event["time"],
+                "time": str(event["time"]),
                 "type": event["type"],
-                "computed_for": processed_date,
+                "computed_for_date": str(processed_date),
             })
         df = pandas.DataFrame(
             records,
-            columns=["user_id", "browser_id", "time", "type", "computed_for"]
+            columns=["user_id", "browser_id", "time", "type", "computed_for_date"]
         )
         bq_uploader.upload_to_table('events', data_source=df)
 
@@ -134,11 +134,11 @@ class SharedLoginParser:
                 "browser_id": browser_id,
                 "time": self.logged_in_browsers_time[browser_id].isoformat(),
                 "type": "shared_account_login",
-                "computed_for": processed_date,
+                "computed_for_date": str(processed_date),
             })
         df = pandas.DataFrame(
             records,
-            columns=["user_id", "browser_id", "time", "type", "computed_for"]
+            columns=["user_id", "browser_id", "time", "type", "computed_for_date"]
         )
         bq_uploader.upload_to_table('events', data_source=df)
 

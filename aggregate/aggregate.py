@@ -142,6 +142,7 @@ def run(file_date, aggregate_folder):
 
     churn_events_parser = ChurnEventsParser(cur_date, crm_db_cur)
     churn_events_parser.load_data()
+    churn_events_parser.upload_to_bq(bq_uploader)
 
     using_memory("After ChurnEventsParser")
 
