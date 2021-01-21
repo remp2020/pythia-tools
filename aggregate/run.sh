@@ -208,7 +208,8 @@ while [ "$di" != "$end_on" ]; do
 
     # Run aggregation
     if [ -z $dryrun ]; then
-        python aggregate.py ${file_date} --dir=$tmp
+        # -u directly flush output
+        python -u aggregate.py ${file_date} --dir=$tmp
     fi
 
     # Delete csv files
