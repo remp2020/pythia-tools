@@ -1,6 +1,6 @@
 # Pythia Churn Prediction
 
-Script generating churn prediction models based on data aggregated by `cmd/aggregate` and exported to BigQuery using `cmd/bigquery_export`, data stored in Beam's MySQL database and data provided by CRM MySQL database.
+Script generating churn prediction models based on data aggregated by `cmd/aggregate` and exported to BigQuery, data stored in Beam's MySQL database and data provided by CRM MySQL database.
 
 ## Requirements
 
