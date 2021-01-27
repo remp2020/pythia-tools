@@ -11,25 +11,24 @@ from google.oauth2 import service_account
 from typing import Dict
 from sqlalchemy import func
 import logging.config
-from utils.config import LABELS, CURRENT_MODEL_VERSION, CURRENT_PIPELINE_VERSION
-from utils.config import ChurnFeatureColumns as FeatureColumns
-
-from churn_prediction.utils.config import ChurnModelFeatures
+from .utils.config import LABELS, CURRENT_MODEL_VERSION, CURRENT_PIPELINE_VERSION
+from .utils.config import ChurnFeatureColumns as FeatureColumns
+from .utils.config import ChurnModelFeatures
 
 sys.path.append("../")
 
 # environment variables
 from dotenv import load_dotenv
-load_dotenv('.env')
+load_dotenv('churn_prediction/.env')
 
 from churn_prediction.utils.bigquery import ChurnDataDownloader
 from prediction_commons.utils.config import PROFILE_COLUMNS, LOGGING
 from prediction_commons.utils.enums import NormalizedFeatureHandling, ArtifactRetentionMode, \
     ArtifactRetentionCollection, DataRetrievalMode, OutcomeLabelCategory
 from prediction_commons.utils.db_utils import create_connection
-from utils.mysql import get_payment_history_features, get_global_context
+from .utils.mysql import get_payment_history_features, get_global_context
 from prediction_commons.model import PredictionModel
-from utils.bigquery import ChurnFeatureBuilder
+from .utils.bigquery import ChurnFeatureBuilder
 
 # logging
 logger = logging.getLogger(__name__)

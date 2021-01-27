@@ -61,11 +61,11 @@ class ChurnFeatureBuilder(FeatureBuilder):
         [f'aggregated_user_days_{profile_feature_set_name}' for profile_feature_set_name in PROFILE_COLUMNS
          if profile_feature_set_name != 'hour_interval_pageviews']
     )
-    
+
     bq_mappings, bq_engine = get_sqlalchemy_tables_w_session(
         table_names=tables_to_map
     )
-    
+
     bq_session = bq_mappings['session']
     aggregated_user_days = bq_mappings['aggregated_user_days']
     events = bq_mappings['events']
@@ -74,7 +74,7 @@ class ChurnFeatureBuilder(FeatureBuilder):
     feature_columns = ChurnFeatureColumns
     labels = LABELS
     column_dumper = ChurnColumnJsonDumper
-    
+
     def __init__(self, aggregation_time: datetime, moving_window_length: int,
                  feature_aggregation_functions: Dict[str, func]):
         super().__init__(
