@@ -186,7 +186,7 @@ class ColumnJsonDumper:
             'time_based_columns': self.features_expected.time_based_columns,
             'categorical_columns': [
                 column.name for column in full_query.columns
-                for category in self.features_expected.CATEGORICAL_COLUMNS if f'{category}_' in column.nae
+                for category in self.features_expected.CATEGORICAL_COLUMNS if f'{category}_' in column.name
             ],
             'bool_columns': self.features_expected.BOOL_COLUMNS,
             'numeric_columns_with_window_variants': self.features_expected.numeric_columns_window_variants

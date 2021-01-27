@@ -18,6 +18,8 @@ AGGREGATION_FUNCTIONS_w_ALIASES = {
 
 
 def sanitize_column_name(column_name: str) -> str:
+    if column_name is None:
+        return ''
     new_column_name = column_name.replace('-', '_')
     new_column_name = new_column_name.replace('-', '_')
     return new_column_name
