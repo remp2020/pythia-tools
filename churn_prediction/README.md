@@ -53,7 +53,7 @@ First, you need to *preaggregate* the data to speed up prediction, then *train* 
 
 We recommend to train your models periodically, so they reflect *current* behavior of your users.
 
-Following commands assume that you already run `cmd/aggregate` to aggregate raw pageviews data collected by Beam, and pushed aggregated data to BigQuery via `cmd/bigquery_uploader`. If you haven't please see their respective README files first.
+Following commands assume that you already run `cmd/aggregate` to aggregate raw pageviews data collected by Beam. If you haven't please see the aggregate README file first.
 
 ### Preaggregate
 
@@ -62,7 +62,8 @@ Preaggregate transforms aggregated user data to the rolling user profiles to spe
 Data is aggregated per day. Using `--min-date` and `--max-date` options will execute the aggregation separately for multiple days.
 
 ```bash
-python run.py --action=preaggregate --min-date='2020-03-05' --max-date='2020-03-05'
+# script needs to be run from parent "cmd" folder (to correctly include other modules such as "prediction_commons")
+python -m churn_prediction.run --action=preaggregate --min-date='2020-03-05' --max-date='2020-03-05'
 ```
 
 The output of script should be similar to ours:
@@ -75,7 +76,7 @@ The output of script should be similar to ours:
 2020-07-26 14:32:28,387 [INFO] __main__ - CHURN PREDICTION
 2020-07-26 14:32:30,561 [INFO] __main__ - Table rolling_daily_user_profile already exists
 2020-07-26 14:32:30,561 [INFO] __main__ - Starting with preaggregation for date range 2020-03-05 - 2020-03-05
-22504 out of 22504 rows loaded.:32:44,284 [INFO] pandas_gbq.gbq - 
+22504 out of 22504 rows loaded.:32:44,284 [INFO] pandas_gbq.gbq -
 1it [00:04,  4.08s/it]
 2020-07-26 14:33:49,650 [INFO] __main__ - Date 2020-03-05 00:00:00 succesfully aggregated & uploaded to BQ
 ```
@@ -88,7 +89,7 @@ Job generates *.pkl* model files containing features with weights to be used for
 
 Models are trained based on the dataset specified by `--min-date` and `--max-date` options. Greater period will transform to more accurate model, as more data are available for training and testing. You should test the size of *train* period yourself and select the one that suits your execution time and BigQuery cost expectations. Our training models with 30 day training period run for more than an hour.
 
-You should always select your `--max-date` as close to `NOW()` as possible.  The date range for model training and predict is referencing date of the event, we're looking at users that renewed/churned during this time period. 
+You should always select your `--max-date` as close to `NOW()` as possible.  The date range for model training and predict is referencing date of the event, we're looking at users that renewed/churned during this time period.
 
 If you have some statistical background or if you're just curious, you can alter training parameters and test if your models perform better:
 
@@ -99,7 +100,8 @@ If you have some statistical background or if you're just curious, you can alter
     - `n_estimators`. The number of trees in the forest. Defaults to `250`.
 
 ```bash
-python run.py --min-date=$(date -d "66 days ago" --rfc-3339=date) --max-date=$(date -d "33 days ago" --rfc-3339=date) --action 'train' 
+# script needs to be run from parent "cmd" folder
+python -m churn_prediction.run --action=train --min-date=$(date -d "66 days ago" --rfc-3339=date) --max-date=$(date -d "33 days ago" --rfc-3339=date)
 ```
 
 The output of script should be similar to ours:
@@ -120,13 +122,13 @@ The output of script should be similar to ours:
 2020-07-03 15:03:31,012 [INFO] __main__ -   * Retrieved initial user profiles frame from DB
 2020-07-03 15:03:31,991 [INFO] __main__ - Successfully added global context features from mysql
 2020-07-03 15:03:36,589 [INFO] __main__ - Successfully added user payment history features from mysql
-/home/rootpd/gospace/src/gitlab.com/remp/pythia/cmd/churn_prediction/.virtualenv/lib/python3.8/site-packages/pandas/core/frame.py:4252: SettingWithCopyWarning: 
+/home/rootpd/gospace/src/gitlab.com/remp/pythia/cmd/churn_prediction/.virtualenv/lib/python3.8/site-packages/pandas/core/frame.py:4252: SettingWithCopyWarning:
 A value is trying to be set on a copy of a slice from a DataFrame
 
 See the caveats in the documentation: http://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
   return super().fillna(
 2020-07-03 15:03:36,692 [INFO] __main__ -   * Initial data validation success
-run.py:396: SettingWithCopyWarning: 
+run.py:396: SettingWithCopyWarning:
 A value is trying to be set on a copy of a slice from a DataFrame
 
 See the caveats in the documentation: http://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
