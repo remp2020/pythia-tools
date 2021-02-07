@@ -187,11 +187,12 @@ class ColumnJsonDumper:
             'categorical_columns': [
                 column.name for column in full_query.columns
                 for category in self.features_expected.CATEGORICAL_COLUMNS if f'{category}_' in column.name
+                or column.name == 'day_of_week'
             ],
             'bool_columns': self.features_expected.BOOL_COLUMNS,
             'numeric_columns_with_window_variants': self.features_expected.numeric_columns_window_variants
         }
-
+        
     def get_feature_set_dumps(self):
         return self.feature_set_dumps
 
@@ -303,7 +304,6 @@ class FeatureBuilder:
             meta_columns_w_values: Dict[str, Any] = {}
     ):
         full_query = self.get_full_features_query()
-
         meta_columns = [
             'date', f'{self.model_record_level}_id', 'outcome', 'outcome_date', 'pipeline_version',
             'created_at', 'window_days', 'feature_aggregation_functions'
@@ -314,7 +314,7 @@ class FeatureBuilder:
             self.feature_aggregation_functions,
             self.aggregation_time
         )
-
+        
         dumper = self.column_dumper(
             full_query,
             features_in_data,
@@ -337,7 +337,7 @@ class FeatureBuilder:
             ),
             *feature_set_dumps
         )
-
+        
         rolling_daily_user_profile = get_profiles_table(self.model_record_level)
         date_data_sample = self.bq_session.query(
             *[rolling_daily_user_profile.c[column.name].label(column.name) for column in
