@@ -362,9 +362,7 @@ class PredictionModel(object):
             indices = np.random.RandomState(seed=42).permutation(self.user_profiles.index)
             train_cutoff = int(round(len(indices) * split_ratio, 0))
         else:
-            indices = self.user_profiles[
-                self.user_profiles['outccome_date'] >= self.min_date
-            ].sort_values('date').index
+            indices = self.user_profiles.sort_values('date').index
             train_cutoff = int(round(len(indices) * split_ratio, 0))
             # We want to make sure we don't get the same date in train and test, this would complicate further
             # processing
