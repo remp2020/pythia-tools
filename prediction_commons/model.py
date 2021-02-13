@@ -108,6 +108,7 @@ class PredictionModel(object):
         self.variable_importances = pd.Series()
         self.dry_run = dry_run
         self.prediction_job_log = None
+        self.model_meta = pd.DataFrame()
 
     def artifact_handler(self, artifact: ModelArtifacts):
         '''
@@ -675,7 +676,7 @@ class PredictionModel(object):
             client_secrets_path,
         )
 
-        models = pd.DataFrame(
+        self.model_meta = pd.DataFrame(
             {
                 'train_date': datetime.utcnow(),
                 'min_date': self.min_date,
@@ -703,20 +704,20 @@ class PredictionModel(object):
             if isinstance(feature_set, list):
                 feature_set_elements = feature_set
 
-                models[f'importances__{feature_set_name}'] = str(
+                self.model_meta[f'importances__{feature_set_name}'] = str(
                     self.variable_importances[
                         feature_set_elements
                     ].to_dict()
                 )
             elif isinstance(feature_set, dict):
                 feature_set_elements = sum(feature_set.values(), [])
-                models[f'importances__{feature_set_name}'] = str(
+                self.model_meta[f'importances__{feature_set_name}'] = str(
                     self.variable_importances[
                         feature_set_elements
                     ].to_dict()
                 )
 
-        models.to_gbq(
+        self.model_meta.to_gbq(
             destination_table=f'{os.getenv("BIGQUERY_DATASET")}.models',
             project_id=database,
             credentials=credentials,
@@ -801,28 +802,28 @@ class PredictionModel(object):
         numeric_columns_train = []
         categorical_columns_train = []
 
-        if self.X_train.empty:
-            model_meta = get_model_meta(
+        if self.model_meta.empty:
+            self.model_meta = get_model_meta(
                 self.min_date,
                 self.model_type,
                 self.current_model_version,
                 self.moving_window
             )
 
-            for column in self.model_features.get_expected_table_column_names('models'):
-                feature_set = column.replace('importances__', '')
-                if feature_set in self.model_features.numeric_features:
-                    expected_features = json.loads(
-                        model_meta[column].str.replace("'", '"').values[0]
-                    )
+        for column in self.model_features.get_expected_table_column_names('models'):
+            feature_set = column.replace('importances__', '')
+            if feature_set in self.model_features.numeric_features:
+                expected_features = json.loads(
+                    self.model_meta[column].str.replace("'", '"').values[0]
+                )
 
-                    numeric_columns_train.extend(list(expected_features.keys()))
-                elif feature_set in self.model_features.categorical_features:
-                    expected_features = json.loads(
-                        model_meta[column].str.replace("'", '"').values[0]
-                    )
+                numeric_columns_train.extend(list(expected_features.keys()))
+            elif feature_set in self.model_features.categorical_features:
+                expected_features = json.loads(
+                    self.model_meta[column].str.replace("'", '"').values[0]
+                )
 
-                    categorical_columns_train.extend(list(expected_features.keys()))
+                categorical_columns_train.extend(list(expected_features.keys()))
 
         numeric_columns_train = set(numeric_columns_train)
         categorical_columns_train = set(categorical_columns_train)
