@@ -885,7 +885,8 @@ def get_model_meta(
             )
         )
     )
-
+    print(model_meta_query)
+    print(prediction_min_date.date())
     model_meta = pd.read_sql(model_meta_query.statement, model_meta_query.session.bind)
 
     return model_meta

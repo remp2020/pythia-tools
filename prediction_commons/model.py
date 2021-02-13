@@ -356,16 +356,26 @@ class PredictionModel(object):
         self.model_date = self.user_profiles['outcome_date'].max() + timedelta(days=1)
         split = SplitType(self.training_split_parameters['split'])
         split_ratio = self.training_split_parameters['split_ratio']
+        
         if split is SplitType.RANDOM:
             indices = np.random.RandomState(seed=42).permutation(self.user_profiles.index)
+            train_cutoff = int(round(len(indices) * split_ratio, 0))
         else:
             indices = self.user_profiles.sort_values('date').index
+            train_cutoff = int(round(len(indices) * split_ratio, 0))
+            train_cutoff = int(round(len(indices) * split_ratio, 0))
+            # We want to make sure we don't get the same date in train and test, this would complicate further processing
+            max_train_date = self.user_profiles.loc[indices[:train_cutoff], 'date'].max()
+            last_index_of_max_train_date = self.user_profiles[
+                self.user_profiles['date'] == max_train_date
+                ].index.max()
+            train_cutoff = max(train_cutoff, last_index_of_max_train_date)
+            train_cutoff
 
         self.user_profiles = self.user_profiles.iloc[indices].reset_index(drop=True)
-        train_cutoff = int(round(len(indices) * split_ratio, 0))
+
         train_indices = indices[:train_cutoff]
         test_indices = indices[train_cutoff:]
-
         self.X_train = self.user_profiles.loc[train_indices].drop(columns=self.util_columns)
         self.X_test = self.user_profiles.loc[test_indices].drop(columns=self.util_columns)
         self.generate_category_list_dict()
@@ -668,7 +678,8 @@ class PredictionModel(object):
             {
                 'train_date': datetime.utcnow(),
                 'min_date': self.min_date,
-                'max_date': self.max_date,
+                # We need to take max date from train since that is the max model date
+                'max_date': pd.to_datetime(self.user_profiles.loc[self.X_train.index, 'date']).max(),
                 'model_type': self.model_type,
                 'model_version': self.current_model_version,
                 'window_days': self.moving_window,
@@ -787,7 +798,10 @@ class PredictionModel(object):
             self.load_model_related_constructs()
 
         model_meta = get_model_meta(
-            self.min_date,
+            # if this is a predict pipeline, we can use min date of the whole dataset, for trainig pipeline however, we need to
+            # use the min date from test, since train ends right before test begins. This will only be problematic if we train
+            # on 1 day of data (which shouldn't happen)
+            self.min_date if self.X_train.empty else pd.to_datetime(self.user_profiles.loc[self.X_test.index, 'date']).min(),
             self.model_type,
             self.current_model_version,
             self.moving_window
