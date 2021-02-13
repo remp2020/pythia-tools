@@ -361,16 +361,17 @@ class PredictionModel(object):
             indices = np.random.RandomState(seed=42).permutation(self.user_profiles.index)
             train_cutoff = int(round(len(indices) * split_ratio, 0))
         else:
-            indices = self.user_profiles.sort_values('date').index
+            indices = self.user_profiles[
+                self.user_profiles['outccome_date'] >= self.min_date
+            ].sort_values('date').index
             train_cutoff = int(round(len(indices) * split_ratio, 0))
-            train_cutoff = int(round(len(indices) * split_ratio, 0))
-            # We want to make sure we don't get the same date in train and test, this would complicate further processing
+            # We want to make sure we don't get the same date in train and test, this would complicate further
+            # processing
             max_train_date = self.user_profiles.loc[indices[:train_cutoff], 'date'].max()
             last_index_of_max_train_date = self.user_profiles[
                 self.user_profiles['date'] == max_train_date
                 ].index.max()
             train_cutoff = max(train_cutoff, last_index_of_max_train_date)
-            train_cutoff
 
         self.user_profiles = self.user_profiles.iloc[indices].reset_index(drop=True)
 
@@ -797,32 +798,31 @@ class PredictionModel(object):
         if self.model is None:
             self.load_model_related_constructs()
 
-        model_meta = get_model_meta(
-            # if this is a predict pipeline, we can use min date of the whole dataset, for trainig pipeline however, we need to
-            # use the min date from test, since train ends right before test begins. This will only be problematic if we train
-            # on 1 day of data (which shouldn't happen)
-            self.min_date if self.X_train.empty else pd.to_datetime(self.user_profiles.loc[self.X_test.index, 'date']).min(),
-            self.model_type,
-            self.current_model_version,
-            self.moving_window
-        )
-
         numeric_columns_train = []
         categorical_columns_train = []
-        for column in self.model_features.get_expected_table_column_names('models'):
-            feature_set = column.replace('importances__', '')
-            if feature_set in self.model_features.numeric_features:
-                expected_features = json.loads(
-                    model_meta[column].str.replace("'", '"').values[0]
-                )
 
-                numeric_columns_train.extend(list(expected_features.keys()))
-            elif feature_set in self.model_features.categorical_features:
-                expected_features = json.loads(
-                    model_meta[column].str.replace("'", '"').values[0]
-                )
+        if self.X_train.empty:
+            model_meta = get_model_meta(
+                self.min_date,
+                self.model_type,
+                self.current_model_version,
+                self.moving_window
+            )
 
-                categorical_columns_train.extend(list(expected_features.keys()))
+            for column in self.model_features.get_expected_table_column_names('models'):
+                feature_set = column.replace('importances__', '')
+                if feature_set in self.model_features.numeric_features:
+                    expected_features = json.loads(
+                        model_meta[column].str.replace("'", '"').values[0]
+                    )
+
+                    numeric_columns_train.extend(list(expected_features.keys()))
+                elif feature_set in self.model_features.categorical_features:
+                    expected_features = json.loads(
+                        model_meta[column].str.replace("'", '"').values[0]
+                    )
+
+                    categorical_columns_train.extend(list(expected_features.keys()))
 
         numeric_columns_train = set(numeric_columns_train)
         categorical_columns_train = set(categorical_columns_train)
