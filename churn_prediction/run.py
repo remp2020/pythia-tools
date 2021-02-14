@@ -306,7 +306,7 @@ if __name__ == "__main__":
     parser.add_argument('--training-split-parameters',
                         help='Speficies split_type (random vs time_based) and split_ratio for train/test split',
                         type=json.loads,
-                        default={'split': 'time_based', 'split_ratio': 0.5},
+                        default={'split': 'time_based', 'split_ratio': 1},
                         required=False)
     parser.add_argument('--model-arguments',
                         help='Parameters for scikit model training',
