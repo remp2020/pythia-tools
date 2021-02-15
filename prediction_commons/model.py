@@ -679,7 +679,7 @@ class PredictionModel(object):
                 'train_date': datetime.utcnow(),
                 'min_date': self.min_date,
                 # We need to take max date from train since that is the max model date
-                'max_date': pd.to_datetime(self.user_profiles.loc[self.X_train.index, 'date']).max(),
+                'max_date': self.max_date,
                 'model_type': self.model_type,
                 'model_version': self.current_model_version,
                 'window_days': self.moving_window,
