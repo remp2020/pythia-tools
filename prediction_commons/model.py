@@ -359,10 +359,12 @@ class PredictionModel(object):
         split_ratio = self.training_split_parameters['split_ratio']
         
         if split is SplitType.RANDOM:
-            indices = np.random.RandomState(seed=42).permutation(self.user_profiles.index)
+            indices = np.random.RandomState(seed=42).permutation(
+                self.user_profiles[self.user_profiles['outcome_date'] >= self.min_date].index
+            )
             train_cutoff = int(round(len(indices) * split_ratio, 0))
         else:
-            indices = self.user_profiles.sort_values('date').index
+            indices = self.user_profiles[self.user_profiles['outcome_date'] >= self.min_date].sort_values('date').index
             train_cutoff = int(round(len(indices) * split_ratio, 0))
             # We want to make sure we don't get the same date in train and test, this would complicate further
             # processing
@@ -375,6 +377,7 @@ class PredictionModel(object):
         self.user_profiles = self.user_profiles.iloc[indices].reset_index(drop=True)
 
         train_indices = indices[:train_cutoff]
+        train_indices = train_indices.union(self.user_profiles[self.user_profiles['outome_date'] <= self.min_date])
         test_indices = indices[train_cutoff:]
         self.X_train = self.user_profiles.loc[train_indices].drop(columns=self.util_columns)
         self.X_test = self.user_profiles.loc[test_indices].drop(columns=self.util_columns)
