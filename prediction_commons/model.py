@@ -368,19 +368,12 @@ class PredictionModel(object):
                 self.user_profiles['outcome_date'] >= self.min_date.date()
                 ].sort_values('date').index
             train_cutoff = int(round(len(indices) * split_ratio, 0))
-            # We want to make sure we don't get the same date in train and test, this would complicate further
-            # processing
-            max_train_date = self.user_profiles.loc[indices[:train_cutoff], 'date'].max()
-            last_index_of_max_train_date = self.user_profiles[
-                self.user_profiles['date'] == max_train_date
-                ].index.max()
-            train_cutoff = max(train_cutoff, last_index_of_max_train_date)
 
         self.user_profiles = self.user_profiles.iloc[indices].reset_index(drop=True)
 
         train_indices = indices[:train_cutoff]
         train_indices = train_indices.union(
-            self.user_profiles[self.user_profiles['outome_date'] < self.min_date.date()]
+                self.user_profiles[self.user_profiles['outcome_date'] < self.min_date.date()]
         )
         test_indices = indices[train_cutoff:]
         self.X_train = self.user_profiles.loc[train_indices].drop(columns=self.util_columns)
