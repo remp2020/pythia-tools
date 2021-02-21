@@ -362,6 +362,7 @@ class PredictionModel(object):
             indices = np.random.RandomState(seed=42).permutation(
                 self.user_profiles[self.user_profiles['outcome_date'] >= self.min_date.date()].index
             )
+            indices = pd.Index(indices)
             train_cutoff = int(round(len(indices) * split_ratio, 0))
         else:
             indices = self.user_profiles[
@@ -369,11 +370,9 @@ class PredictionModel(object):
                 ].sort_values('date').index
             train_cutoff = int(round(len(indices) * split_ratio, 0))
 
-        self.user_profiles = self.user_profiles.iloc[indices].reset_index(drop=True)
-
         train_indices = indices[:train_cutoff]
         train_indices = train_indices.union(
-                self.user_profiles[self.user_profiles['outcome_date'] < self.min_date.date()]
+                self.user_profiles[self.user_profiles['outcome_date'] < self.min_date.date()].index
         )
         test_indices = indices[train_cutoff:]
         self.X_train = self.user_profiles.loc[train_indices].drop(columns=self.util_columns)
