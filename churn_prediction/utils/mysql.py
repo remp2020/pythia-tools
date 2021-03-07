@@ -1,13 +1,14 @@
 import pandas as pd
 from sqlalchemy.sql.elements import Cast
 from sqlalchemy.types import DATE
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, case
 from datetime import datetime
 from sqlalchemy import MetaData, Table
 from prediction_commons.utils.db_utils import create_connection
 from sqlalchemy.orm import sessionmaker
 from typing import List, Dict
 import os
+import numpy as np
 
 
 def get_sqla_table(table_name, engine, schema='public'):
@@ -271,9 +272,9 @@ def get_subscription_data(end_time: datetime):
 
     payments_grouped_filtered = mysql_predplatne_session.query(
         payments.c['subscription_id'].label("subscription_id"),
-        db.func.count(payments.c['id']).label("payment_count"),
-        db.func.sum(payments.c['amount']).label("amount"),
-        db.func.sum(payments.c['additional_amount']).label("additional_amount"),
+        func.count(payments.c['id']).label("payment_count"),
+        func.sum(payments.c['amount']).label("amount"),
+        func.sum(payments.c['additional_amount']).label("additional_amount"),
         func.if_(func.sum(payments.c['recurrent_charge']) > 0, True, False).label("is_recurrent_charge"),
     ).filter(
         payments.c['status'].in_(['paid', 'prepaid', 'imported']),
@@ -296,7 +297,7 @@ def get_subscription_data(end_time: datetime):
         payments_grouped_filtered.c['amount'].label("amount"),
         payments_grouped_filtered.c['additional_amount'].label("additional_amount"),
         payments_grouped_filtered.c['is_recurrent_charge'].label("is_recurrent_charge"),
-        subscription_id_access_level.c['name'].label("sub_type_name"),
+        func.encode(subscription_id_access_level.c['name'], 'utf-8').label("sub_type_name"),
         subscription_id_access_level.c['code'].label("sub_type_code"),
         subscription_id_access_level.c['length'].label("sub_type_length"),
         subscription_id_access_level.c['price'].label("sub_type_price"),
@@ -315,7 +316,8 @@ def get_subscription_data(end_time: datetime):
         isouter=True
     ).filter(
         subscriptions.columns.user_id.in_(relevant_users),
-        subscriptions.columns.start_time < end_time)
+        subscriptions.columns.start_time < end_time
+    )
 
     subscriptions_data_merged = pd.read_sql(subscriptions_data.statement, subscriptions_data.session.bind)
 
@@ -522,63 +524,63 @@ def subscription_stats(stats_end_time: datetime):
     users_sub_stats = subscription_data.groupby("user_id").apply(basic_stats_agg).reset_index()
 
     def try_join(l):
-        try:
+        if isinstance(l, list):
             return ','.join(map(str, l))
-        except TypeError:
+        else:
             return l
+
+    def relative_change(col1, col2):
+        if pd.isnull(col1) or col1 == 0:
+            return 1
+        else:
+            return (1 - (col2 / col1)).abs()
+
+    def val_change(col1 , col2):
+        return col2 - col1
+
+    subscription_data['subscription_id_converted'] = [try_join(l) for l in subscription_data['subscription_id']]
+
+    feature_columns=["user_id", "subscription_id_converted","start_time","length","is_recurrent","amount","additional_amount","is_recurrent_charge","web_access_level","sub_print_access","sub_print_friday_access"]
+
+    last_subs=subscription_data.loc[subscription_data["is_paid"]==True][feature_columns].copy()
+    last_subs=last_subs.sort_values('start_time').groupby('user_id').tail(1)
+    last_subs_ids=last_subs['subscription_id_converted'].tolist()
+    last_subs=last_subs.drop(columns=['subscription_id_converted','start_time'])
+
+    previous_subs=subscription_data.loc[subscription_data["is_paid"]==True][feature_columns].copy()
+    previous_subs=previous_subs[~previous_subs['subscription_id_converted'].isin(last_subs_ids)]
+    previous_subs=previous_subs.sort_values('start_time').groupby('user_id').tail(1)
+    previous_subs=previous_subs.drop(columns=['subscription_id_converted','start_time'])
+
+    last_subs=pd.merge(last_subs,previous_subs,how="left",on="user_id",suffixes=("_last","_previous"))
+    last_subs=last_subs.fillna(0)
+
+    computable_columns={"length":"per_change",
+                        "is_recurrent":"value_change",
+                        "amount":"per_change",
+                        "additional_amount":"per_change",
+                        "is_recurrent_charge":"value_change",
+                        "web_access_level":"value_change",
+                        "sub_print_access":"value_change",
+                        "sub_print_friday_access":"value_change"
+                    }
+
+    for key_column in computable_columns:
+        if(computable_columns[key_column] == 'per_change'):
+            last_subs[key_column + '_diff']=relative_change(last_subs[key_column + '_previous'],last_subs[key_column + '_last'])
+        elif(computable_columns[key_column] == 'value_change'):
+            last_subs[key_column + '_diff']=val_change(last_subs[key_column + '_previous'],last_subs[key_column + '_last'])
+        last_subs=last_subs.drop(columns=[key_column + '_last',key_column + '_previous'])
+
+    users_sub_stats=pd.merge(users_sub_stats,last_subs,how="left",on="user_id",validate="one_to_one")
         
-        def per_change(col1,col2):
-            try:
-                percentual_change=(col2 - col1) / ((col2+col1)/2)
-            except:
-                percentual_change=1
-            return percentual_change
+    return users_sub_stats
 
-        def val_change(col1,col2):
-            try:
-                value_change=col2 - col1
-            except:
-                value_change=1
-            return value_change
 
-        subscription_data['subscription_id_converted'] = [try_join(l) for l in subscription_data['subscription_id']]
-
-        feature_columns=["user_id",
-    "subscription_id_converted","start_time","length","is_recurrent","amount","additional_amount","is_recurrent_charge","web_access_level","sub_print_access","sub_print_friday_access"]
-
-        last_subs=subscription_data.loc[subscription_data["is_paid"]==True][feature_columns].copy()
-        last_subs=last_subs.sort_values('start_time').groupby('user_id').tail(1)
-        last_subs_ids=last_subs['subscription_id_converted'].tolist()
-        last_subs=last_subs.drop(columns=['subscription_id_converted','start_time'])
-
-        previous_subs=subscription_data.loc[subscription_data["is_paid"]==True][feature_columns].copy()
-        previous_subs=previous_subs[~previous_subs['subscription_id_converted'].isin(last_subs_ids)]
-        previous_subs=previous_subs.sort_values('start_time').groupby('user_id').tail(1)
-        previous_subs=previous_subs.drop(columns=['subscription_id_converted','start_time'])
-
-        last_subs=pd.merge(last_subs,previous_subs,how="left",on="user_id",suffixes=("_last","_previous"))
-        last_subs=last_subs.fillna(0)
-
-        computable_columns={"length":"per_change",
-                            "is_recurrent":"value_change",
-                            "amount":"per_change",
-                            "additional_amount":"per_change",
-                            "is_recurrent_charge":"value_change",
-                            "web_access_level":"value_change",
-                            "sub_print_access":"value_change",
-                            "sub_print_friday_access":"value_change"
-                        }
-
-        for key_column in computable_columns:
-            if(computable_columns[key_column] == 'per_change'):
-                last_subs[key_column + '_diff']=per_change(last_subs[key_column + '_previous'],last_subs[key_column + '_last'])
-            elif(computable_columns[key_column] == 'value_change'):
-                last_subs[key_column + '_diff']=val_change(last_subs[key_column + '_previous'],last_subs[key_column + '_last'])
-            last_subs=last_subs.drop(columns=[key_column + '_last',key_column + '_previous'])
-
-        users_sub_stats=pd.merge(users_sub_stats,last_subs,how="left",on="user_id",validate="one_to_one")
-        
-        return users_sub_stats
+from dotenv import load_dotenv
+from datetime import timedelta
+load_dotenv('../.env')
+subscription_stats(datetime.utcnow().date())
 
 
 
