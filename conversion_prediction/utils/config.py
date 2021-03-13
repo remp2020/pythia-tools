@@ -16,7 +16,7 @@ class ConversionFeatureColumns(FeatureColumns):
         'feature_aggregation_functions'
     ]
 
-    CATEGORICAL_COLUMNS = ['device', 'browser', 'os', 'day_of_week']
+    CATEGORICAL_COLUMNS = ['device', 'os', 'day_of_week']
 
     BOOL_COLUMNS = [
         'is_desktop',
