@@ -12,20 +12,20 @@ from typing import Dict
 from sqlalchemy import func
 import logging.config
 from utils.config import LABELS, ConversionFeatureColumns, CURRENT_MODEL_VERSION, CURRENT_PIPELINE_VERSION
-from prediction_commons.utils.enums import NormalizedFeatureHandling, ArtifactRetentionMode, \
-    ArtifactRetentionCollection, DataRetrievalMode, OutcomeLabelCategory
-from prediction_commons.utils.db_utils import create_connection
-from prediction_commons.utils.config import PROFILE_COLUMNS
 from utils.mysql import get_payment_history_features, get_global_context
-from prediction_commons.model import PredictionModel
 from utils.config import LOGGING
 
 sys.path.append("../")
 
 # environment variables
 from dotenv import load_dotenv
-load_dotenv('.env')
+load_dotenv('churn_prediction/.env')
 
+from prediction_commons.utils.enums import NormalizedFeatureHandling, ArtifactRetentionMode, \
+    ArtifactRetentionCollection, DataRetrievalMode, OutcomeLabelCategory
+from prediction_commons.utils.db_utils import create_connection
+from prediction_commons.utils.config import PROFILE_COLUMNS
+from prediction_commons.model import PredictionModel
 from conversion_prediction.utils.bigquery import ConversionFeatureBuilder, ConversionDataDownloader
 
 # logging
@@ -100,8 +100,8 @@ class ConversionPredictionModel(PredictionModel):
         using row-wise normalized features
         '''
         self.user_profiles = pd.DataFrame()
-        self.min_date = self.min_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        self.max_date = self.max_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.min_date = self.min_date
+        self.max_date = self.max_date
 
         if data_retrieval_mode == DataRetrievalMode.MODEL_TRAIN_DATA:
             historically_oversampled_outcome_type = OutcomeLabelCategory.POSITIVE
@@ -213,8 +213,9 @@ class ConversionPredictionModel(PredictionModel):
         '''
         # We extract these, since we also want global context for the past positives data
         context = get_global_context(
-            self.user_profiles['date'].min(),
-            self.user_profiles['date'].max()
+            self.user_profiles['date'].min().date(),
+            self.user_profiles['date'].max().date(),
+            self.moving_window
         )
 
         context.index = context['date']
