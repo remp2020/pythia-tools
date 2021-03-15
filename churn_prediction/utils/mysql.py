@@ -2,7 +2,7 @@ import pandas as pd
 from sqlalchemy.sql.elements import Cast
 from sqlalchemy.types import DATE
 from sqlalchemy import and_, func
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import MetaData, Table
 from prediction_commons.utils.db_utils import create_connection
 from sqlalchemy.orm import sessionmaker
@@ -81,82 +81,48 @@ def get_global_context(start_time, end_time):
     payments = predplatne_mysql_mappings['payments']
 
     # We create two subqueries using the same data to merge twice in order to get rolling sum in mysql
-    def get_payments_filtered():
-        payments_filtered = mysql_predplatne_session.query(
-            payments.c['created_at'].cast(DATE).label('date'),
-            func.count(payments.c['id']).label('payment_count'),
-            func.sum(payments.c['amount']).label('sum_paid')
-        ).filter(
-            payments.c['created_at'] >= start_time,
-            payments.c['created_at'] <= end_time,
-            payments.c['status'] == 'paid'
-        ).group_by(
-            'date'
-        ).subquery()
 
-        return payments_filtered
-
-    def get_article_pageviews_filtered():
-        article_pageviews_filtered = mysql_beam_session.query(
-            article_pageviews.c['time_from'].cast(DATE).label('date'),
-            func.sum(article_pageviews.c['sum']).label('article_pageviews'),
-        ).filter(
-            article_pageviews.c['time_from'] >= start_time,
-            article_pageviews.c['time_from'] <= end_time
-        ).group_by(
-            'date'
-        ).subquery()
-
-        return article_pageviews_filtered
-
-    payments_filtered_1 = get_payments_filtered()
-    payments_filtered_2 = get_payments_filtered()
-
-    payments_context = mysql_predplatne_session.query(
-        payments_filtered_1.c['date'].label('date'),
-        func.sum(payments_filtered_2.c['payment_count']).label('payment_count'),
-        func.sum(payments_filtered_2.c['sum_paid']).label('sum_paid')
-    ).join(
-        payments_filtered_2,
-        func.datediff(payments_filtered_1.c['date'], payments_filtered_2.c['date']).between(0, 7)
+    payments_query = mysql_predplatne_session.query(
+        payments.c['created_at'].cast(DATE).label('date'),
+        func.count(payments.c['id']).label('payment_count'),
+        func.sum(payments.c['amount']).label('sum_paid')
+    ).filter(
+        payments.c['created_at'].cast(DATE) >= start_time,
+        payments.c['created_at'].cast(DATE) <= end_time,
+        payments.c['status'] == 'paid'
     ).group_by(
-        payments_filtered_1.c['date']
-    ).order_by(
-        payments_filtered_1.c['date']
-    ).subquery()
-
-    article_pageviews_filtered_1 = get_article_pageviews_filtered()
-    article_pageviews_filtered_2 = get_article_pageviews_filtered()
-
-    article_pageviews_context = mysql_beam_session.query(
-        article_pageviews_filtered_1.c['date'].label('date'),
-        func.sum(article_pageviews_filtered_2.c['article_pageviews']).label('article_pageviews_count'),
-    ).join(
-        article_pageviews_filtered_2,
-        func.datediff(article_pageviews_filtered_1.c['date'], article_pageviews_filtered_2.c['date']).between(0, 7)
-    ).group_by(
-        article_pageviews_filtered_1.c['date']
-    ).order_by(
-        article_pageviews_filtered_1.c['date']
-    ).subquery()
-
-    context_query = mysql_predplatne_session.query(
-        payments_context.c['date'],
-        payments_context.c['payment_count'],
-        payments_context.c['sum_paid'],
-        article_pageviews_context.c['article_pageviews_count']
-    ).join(
-        article_pageviews_context,
-        article_pageviews_context.c['date'] == payments_context.c['date']
+        'date'
     )
 
-    context = pd.read_sql(
-        context_query.statement,
-        context_query.session.bind
+    article_pageviews_query = mysql_beam_session.query(
+        article_pageviews.c['time_from'].cast(DATE).label('date'),
+        func.sum(article_pageviews.c['sum']).label('article_pageviews'),
+    ).filter(
+        article_pageviews.c['time_from'].cast(DATE) >= start_time,
+        article_pageviews.c['time_from'].cast(DATE) <= end_time
+    ).group_by(
+        'date'
+    )
+
+    payments = pd.read_sql(
+        payments_query.statement,
+        payments_query.session.bind
+    )
+
+    article_pageviews = pd.read_sql(
+        article_pageviews_query.statement,
+        article_pageviews_query.session.bind
     )
 
     mysql_predplatne_session.close()
     mysql_beam_session.close()
+
+    context = pd.merge(
+        left=payments,
+        right=article_pageviews,
+        on=['date'],
+        how='inner'
+    )
 
     return context
 
