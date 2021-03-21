@@ -119,13 +119,7 @@ class DataDownloader:
                             'parameterType': {'type': 'INT64'},
                             'parameterValue': {'value': self.moving_window_length}
                         },
-                    ],
-                    'allowLargeResults': True,
-                    'destinationTable': {
-                        'projectId': os.getenv('BIGQUERY_PROJECT_ID'),
-                        'datasetId': os.getenv('BIGQUERY_DATASET'),
-                        'tableId': f'api_large_result_dropoff_{self.model_record_level}',
-                    }
+                    ]
                 }
             }
         )
