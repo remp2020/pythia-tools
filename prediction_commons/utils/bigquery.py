@@ -51,7 +51,7 @@ class DataDownloader:
             minority_labels = [f"'{outcome_label}'" for outcome_label, outcome_label_category in self.LABELS.items() if
                                outcome_label_category == self.historically_oversampled_outcome_type.value]
             minority_labels = ','.join(minority_labels)
-            minority_label_filter = f'OR (outcome IN ({minority_labels}))'
+            minority_label_filter = f' OR (outcome IN ({minority_labels}))'
 
         return minority_label_filter
 
