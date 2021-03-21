@@ -11,6 +11,14 @@ from google.oauth2 import service_account
 from typing import Dict
 from sqlalchemy import func
 import logging.config
+
+sys.path.append("../")
+
+# environment variables
+from dotenv import load_dotenv
+load_dotenv('../.env')
+
+
 from utils.config import LABELS, ConversionFeatureColumns, CURRENT_MODEL_VERSION, CURRENT_PIPELINE_VERSION
 from utils.mysql import get_payment_history_features, get_global_context
 from utils.config import LOGGING

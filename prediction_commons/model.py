@@ -19,6 +19,13 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
 
+sys.path.append("../")
+
+# environment variables
+from dotenv import load_dotenv
+
+load_dotenv('.env')
+
 from prediction_commons.utils.config import ModelFeatures
 from prediction_commons.utils.bigquery import get_model_meta
 from prediction_commons.utils.enums import SplitType, NormalizedFeatureHandling, ArtifactRetentionMode, \
@@ -26,13 +33,6 @@ from prediction_commons.utils.enums import SplitType, NormalizedFeatureHandling,
 from prediction_commons.utils.data_transformations import row_wise_normalization
 from prediction_commons.utils.db_utils import TableHandler, create_connection
 from prediction_commons.utils.bq_schemas import rolling_daily_model_record_level_profile
-
-sys.path.append("../")
-
-# environment variables
-from dotenv import load_dotenv
-
-load_dotenv('.env')
 
 # logging
 import logging.config
