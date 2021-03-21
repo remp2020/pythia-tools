@@ -807,6 +807,11 @@ class PredictionModel(object):
                 self.moving_window
             )
 
+        if self.model_meta.empty:
+            raise ValueError('''No suitable model metadata retrieved, unable to align data shape for prediction, in 
+            order to prevent this error, there must be at least one model meta record where the last date of train
+            data occurs before the first day of data for prediction''')
+
         for column in self.model_features.get_expected_table_column_names('models'):
             feature_set = column.replace('importances__', '')
             if feature_set in self.model_features.numeric_features:
