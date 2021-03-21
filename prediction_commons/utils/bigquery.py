@@ -124,7 +124,7 @@ class DataDownloader:
                     'destinationTable': {
                         'projectId': os.getenv('BIGQUERY_PROJECT_ID'),
                         'datasetId': os.getenv('BIGQUERY_DATASET'),
-                        'tableId': 'api_large_result_dropoff',
+                        'tableId': f'api_large_result_dropoff_{self.model_record_level}',
                     }
                 }
             }
