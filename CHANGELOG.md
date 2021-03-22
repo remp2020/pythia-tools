@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-No change made yet.
+### [Aggregate]
+
+- Aggregation script rewritten to use BigQuery cloud storage instead of PostgreSQL for data aggregation.
 
 ## 1.0.1 - 2020-02-01
 
