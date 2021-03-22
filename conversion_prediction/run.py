@@ -221,9 +221,8 @@ class ConversionPredictionModel(PredictionModel):
         '''
         # We extract these, since we also want global context for the past positives data
         context = get_global_context(
-            self.user_profiles['date'].min().date(),
-            self.user_profiles['date'].max().date(),
-            self.moving_window
+            self.user_profiles['date'].min().date() - timedelta(days=self.moving_window),
+            self.user_profiles['date'].max().date()
         )
 
         context.index = context['date']
