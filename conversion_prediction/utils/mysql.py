@@ -87,18 +87,18 @@ def get_payment_history_features(end_time: datetime):
     return user_payment_history
 
 
-def get_global_context(start_time, end_time, moving_window):
+def get_global_context(start_time, end_time):
     beam_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'remp_beam',
-        ['article_views_snapshots']
+        'MYSQL_BEAM_CONNECTION_STRING',
+        'MYSQL_BEAM_DB',
+        ['article_pageviews']
     )
     mysql_beam_session = beam_mysql_mappings['session']
-    article_view_snapshots = beam_mysql_mappings['article_views_snapshots']
+    article_pageviews = beam_mysql_mappings['article_pageviews']
 
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CONNECTION_STRING',
-        'predplatne',
+        'MYSQL_CRM_CONNECTION_STRING',
+        'MYSQL_CRM_DB',
         ['payments']
     )
 
@@ -106,55 +106,47 @@ def get_global_context(start_time, end_time, moving_window):
     payments = predplatne_mysql_mappings['payments']
 
     # We create two subqueries using the same data to merge twice in order to get rolling sum in mysql
-    def get_payments_filtered():
-        payments_filtered = mysql_predplatne_session.query(
-            payments.c['created_at'].cast(DATE).label('date'),
-            func.count(payments.c['id']).label('payment_count'),
-            func.sum(payments.c['amount']).label('sum_paid')
-        ).filter(
-            payments.c['created_at'].cast(DATE) >= start_time - timedelta(days=moving_window),
-            payments.c['created_at'].cast(DATE) <= end_time,
-            payments.c['status'] == 'paid'
-        ).group_by(
-            'date'
-        ).subquery()
 
-        return payments_filtered
-
-    def get_article_pageviews_filtered():
-        article_view_snapshots_filtered = mysql_beam_session.query(
-            article_view_snapshots.c['time'].cast(DATE).label('date'),
-            func.sum(article_view_snapshots.c['count']).label('article_pageviews_count'),
-        ).filter(
-            article_view_snapshots.c['time'].cast(DATE) >= start_time - timedelta(days=moving_window),
-            article_view_snapshots.c['time'].cast(DATE) <= end_time
-        ).group_by(
-            'date'
-        ).subquery()
-
-        return article_view_snapshots_filtered
-
-    payments_context = get_payments_filtered()
-    article_pageviews_context = get_article_pageviews_filtered()
-
-    context_query = mysql_predplatne_session.query(
-        payments_context.c['date'],
-        payments_context.c['payment_count'],
-        payments_context.c['sum_paid'],
-        article_pageviews_context.c['article_pageviews_count']
-    ).join(
-        article_pageviews_context,
-        article_pageviews_context.c['date'] == payments_context.c['date']
+    payments_query = mysql_predplatne_session.query(
+        payments.c['created_at'].cast(DATE).label('date'),
+        func.count(payments.c['id']).label('payment_count'),
+        func.sum(payments.c['amount']).label('sum_paid')
+    ).filter(
+        payments.c['created_at'].cast(DATE) >= start_time,
+        payments.c['created_at'].cast(DATE) <= end_time,
+        payments.c['status'] == 'paid'
+    ).group_by(
+        'date'
     )
 
-    context = pd.read_sql(
-        context_query.statement,
-        context_query.session.bind
+    article_pageviews_query = mysql_beam_session.query(
+        article_pageviews.c['time_from'].cast(DATE).label('date'),
+        func.sum(article_pageviews.c['sum']).label('article_pageviews'),
+    ).filter(
+        article_pageviews.c['time_from'].cast(DATE) >= start_time,
+        article_pageviews.c['time_from'].cast(DATE) <= end_time
+    ).group_by(
+        'date'
+    )
+
+    payments = pd.read_sql(
+        payments_query.statement,
+        payments_query.session.bind
+    )
+
+    article_pageviews = pd.read_sql(
+        article_pageviews_query.statement,
+        article_pageviews_query.session.bind
     )
 
     mysql_predplatne_session.close()
     mysql_beam_session.close()
 
+    context = pd.merge(
+        left=payments,
+        right=article_pageviews,
+        on=['date'],
+        how='inner'
+    )
+
     return context
-
-
