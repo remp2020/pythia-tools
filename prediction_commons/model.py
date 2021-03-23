@@ -289,7 +289,7 @@ class PredictionModel(object):
         prediction set
         '''
         for column in self.feature_columns.CATEGORICAL_COLUMNS:
-            self.category_list_dict[column] = list(self.user_profiles[column].unique()) + ['Unknown']
+            self.category_list_dict[column] = list(self.user_profiles[column].dropna().unique()) + ['Unknown']
 
     def encode_unknown_categories(self, data: pd.Series):
         '''
@@ -298,6 +298,7 @@ class PredictionModel(object):
         :param data:
         :return:
         '''
+        data.fillna('Unknown', inplace=True)
         data[~(data.isin(self.category_list_dict[data.name]))] = 'Unknown'
 
         return data
