@@ -1,5 +1,3 @@
-import sys
-
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from imblearn.under_sampling import RandomUnderSampler
@@ -18,13 +16,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from sqlalchemy import func
-
-sys.path.append("../")
-
-# environment variables
-from dotenv import load_dotenv
-
-load_dotenv('.env')
 
 from prediction_commons.utils.config import ModelFeatures
 from prediction_commons.utils.bigquery import get_model_meta
@@ -638,9 +629,8 @@ class PredictionModel(object):
                 else:
                     raise TypeError(f'Failed initializing sampler with error: {e}')
 
-        self.undersample_majority_class()
+        # self.undersample_majority_class()
         self.unpack_feature_frame()
-
         if self.overwrite_files:
             for model_file in ['category_lists', 'scaler', 'model']:
                 self.delete_existing_model_file_for_same_date(model_file)
