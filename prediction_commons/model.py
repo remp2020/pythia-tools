@@ -629,7 +629,7 @@ class PredictionModel(object):
                 else:
                     raise TypeError(f'Failed initializing sampler with error: {e}')
 
-        # self.undersample_majority_class()
+        self.undersample_majority_class()
         self.unpack_feature_frame()
         if self.overwrite_files:
             for model_file in ['category_lists', 'scaler', 'model']:
