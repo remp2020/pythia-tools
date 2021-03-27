@@ -22,7 +22,7 @@ def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str,
     _, db_connection = create_connection(os.getenv(db_connection_string_name))
 
     for table in table_names:
-        table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=schema)
+        table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=os.getenv(schema))
 
     table_mapping['session'] = sessionmaker(bind=db_connection)()
 
@@ -32,7 +32,7 @@ def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str,
 def get_payment_history_features(end_time: datetime):
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_CRM_CONNECTION_STRING',
-        'predplatne',
+        'MYSQL_CRM_DB',
         ['payments', 'subscriptions']
     )
 
