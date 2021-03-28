@@ -747,7 +747,11 @@ class PredictionModel(object):
                 if re.search(f'{model_related_file}_', filename)
             }
 
-            last_file_date = [date for date, diff in last_file_date.items() if diff == min(last_file_date.values())][0]
+            last_file_date = [
+                date for date, diff in last_file_date.items()
+                if diff == min(last_file_date.values())
+                and date <= self.max_date
+            ][0]
             last_model_related_files[model_related_file] = last_file_date.date()
         if len(set(last_model_related_files.values())) > 1:
             raise ValueError(f'''Unaligned model file dates
