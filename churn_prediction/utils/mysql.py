@@ -163,6 +163,7 @@ def get_users_with_expirations(
 
     return relevant_users
 
+
 def get_subscription_data(end_time: datetime):
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_CRM_CONNECTION_STRING',
