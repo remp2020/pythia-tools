@@ -104,7 +104,7 @@ class ChurnFeatureBuilder(FeatureBuilder):
                 self.events.c['type'].in_(
                     list(LABELS.keys())
                 ),
-                cast(self.events.c['time'], DATE) >= cast(self.aggregation_time, DATE),
+                cast(self.events.c['time'], DATE) > cast(self.aggregation_time, DATE),
                 cast(self.events.c['time'], DATE) <= cast(self.aggregation_time + timedelta(days=EVENT_LOOKAHEAD), DATE)
             )
         ).subquery()
@@ -152,7 +152,7 @@ class ChurnFeatureBuilder(FeatureBuilder):
                     relevant_events_deduplicated.c['date'],
                     feature_query.c['date'],
                     text('day')
-                ) >= 0,
+                ) > 0,
             )
         ).subquery('feature_query_w_outcome')
 
