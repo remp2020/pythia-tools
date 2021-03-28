@@ -275,55 +275,56 @@ def get_subscription_data(end_time: datetime):
 
     subscriptions_data_merged = pd.read_sql(subscriptions_data.statement, subscriptions_data.session.bind)
 
-    subscriptions_data_merged=subscriptions_data_merged.loc[subscriptions_data_merged["start_time"]!=subscriptions_data_merged["end_time"]].copy()
-    subscriptions_data_merged=subscriptions_data_merged.loc[~subscriptions_data_merged["payment_status"].str.contains("form|refund", na=False)].copy()
-    subscriptions_data_merged=subscriptions_data_merged.loc[subscriptions_data_merged["start_time"]>=datetime(2015,1,1,0,0,0)].copy()
+    subscriptions_data_merged = subscriptions_data_merged.loc[subscriptions_data_merged["start_time"] != subscriptions_data_merged["end_time"]].copy()
+    subscriptions_data_merged = subscriptions_data_merged.loc[~subscriptions_data_merged["payment_status"].str.contains("form|refund", na=False)].copy()
+    subscriptions_data_merged = subscriptions_data_merged.loc[subscriptions_data_merged["start_time"] >= datetime(2015,1,1,0,0,0)].copy()
 
-    column_fillna={'payment_count':0,
-                  'amount':0.0,
-                  'additional_amount':0.0,
-                  'is_recurrent_charge':False,
-                  'payment_status':'no_payment',
-                  'is_upgraded':False,
-                  'base_subscription_id':subscriptions_data_merged['subscription_id'],
-                  'upgrade_type':'none',
-                  'is_upgrade':False,
-                  }
+    column_fillna = {'payment_count': 0,
+                     'amount': 0.0,
+                     'additional_amount': 0.0,
+                     'is_recurrent_charge': False,
+                     'payment_status': 'no_payment',
+                     'is_upgraded': False,
+                     'base_subscription_id': subscriptions_data_merged['subscription_id'],
+                     'upgrade_type': 'none',
+                     'is_upgrade': False,
+                     }
 
     subscriptions_data_merged.fillna(column_fillna, inplace=True)
 
-    column_types={'user_id':int,
-                 'subscription_id':int,
-                 'length':int,
-                 'is_recurrent':float,
-                 'is_paid':float,
-                 'subscription_type':str,
-                 'subscription_type_id':int,
-                 'payment_count':int,
-                 'amount':float,
-                 'additional_amount':float,
-                 'is_recurrent_charge':float,
-                 'payment_status':str,
-                 'sub_type_name':str,
-                 'sub_type_code':str,
-                 'sub_type_length':int,
-                 'sub_type_price':float,
-                 'sub_web_access':float,
-                 'sub_standard_access':float,
-                 'sub_club_access':float,
-                 'sub_print_access':float,
-                 'sub_print_friday_access':float,
-                 'is_upgraded':float,
-                 'base_subscription_id':int,
-                 'upgrade_type':str,
-                 'is_upgrade':float
-                 }
+    column_types = {'user_id': int,
+                    'subscription_id': int,
+                    'length': int,
+                    'is_recurrent': float,
+                    'is_paid': float,
+                    'subscription_type': str,
+                    'subscription_type_id': int,
+                    'payment_count': int,
+                    'amount': float,
+                    'additional_amount': float,
+                    'is_recurrent_charge': float,
+                    'payment_status': str,
+                    'sub_type_name': str,
+                    'sub_type_code': str,
+                    'sub_type_length': int,
+                    'sub_type_price': float,
+                    'sub_web_access': float,
+                    'sub_standard_access': float,
+                    'sub_club_access': float,
+                    'sub_print_access': float,
+                    'sub_print_friday_access': float,
+                    'is_upgraded': float,
+                    'base_subscription_id': int,
+                    'upgrade_type': str,
+                    'is_upgrade': float
+                    }
 
     subscriptions_data_merged = subscriptions_data_merged.astype(column_types)
 
     mysql_predplatne_session.close()
 
     return subscriptions_data_merged
+
 
 def get_subscription_stats(stats_end_time: datetime):
     subscription_data = get_subscription_data(stats_end_time)
@@ -407,8 +408,6 @@ def get_subscription_stats(stats_end_time: datetime):
     subscription_data_free = subscription_data.loc[subscription_data["is_paid"] == False].copy()
     subscription_data_paid = subscription_data.loc[subscription_data["is_paid"] == True].copy()
     del subscription_data
-
-    sub_without_overlap = []
 
     # original dataframe with paid subs
     sub_data = subscription_data_paid[["user_id", "subscription_id", "start_time", "end_time"]].copy()
@@ -591,12 +590,12 @@ def get_subscription_stats(stats_end_time: datetime):
                           }
 
     for key_column in computable_columns:
-        if (computable_columns[key_column] == 'per_change'):
+        if computable_columns[key_column] == 'per_change':
             last_subs[key_column + '_diff'] = \
             last_subs[[key_column + '_previous', key_column + '_last']].pct_change(axis=1)[
                 key_column + '_last'].tolist()
             last_subs[key_column + '_diff'].replace(np.float("inf"), 1, inplace=True)
-        elif (computable_columns[key_column] == 'val_change'):
+        elif computable_columns[key_column] == 'val_change':
             last_subs[key_column + '_diff'] = last_subs[[key_column + '_previous', key_column + '_last']].diff(axis=1)[
                 key_column + '_last'].tolist()
         last_subs = last_subs.drop(columns=[key_column + '_last', key_column + '_previous'])
