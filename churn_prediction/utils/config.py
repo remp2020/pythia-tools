@@ -4,6 +4,9 @@ MIN_TRAINING_DAYS = 7
 CURRENT_PIPELINE_VERSION = '1.01'
 LABELS = {'renewal': 'positive', 'churn': 'negative'}
 CURRENT_MODEL_VERSION = '1.0'
+# We want to predict x days before expiration, this variable sets x, we use 33 based on 30 days of subscription
+# with 2 days for the grace period and 1 more day as a buffer
+EVENT_LOOKAHEAD = 33.0
 
 
 class ChurnFeatureColumns(FeatureColumns):

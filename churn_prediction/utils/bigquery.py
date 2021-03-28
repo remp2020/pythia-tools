@@ -4,7 +4,7 @@ from sqlalchemy.sql.expression import cast, literal
 from datetime import timedelta, datetime
 
 from prediction_commons.utils.enums import WindowHalfDirection, OutcomeLabelCategory
-from .config import LABELS, ChurnFeatureColumns
+from .config import LABELS, ChurnFeatureColumns, EVENT_LOOKAHEAD
 from typing import Dict
 import os
 from .db_utils import UserIdHandler
@@ -100,10 +100,13 @@ class ChurnFeatureBuilder(FeatureBuilder):
             self.events.c['type'].label('outcome'),
             self.events.c['user_id'].label('user_id')
         ).filter(
-            self.events.c['type'].in_(
-                list(LABELS.keys())
-            ),
-            cast(self.events.c['time'], DATE) == cast(self.aggregation_time, DATE)
+            and_(
+                self.events.c['type'].in_(
+                    list(LABELS.keys())
+                ),
+                cast(self.events.c['time'], DATE) >= cast(self.aggregation_time, DATE),
+                cast(self.events.c['time'], DATE) <= cast(self.aggregation_time + timedelta(days=EVENT_LOOKAHEAD), DATE)
+            )
         ).subquery()
 
         # TODO: Remove deduplication, once the event table doesn't contain any
@@ -140,7 +143,16 @@ class ChurnFeatureBuilder(FeatureBuilder):
             relevant_events_deduplicated,
             and_(
                 feature_query.c['user_id'] == relevant_events_deduplicated.c['user_id'],
-                feature_query.c['date'] == relevant_events_deduplicated.c['date']
+                func.date_diff(
+                    relevant_events_deduplicated.c['date'],
+                    feature_query.c['date'],
+                    text('day')
+                ) <= EVENT_LOOKAHEAD,
+                func.date_diff(
+                    relevant_events_deduplicated.c['date'],
+                    feature_query.c['date'],
+                    text('day')
+                ) >= 0,
             )
         ).subquery('feature_query_w_outcome')
 

@@ -4,6 +4,8 @@ from sqlalchemy.types import DATE
 from sqlalchemy import and_, func
 from datetime import datetime, timedelta
 from sqlalchemy import MetaData, Table
+
+from churn_prediction.utils.config import EVENT_LOOKAHEAD
 from prediction_commons.utils.db_utils import create_connection
 from sqlalchemy.orm import sessionmaker
 from typing import List, Dict
@@ -148,7 +150,8 @@ def get_users_with_expirations(
     ).filter(
         and_(
             payments.c['status'] == 'paid',
-            Cast(subscriptions.c['end_time'], DATE) == aggregation_date
+            func.datediff(subscriptions.c['end_time'], aggregation_date) <= EVENT_LOOKAHEAD,
+            func.datediff(subscriptions.c['end_time'], aggregation_date) > 0,
         )
     ).group_by(
         subscriptions.c['user_id']
