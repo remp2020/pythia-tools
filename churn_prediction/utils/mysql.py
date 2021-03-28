@@ -404,7 +404,7 @@ def get_subscription_stats(stats_end_time: datetime):
 
     subscription_data["subscription_id"] = subscription_data["subscription_id"].astype("int")
 
-    # splitiing data to 2 groups - paid and free subs
+    # splitting data to 2 groups - paid and free subs
     subscription_data_free = subscription_data.loc[subscription_data["is_paid"] == False].copy()
     subscription_data_paid = subscription_data.loc[subscription_data["is_paid"] == True].copy()
     del subscription_data
@@ -460,7 +460,7 @@ def get_subscription_stats(stats_end_time: datetime):
                     sub_id_set_current.update(s)
         sub_with_overlap.append(sorted(list(sub_id_set_current)))
 
-        # subscription_group_id assignment
+    # subscription_group_id assignment
     sub_matching_list = [[l_value, l_index + 1] for l_index, l_values in enumerate(sub_with_overlap) for l_value in
                          l_values]
     sub_matching_table = pd.DataFrame(sub_matching_list, columns=["subscription_id", "subscription_period_id"])
@@ -554,11 +554,11 @@ def get_subscription_stats(stats_end_time: datetime):
 
     users_sub_stats = subscription_data.groupby("user_id").apply(basic_stats_agg).reset_index()
 
-    def try_join(l):
-        if isinstance(l, list):
-            return ','.join(map(str, l))
+    def try_join(candidate_list):
+        if isinstance(candidate_list, list):
+            return ','.join(map(str, candidate_list))
         else:
-            return l
+            return candidate_list
 
     subscription_data['subscription_id_converted'] = [try_join(l) for l in subscription_data['subscription_id']]
 
