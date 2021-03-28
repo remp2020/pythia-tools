@@ -1,9 +1,10 @@
 import pandas as pd
-from sqlalchemy.sql.elements import Cast
 from sqlalchemy.types import DATE
-from sqlalchemy import and_, func, case
+from sqlalchemy import and_, func
 from datetime import datetime
 from sqlalchemy import MetaData, Table
+
+from churn_prediction.utils.config import EVENT_LOOKAHEAD
 from prediction_commons.utils.db_utils import create_connection
 from sqlalchemy.orm import sessionmaker
 from typing import List, Dict
@@ -82,82 +83,48 @@ def get_global_context(start_time, end_time):
     payments = predplatne_mysql_mappings['payments']
 
     # We create two subqueries using the same data to merge twice in order to get rolling sum in mysql
-    def get_payments_filtered():
-        payments_filtered = mysql_predplatne_session.query(
-            payments.c['created_at'].cast(DATE).label('date'),
-            func.count(payments.c['id']).label('payment_count'),
-            func.sum(payments.c['amount']).label('sum_paid')
-        ).filter(
-            payments.c['created_at'] >= start_time,
-            payments.c['created_at'] <= end_time,
-            payments.c['status'] == 'paid'
-        ).group_by(
-            'date'
-        ).subquery()
 
-        return payments_filtered
-
-    def get_article_pageviews_filtered():
-        article_pageviews_filtered = mysql_beam_session.query(
-            article_pageviews.c['time_from'].cast(DATE).label('date'),
-            func.sum(article_pageviews.c['sum']).label('article_pageviews'),
-        ).filter(
-            article_pageviews.c['time_from'] >= start_time,
-            article_pageviews.c['time_from'] <= end_time
-        ).group_by(
-            'date'
-        ).subquery()
-
-        return article_pageviews_filtered
-
-    payments_filtered_1 = get_payments_filtered()
-    payments_filtered_2 = get_payments_filtered()
-
-    payments_context = mysql_predplatne_session.query(
-        payments_filtered_1.c['date'].label('date'),
-        func.sum(payments_filtered_2.c['payment_count']).label('payment_count'),
-        func.sum(payments_filtered_2.c['sum_paid']).label('sum_paid')
-    ).join(
-        payments_filtered_2,
-        func.datediff(payments_filtered_1.c['date'], payments_filtered_2.c['date']).between(0, 7)
+    payments_query = mysql_predplatne_session.query(
+        payments.c['created_at'].cast(DATE).label('date'),
+        func.count(payments.c['id']).label('payment_count'),
+        func.sum(payments.c['amount']).label('sum_paid')
+    ).filter(
+        payments.c['created_at'].cast(DATE) >= start_time,
+        payments.c['created_at'].cast(DATE) <= end_time,
+        payments.c['status'] == 'paid'
     ).group_by(
-        payments_filtered_1.c['date']
-    ).order_by(
-        payments_filtered_1.c['date']
-    ).subquery()
-
-    article_pageviews_filtered_1 = get_article_pageviews_filtered()
-    article_pageviews_filtered_2 = get_article_pageviews_filtered()
-
-    article_pageviews_context = mysql_beam_session.query(
-        article_pageviews_filtered_1.c['date'].label('date'),
-        func.sum(article_pageviews_filtered_2.c['article_pageviews']).label('article_pageviews_count'),
-    ).join(
-        article_pageviews_filtered_2,
-        func.datediff(article_pageviews_filtered_1.c['date'], article_pageviews_filtered_2.c['date']).between(0, 7)
-    ).group_by(
-        article_pageviews_filtered_1.c['date']
-    ).order_by(
-        article_pageviews_filtered_1.c['date']
-    ).subquery()
-
-    context_query = mysql_predplatne_session.query(
-        payments_context.c['date'],
-        payments_context.c['payment_count'],
-        payments_context.c['sum_paid'],
-        article_pageviews_context.c['article_pageviews_count']
-    ).join(
-        article_pageviews_context,
-        article_pageviews_context.c['date'] == payments_context.c['date']
+        'date'
     )
 
-    context = pd.read_sql(
-        context_query.statement,
-        context_query.session.bind
+    article_pageviews_query = mysql_beam_session.query(
+        article_pageviews.c['time_from'].cast(DATE).label('date'),
+        func.sum(article_pageviews.c['sum']).label('article_pageviews'),
+    ).filter(
+        article_pageviews.c['time_from'].cast(DATE) >= start_time,
+        article_pageviews.c['time_from'].cast(DATE) <= end_time
+    ).group_by(
+        'date'
+    )
+
+    payments = pd.read_sql(
+        payments_query.statement,
+        payments_query.session.bind
+    )
+
+    article_pageviews = pd.read_sql(
+        article_pageviews_query.statement,
+        article_pageviews_query.session.bind
     )
 
     mysql_predplatne_session.close()
     mysql_beam_session.close()
+
+    context = pd.merge(
+        left=payments,
+        right=article_pageviews,
+        on=['date'],
+        how='inner'
+    )
 
     return context
 
@@ -183,7 +150,8 @@ def get_users_with_expirations(
     ).filter(
         and_(
             payments.c['status'] == 'paid',
-            Cast(subscriptions.c['end_time'], DATE) == aggregation_date
+            func.datediff(subscriptions.c['end_time'], aggregation_date) <= EVENT_LOOKAHEAD,
+            func.datediff(subscriptions.c['end_time'], aggregation_date) > 0,
         )
     ).group_by(
         subscriptions.c['user_id']
@@ -304,12 +272,12 @@ def get_subscription_data(end_time: datetime):
             subscriptions.columns.start_time < end_time)
     )
 
-    subscriptions_data_merged = pd.read_sql(subscriptions_data.statement, subscriptions_data.session.bind) 
-    
+    subscriptions_data_merged = pd.read_sql(subscriptions_data.statement, subscriptions_data.session.bind)
+
     subscriptions_data_merged=subscriptions_data_merged.loc[subscriptions_data_merged["start_time"]!=subscriptions_data_merged["end_time"]].copy()
     subscriptions_data_merged=subscriptions_data_merged.loc[~subscriptions_data_merged["payment_status"].str.contains("form|refund", na=False)].copy()
     subscriptions_data_merged=subscriptions_data_merged.loc[subscriptions_data_merged["start_time"]>=datetime(2015,1,1,0,0,0)].copy()
-    
+
     column_fillna={'payment_count':0,
                   'amount':0.0,
                   'additional_amount':0.0,
@@ -320,8 +288,8 @@ def get_subscription_data(end_time: datetime):
                   'upgrade_type':'none',
                   'is_upgrade':False,
                   }
-    
-    subscriptions_data_merged.fillna(column_fillna, inplace=True)    
+
+    subscriptions_data_merged.fillna(column_fillna, inplace=True)
 
     column_types={'user_id':int,
                  'subscription_id':int,
@@ -349,9 +317,9 @@ def get_subscription_data(end_time: datetime):
                  'upgrade_type':str,
                  'is_upgrade':float
                  }
-    
-    subscriptions_data_merged = subscriptions_data_merged.astype(column_types) 
-    
+
+    subscriptions_data_merged = subscriptions_data_merged.astype(column_types)
+
     mysql_predplatne_session.close()
 
     return subscriptions_data_merged
@@ -633,6 +601,6 @@ def get_subscription_stats(stats_end_time: datetime):
         last_subs = last_subs.drop(columns=[key_column + '_last', key_column + '_previous'])
 
     users_sub_stats = pd.merge(users_sub_stats, last_subs, how="left", on="user_id", validate="one_to_one")
-    
+
     return users_sub_stats
 
