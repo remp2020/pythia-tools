@@ -1,12 +1,12 @@
 import pandas as pd
 from sqlalchemy.types import DATE
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, cast, or_, case
 from datetime import datetime
 from sqlalchemy import MetaData, Table
 
 from churn_prediction.utils.config import EVENT_LOOKAHEAD
 from prediction_commons.utils.db_utils import create_connection
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from typing import List, Dict
 import os
 import numpy as np
@@ -21,7 +21,7 @@ def get_sqla_table(table_name, engine, schema='public'):
 
 def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str, table_names: List[str]) -> Dict:
     table_mapping = {}
-    _, db_connection = create_connection(os.getenv(db_connection_string_name))
+    engine, db_connection = create_connection(os.getenv(db_connection_string_name))
 
     for table in table_names:
         table_mapping[table] = get_sqla_table(table_name=table, engine=db_connection, schema=os.getenv(schema))
@@ -164,7 +164,21 @@ def get_users_with_expirations(
     return relevant_users
 
 
-def get_subscription_data(end_time: datetime):
+def get_table_created_at_filters(
+    table,
+    max_time: datetime,
+    min_time: datetime = None
+) -> List:
+    filters = [table.c['created_at'].cast(DATE) <= max_time.date()]
+    if min_time:
+        filters.append(table.c['created_at'].cast(DATE) > min_time.date())
+    return filters
+
+
+def get_subscription_data(
+    max_time: datetime,
+    min_time: datetime = None
+) -> pd.DataFrame:
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_CRM_CONNECTION_STRING',
         'MYSQL_CRM_DB',
@@ -177,7 +191,7 @@ def get_subscription_data(end_time: datetime):
     subscription_types = predplatne_mysql_mappings['subscription_types']
     subscription_upgrades = predplatne_mysql_mappings['subscription_upgrades']
 
-    relevant_users = get_users_with_expirations()
+    relevant_users = get_users_with_expirations(max_time.date())
 
     subscription_id_access_level = mysql_predplatne_session.query(
         subscription_types.c['id'].label("subscription_type_id"),
@@ -190,7 +204,9 @@ def get_subscription_data(end_time: datetime):
         subscription_types.c['club'].label("is_club"),
         subscription_types.c['print'].label("is_print"),
         subscription_types.c['print_friday'].label("is_print_friday")
-    ).filter(subscription_types.c['no_subscription'] != True).subquery()
+    ).filter(
+        subscription_types.c['no_subscription'] != True
+    ).subquery()
 
     payments_grouped_filtered = mysql_predplatne_session.query(
         payments.c['subscription_id'].label("subscription_id"),
@@ -200,7 +216,11 @@ def get_subscription_data(end_time: datetime):
         func.if_(func.sum(payments.c['recurrent_charge']) > 0, True, False).label("is_recurrent_charge"),
         func.group_concat(payments.c['status']).label("payment_status")
     ).filter(
-        payments.c['subscription_id'].isnot(None)
+        and_(
+            payments.c['subscription_id'].isnot(None),
+            payments.c['user_id'].in_(relevant_users),
+            *get_table_created_at_filters(payments, max_time, min_time)
+        )
     ).group_by(
         payments.c['subscription_id']
     ).subquery()
@@ -210,6 +230,8 @@ def get_subscription_data(end_time: datetime):
         func.if_(func.count(subscription_upgrades.c['id']) > 0, True, False).label("is_upgraded")
     ).group_by(
         subscription_upgrades.c['base_subscription_id']
+    ).filter(
+        *get_table_created_at_filters(subscription_upgrades, max_time, min_time)
     ).subquery()
 
     subscriptions_upgrades = mysql_predplatne_session.query(
@@ -217,6 +239,10 @@ def get_subscription_data(end_time: datetime):
         subscription_upgrades.c['upgraded_subscription_id'].label("upgraded_subscription_id"),
         subscription_upgrades.c['type'].label("upgrade_type"),
         func.if_(func.count(subscription_upgrades.c['id']) > 0, True, False).label("is_upgrade")
+    ).filter(
+        and_(
+            *get_table_created_at_filters(subscription_upgrades, max_time, min_time)
+        )
     ).group_by(
         subscription_upgrades.c['base_subscription_id'],
         subscription_upgrades.c['upgraded_subscription_id'],
@@ -224,6 +250,7 @@ def get_subscription_data(end_time: datetime):
     ).subquery()
 
     subscriptions_data = mysql_predplatne_session.query(
+        subscriptions.c['created_at'].label('created_at'),
         subscriptions.c['user_id'].label("user_id"),
         subscriptions.c['id'].label("subscription_id"),
         subscriptions.c['start_time'].label("start_time"),
@@ -270,7 +297,11 @@ def get_subscription_data(end_time: datetime):
     ).filter(
         and_(
             subscriptions.columns.user_id.in_(relevant_users),
-            subscriptions.columns.start_time < end_time)
+            *get_table_created_at_filters(subscriptions, max_time, min_time)
+        )
+    ).order_by(
+        subscriptions.c['user_id'],
+        subscriptions.c['start_time']
     )
 
     subscriptions_data_merged = pd.read_sql(subscriptions_data.statement, subscriptions_data.session.bind)
@@ -329,54 +360,68 @@ def get_subscription_data(end_time: datetime):
 def get_subscription_stats(stats_end_time: datetime):
     subscription_data = get_subscription_data(stats_end_time)
 
-    def web_access_features_aggregation(sub_web_access, sub_standard_access, sub_club_access):
-        access_level = 0
-        if sub_web_access:
-            access_level += 1
-            if sub_standard_access:
-                access_level += 1
-                if sub_club_access:
-                    access_level += 1
-        elif sub_standard_access or sub_club_access:
-            access_level -= 1
-        return access_level
+    # calculate time intervals between subscriptions
+    subscription_data['gap'] = np.nan
+    subscription_data["start_time_shifted"] = subscription_data[["start_time"]].shift(-1)
+    subscription_data["user_id_shifted"] = subscription_data[["user_id"]].shift(-1)
+    subscription_data['gap'] = (
+            subscription_data["start_time_shifted"] - subscription_data['end_time']
+    ).dt.days
+    subscription_data.loc[
+        subscription_data["user_id_shifted"] != subscription_data['user_id'],
+        'gap'
+    ] = 0
 
-    subscription_data['web_access_level'] = subscription_data.apply(
-        lambda x: web_access_features_aggregation(x['sub_web_access'], x['sub_standard_access'], x['sub_club_access']),
-        axis=1)
-    subscription_data['web_access_level'] = subscription_data['web_access_level'].astype(float)
+    subscription_data = subscription_data.drop("start_time_shifted", axis=1)
+    subscription_data = subscription_data.drop("user_id_shifted", axis=1)
+
+    subscription_data['web_access_level'] = 0
+    subscription_data['web_access_level'] = (
+            subscription_data['sub_web_access'] +
+            subscription_data['sub_standard_access'] +
+            subscription_data['sub_club_access']
+    )
+
+    subscription_data.loc[
+        (subscription_data['web_access_level'] > 1) &
+        (subscription_data['sub_web_access'] != 1),
+        'web_access_level'
+    ] = -1
 
     subscription_data.drop(["sub_web_access", "sub_standard_access", "sub_club_access"], axis=1, inplace=True)
     subscription_data["net_amount"] = subscription_data["amount"] - subscription_data["additional_amount"]
-    subscription_data['real_length'] = (
-                (subscription_data['end_time'] - subscription_data['start_time']).dt.total_seconds() / (
-                    24 * 60 * 60)).astype(float)
+    subscription_data['real_length'] = (subscription_data['end_time'] - subscription_data['start_time']).dt.days
 
     # paid subscription without payment - adding net_amount and amount
-    subscription_data.loc[
-        (subscription_data["is_paid"] == True) & (subscription_data["payment_count"] == 0), "net_amount"] = \
-    subscription_data["sub_type_price"]
-    subscription_data.loc[
-        (subscription_data["is_paid"] == True) & (subscription_data["payment_count"] == 0), "amount"] = \
-    subscription_data["sub_type_price"]
+    paid_subs_without_payment = np.logical_and(
+        subscription_data["is_paid"] == True,
+        subscription_data["payment_count"] == 0
+    )
+
+    subscription_data.loc[paid_subs_without_payment, "net_amount"] = subscription_data["sub_type_price"]
+
+    subscription_data.loc[paid_subs_without_payment, "amount"] = subscription_data["sub_type_price"]
 
     # free subscription - daily_price
     subscription_data.loc[subscription_data["is_paid"] == False, "daily_price"] = 0
 
     # upgraded subscription - daily_price
+    is_upgrade = subscription_data["is_upgraded"] == True
     subscription_data.loc[
-        (subscription_data["is_upgraded"] == True) & (subscription_data["is_upgrade"] == False), "daily_price"] = \
-    subscription_data["net_amount"] / subscription_data["length"]
+        (is_upgrade) &
+        (subscription_data["is_upgrade"] == False),
+        "daily_price"] = subscription_data["net_amount"] / subscription_data["length"]
 
     # upgrade subscription - daily_price
-    subscription_data.loc[(subscription_data["is_upgrade"] == True), "daily_price"] = subscription_data[
-                                                                                          "sub_type_price"] / \
-                                                                                      subscription_data["length"]
+    subscription_data.loc[
+        is_upgrade, "daily_price"
+    ] = subscription_data["sub_type_price"] / subscription_data["length"]
 
     # other - daily_price
-    subscription_data.loc[(pd.isna(subscription_data["daily_price"])), "daily_price"] = subscription_data[
-                                                                                            "net_amount"] / \
-                                                                                        subscription_data["length"]
+    subscription_data.loc[
+        subscription_data["daily_price"].isna(),
+        "daily_price"
+    ] = subscription_data["net_amount"] / subscription_data["length"]
 
     sub_desc_columns = ["length", "is_paid", "sub_print_access", "sub_print_friday_access", "web_access_level"]
     subscription_data['sub_comb'] = subscription_data[sub_desc_columns].to_dict(orient='records')
@@ -388,12 +433,29 @@ def get_subscription_stats(stats_end_time: datetime):
     sub_prices['sub_comb'] = sub_prices['sub_comb'].astype(str)
     sub_prices = sub_prices.drop(columns=sub_desc_columns)
 
-    subscription_data = pd.merge(subscription_data, sub_prices, how="left", on="sub_comb")
+    subscription_data = pd.merge(
+        subscription_data,
+        sub_prices,
+        how="left",
+        on="sub_comb"
+    )
 
-    subscription_data = pd.merge(subscription_data, subscription_data[["subscription_id", "net_amount"]], how="left",
-                                 left_on="base_subscription_id", right_on="subscription_id", suffixes=("", "_base_sub"))
-    subscription_data.loc[subscription_data["daily_price"] > 0, "daily_price_diff_relative"] = (
-                1 - (subscription_data["average_price"] / subscription_data["daily_price"]))
+    subscription_data = pd.merge(
+        subscription_data,
+        subscription_data[["subscription_id", "net_amount"]],
+        how="left",
+        left_on="base_subscription_id",
+        right_on="subscription_id",
+        suffixes=("", "_base_sub")
+    )
+
+    subscription_data["daily_price_diff_relative"] = (
+                1 - (subscription_data["average_price"] / subscription_data["daily_price"])
+    )
+    subscription_data["daily_price_diff_relative"] = subscription_data["daily_price_diff_relative"].replace(
+        [np.inf, -np.inf],
+        np.nan
+    ).fillna(0.0)
 
     subscription_data["is_discount_sub"] = 0.0
     subscription_data.loc[subscription_data["daily_price_diff_relative"] <= -0.2, "is_discount_sub"] = 1.0
@@ -404,144 +466,15 @@ def get_subscription_stats(stats_end_time: datetime):
 
     subscription_data["subscription_id"] = subscription_data["subscription_id"].astype("int")
 
-    # splitting data to 2 groups - paid and free subs
-    subscription_data_free = subscription_data.loc[subscription_data["is_paid"] == False].copy()
-    subscription_data_paid = subscription_data.loc[subscription_data["is_paid"] == True].copy()
-    del subscription_data
-
-    # original dataframe with paid subs
-    sub_data = subscription_data_paid[["user_id", "subscription_id", "start_time", "end_time"]].copy()
-    # copy of the original dataframe
-    sub_data_copied = sub_data.copy()
-
-    # merging dataframes on "user_id" - get all combinations of subcription_ids
-    sub_data_merged = pd.merge(sub_data, sub_data_copied, how="left", on="user_id", suffixes=("_original", "_copied"))
-    sub_data_merged = sub_data_merged.loc[
-        sub_data_merged["subscription_id_original"] != sub_data_merged["subscription_id_copied"]].copy()
-
-    # testing whether the identifiers have a time overlap - True or False
-    sub_data_merged["overlap"] = sub_data_merged[['start_time_original', 'start_time_copied']].max(axis=1) < \
-                                 sub_data_merged[['end_time_original', 'end_time_copied']].min(axis=1)
-
-    # selects rows with different subscription_ids
-    sub_overlap_is_true = sub_data_merged.loc[sub_data_merged["overlap"] == True].copy()
-    sub_overlap_is_true_list = list(set(
-        sub_overlap_is_true["subscription_id_original"].unique().tolist() + sub_overlap_is_true[
-            "subscription_id_copied"].unique().tolist()))
-
-    sub_overlap_is_true = sub_overlap_is_true.loc[
-        ~sub_overlap_is_true.apply(lambda x: frozenset([x.subscription_id_original, x.subscription_id_copied]),
-                                   axis=1).duplicated()].copy()
-
-    # calculate features after merging dataframes - if overlap==True
-    sub_overlap_is_true["subscription_id"] = sub_overlap_is_true.apply(
-        lambda x: (x.subscription_id_original, x.subscription_id_copied), axis=1)
-
-    # remove redundant columns
-    sub_overlap_is_true = sub_overlap_is_true.drop("overlap", axis=1)
-    sub_overlap_is_true = sub_overlap_is_true.drop([col for col in sub_overlap_is_true.columns if 'original' in col],
-                                                   axis=1)
-    sub_overlap_is_true = sub_overlap_is_true.drop([col for col in sub_overlap_is_true.columns if 'copied' in col],
-                                                   axis=1)
-
-    # grouping of all overlapping subscriptions - subscription group_id assignment
-    sub_id_set = set(
-        [frozenset(s) for s in sub_overlap_is_true["subscription_id"].tolist()])  # Convert to a set of sets
-    sub_with_overlap = []
-    while (sub_id_set):
-        sub_id_set_current = set(sub_id_set.pop())
-        check = len(sub_id_set)
-        while check:
-            check = False
-            for s in sub_id_set.copy():
-                if sub_id_set_current.intersection(s):
-                    check = True
-                    sub_id_set.remove(s)
-                    sub_id_set_current.update(s)
-        sub_with_overlap.append(sorted(list(sub_id_set_current)))
-
-    # subscription_group_id assignment
-    sub_matching_list = [[l_value, l_index + 1] for l_index, l_values in enumerate(sub_with_overlap) for l_value in
-                         l_values]
-    sub_matching_table = pd.DataFrame(sub_matching_list, columns=["subscription_id", "subscription_period_id"])
-    sub_overlap_is_true = pd.merge(subscription_data_paid, sub_matching_table, how="right", on="subscription_id",
-                                   validate="one_to_one")
-
-    # subscription_group features aggregation to one row
-    def subscriptions_with_overlap_agg(x):
-        names = {
-            'user_id': x['user_id'].max(),
-            'subscription_id': sorted(x['subscription_id'].unique().tolist()),
-            'start_time': x['start_time'].min(),
-            'end_time': x['end_time'].max(),
-            'length': (x['end_time'].max() - x['start_time'].min()).days,
-            'is_recurrent': x['is_recurrent'].any(),
-            'is_paid': x['is_paid'].any(),
-            'subscription_type': sorted(x['subscription_type'].unique().tolist()),
-            'subscription_type_id': sorted(x['subscription_type_id'].unique().tolist()),
-            'payment_count': x['payment_count'].sum(),
-            'amount': x['amount'].sum(),
-            'additional_amount': x['additional_amount'].sum(),
-            'is_recurrent_charge': x['is_recurrent_charge'].any(),
-            'payment_status': x['payment_status'].tolist(),
-            'sub_type_name': x['sub_type_name'].tolist(),
-            'sub_type_code': x['sub_type_code'].tolist(),
-            'sub_type_length': x['sub_type_length'].tolist(),
-            'sub_type_price': x['sub_type_price'].tolist(),
-            'sub_print_access': x['sub_print_access'].any(),
-            'sub_print_friday_access': x['sub_print_friday_access'].any(),
-            'is_upgraded': x['is_upgraded'].any(),
-            'is_upgrade': x['is_upgrade'].any(),
-            'web_access_level': x['web_access_level'].max(),
-            'net_amount': x['net_amount'].sum(),
-            'is_discount_sub': x['is_discount_sub'].any(),
-        }
-
-        return pd.Series(names)
-
-    sub_overlap_is_true = sub_overlap_is_true.groupby('subscription_period_id').apply(
-        subscriptions_with_overlap_agg).reset_index()
-
-    sub_overlap_is_true = sub_overlap_is_true.drop(columns=['subscription_period_id'])
-
-    # remove subscription with overlap from original dataframe and append grouped subscription data with overlap
-    subscription_data_paid = subscription_data_paid[
-        ~subscription_data_paid["subscription_id"].isin(sub_overlap_is_true_list)]
-    subscription_data_paid = pd.concat([subscription_data_paid, sub_overlap_is_true], sort=False)
-
-    # calculate time intervals between subscriptions
-    subscription_data_paid = subscription_data_paid.sort_values(["user_id", "start_time"], ascending=["True", "True"])
-    subscription_data_paid["start_time_shifted"] = subscription_data_paid[["start_time"]].shift(-1)
-    subscription_data_paid["user_id_shifted"] = subscription_data_paid[["user_id"]].shift(-1)
-
-    subscription_data_paid['gap'] = (subscription_data_paid['start_time_shifted'] - subscription_data_paid[
-        'end_time']).dt.total_seconds() / (60 * 60 * 24)
-    subscription_data_paid.loc[
-        subscription_data_paid['user_id_shifted'] != subscription_data_paid['user_id'], 'gap'] = 0
-
-    subscription_data_paid = subscription_data_paid.drop("start_time_shifted", axis=1)
-    subscription_data_paid = subscription_data_paid.drop("user_id_shifted", axis=1)
-
-    subscription_data_free["gap"] = np.nan
-
-    # re-merging data to one dataframe - paid+free subs
-    subscription_data = pd.concat([subscription_data_paid, subscription_data_free], sort=False)
-    del subscription_data_paid
-    del subscription_data_free
-
-    # calculation of the number of subscriptions in one record
-    subscription_data['subcription_count'] = subscription_data['subscription_id'].apply(
-        lambda x: len(x) if isinstance(x, list) else 1)
-
     def basic_stats_agg(x):
         names = {
             'total_amount': x['amount'].sum(),
+            'subscription_count': x['subscription_id'].count(),
             'average_amount': x['amount'].mean(),
             'is_donor': x[x['additional_amount'] > 0]['additional_amount'].any(),
             'paid_subs': x[x['is_paid'] == True]['subscription_id'].count(),
             'free_subs': x[x['is_paid'] == False]['subscription_id'].count(),
-            'number_of_days_since_the_first_paid_sub': (datetime.now() - x['start_time'].min()).total_seconds() / (
-                        60 * 60 * 24),
+            'number_of_days_since_the_first_paid_sub': (datetime.now() - x['start_time'].min()).days,
             'average_gap_paid_subs': x[x['is_paid'] == True]['gap'].mean(),
             'maximal_gap_paid_subs': x[x['is_paid'] == True]['gap'].max(),
             'total_days_paid_sub': x[x['is_paid'] == True]['length'].sum(),
@@ -552,47 +485,36 @@ def get_subscription_stats(stats_end_time: datetime):
         }
         return pd.Series(names)
 
+    import time
+    start_time = time.time()
     users_sub_stats = subscription_data.groupby("user_id").apply(basic_stats_agg).reset_index()
+    print((time.time() - start_time) / 60)
+    raise ValueError('aa')
 
-    def try_join(candidate_list):
-        if isinstance(candidate_list, list):
-            return ','.join(map(str, candidate_list))
-        else:
-            return candidate_list
-
-    subscription_data['subscription_id_converted'] = [try_join(l) for l in subscription_data['subscription_id']]
-
-    feature_columns = ["user_id", "subscription_id_converted", "start_time", "length", "is_recurrent", "amount",
-                       "is_recurrent_charge", "web_access_level", "sub_print_access", "sub_print_friday_access",
-                       "is_discount_sub"]
-
-    last_subs = subscription_data.loc[subscription_data["is_paid"] == True][feature_columns].copy()
-    last_subs = last_subs.sort_values('start_time').groupby('user_id').tail(1)
-    last_subs_ids = last_subs['subscription_id_converted'].tolist()
-    last_subs = last_subs.drop(columns=['subscription_id_converted', 'start_time'])
-
-    previous_subs = subscription_data.loc[subscription_data["is_paid"] == True][feature_columns].copy()
-    previous_subs = previous_subs[~previous_subs['subscription_id_converted'].isin(last_subs_ids)]
-    previous_subs = previous_subs.sort_values('start_time').groupby('user_id').tail(1)
-    previous_subs = previous_subs.drop(columns=['subscription_id_converted', 'start_time'])
+    subscription_data.sort_values('start_time', inplace=True)
+    last_subs = subscription_data[subscription_data["is_paid"] == True].drop_duplicates('user_id', keep='last')
+    previous_subs = subscription_data[
+        (~subscription_data['subscription_id'].isin(last_subs['subscription_id'])) &
+        (subscription_data["is_paid"] == True)
+    ].drop_duplicates('user_id', keep='last')
 
     last_subs = pd.merge(last_subs, previous_subs, how="left", on="user_id", suffixes=("_last", "_previous"))
-    last_subs = last_subs.fillna(0)
+    last_subs = last_subs.fillna(0.0)
 
-    computable_columns = {"length": "per_change",
-                          "is_recurrent": "val_change",
-                          "amount": "per_change",
-                          "is_recurrent_charge": "val_change",
-                          "web_access_level": "val_change",
-                          "sub_print_access": "val_change",
-                          "sub_print_friday_access": "val_change",
-                          "is_discount_sub": "val_change"
-                          }
+    computable_columns = {
+        "length": "per_change",
+        "is_recurrent": "val_change",
+        "amount": "per_change",
+        "is_recurrent_charge": "val_change",
+        "web_access_level": "val_change",
+        "sub_print_access": "val_change",
+        "sub_print_friday_access": "val_change",
+        "is_discount_sub": "val_change"
+    }
 
     for key_column in computable_columns:
         if computable_columns[key_column] == 'per_change':
-            last_subs[key_column + '_diff'] = \
-            last_subs[[key_column + '_previous', key_column + '_last']].pct_change(axis=1)[
+            last_subs[key_column + '_diff'] = last_subs[[key_column + '_previous', key_column + '_last']].pct_change(axis=1)[
                 key_column + '_last'].tolist()
             last_subs[key_column + '_diff'].replace(np.float("inf"), 1, inplace=True)
         elif computable_columns[key_column] == 'val_change':
@@ -604,3 +526,70 @@ def get_subscription_stats(stats_end_time: datetime):
 
     return users_sub_stats
 
+
+def get_sub_gaps_query(
+        max_date: datetime,
+        mysql_predplatne_session: Session,
+        subscriptions,
+        relevant_users,
+):
+    relevant_subs = mysql_predplatne_session.query(subscriptions).filter(
+        and_(
+            subscriptions.c['user_id'].in_(relevant_users),
+            subscriptions.c['start_time'].cast(DATE) < max_date.date(),
+            subscriptions.c['is_paid'] == True
+        )
+    ).subquery()
+
+    relevant_subs_2 = mysql_predplatne_session.query(relevant_subs).subquery()
+
+    subs_joined = mysql_predplatne_session.query(
+        relevant_subs.c['end_time'],
+        relevant_subs_2.c['start_time'],
+        func.datediff(relevant_subs.c['end_time'], relevant_subs_2.c['start_time']).label('gap'),
+        relevant_subs_2.c['id']
+    ).join(
+        relevant_subs_2,
+        and_(
+            relevant_subs_2.c['user_id'] == relevant_subs.c['user_id'],
+            relevant_subs_2.c['start_time'] > relevant_subs.c['end_time'],
+        )
+    ).subquery()
+
+    min_diff_subs = mysql_predplatne_session.query(
+        func.min(
+            subs_joined.c['gap']
+        ).label('min_gap'),
+        subs_joined.c['id']
+    ).group_by(
+        subs_joined.c['id']
+    ).subquery()
+
+    sub_gaps = mysql_predplatne_session.query(
+        subs_joined
+    ).join(
+        min_diff_subs,
+        and_(
+            subs_joined.c['gap'] == min_diff_subs.c['min_gap'],
+            subs_joined.c['id'] == min_diff_subs.c['id']
+        )
+    ).subquery()
+
+    return sub_gaps
+
+
+def get_subscription_upgrades_subquery(
+    max_date: datetime,
+    mysql_predplatne_session: Session,
+    subscription_upgrades
+):
+    subscriptions_upgraded_subs = mysql_predplatne_session.query(
+        subscription_upgrades.c['base_subscription_id'].label("base_subscription_id"),
+        func.if_(func.count(subscription_upgrades.c['id']) > 0, True, False).label("is_upgraded")
+    ).group_by(
+        subscription_upgrades.c['base_subscription_id']
+    ).filter(
+        subscription_upgrades.c['created_at'].cast(DATE) < max_date.date(),
+    ).subquery()
+
+    return subscriptions_upgraded_subs
