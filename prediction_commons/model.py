@@ -288,7 +288,7 @@ class PredictionModel(object):
         Create lists of individual category variables for consistent encoding between train set, test set and
         prediction set
         '''
-        for column in self.feature_columns.CATEGORICAL_COLUMNS:
+        for column in self.feature_columns.categorical_columns:
             self.category_list_dict[column] = list(self.user_profiles[column].unique()) + ['Unknown']
 
     def encode_unknown_categories(self, data: pd.Series):
@@ -329,7 +329,7 @@ class PredictionModel(object):
         :param category_lists_dict:
         :return:
         '''
-        for column in self.feature_columns.CATEGORICAL_COLUMNS:
+        for column in self.feature_columns.categorical_columns:
             dummies = self.generate_dummy_columns_from_categorical_column(data[column])
             self.feature_columns.extend_categorical_variants(dummies.columns)
             data = pd.concat(
@@ -692,7 +692,7 @@ class PredictionModel(object):
             'time_based_columns': self.feature_columns.time_based_columns,
             'categorical_columns': [
                 column for column in self.variable_importances.index
-                for category in self.feature_columns.CATEGORICAL_COLUMNS if f'{category}_' in column
+                for category in self.feature_columns.categorical_columns if f'{category}_' in column
             ],
             'bool_columns': self.feature_columns.BOOL_COLUMNS,
             'numeric_columns_with_window_variants': self.feature_columns.numeric_columns_window_variants,
@@ -850,7 +850,7 @@ class PredictionModel(object):
         self.prediction_data = pd.concat(
             [
                 feature_frame_numeric.sort_index(),
-                data[self.feature_columns.BOOL_COLUMNS + self.feature_columns.CATEGORICAL_COLUMNS].sort_index()
+                data[self.feature_columns.BOOL_COLUMNS + self.feature_columns.categorical_columns].sort_index()
             ],
             axis=1
         )

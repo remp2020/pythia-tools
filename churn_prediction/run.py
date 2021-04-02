@@ -247,25 +247,25 @@ class ChurnPredictionModel(PredictionModel):
         for date in dates_for_preaggregation:
             if len(dates_for_preaggregation) > 1:
                 logger.setLevel(logging.ERROR)
-            try:
-                churn_feature_builder = ChurnFeatureBuilder(
-                    aggregation_time=date,
-                    moving_window_length=self.moving_window,
-                    feature_aggregation_functions=self.feature_aggregation_functions
-                )
-                churn_feature_builder.insert_daily_feature_frame(
-                    meta_columns_w_values={
-                        'pipeline_version': CURRENT_PIPELINE_VERSION,
-                        'created_at': datetime.utcnow(),
-                        'window_days': self.moving_window,
-                        'feature_aggregation_functions': ','.join(
-                            list(self.feature_aggregation_functions.keys())
-                        )
-                    }
-                )
+            # try:
+            churn_feature_builder = ChurnFeatureBuilder(
+                aggregation_time=date,
+                moving_window_length=self.moving_window,
+                feature_aggregation_functions=self.feature_aggregation_functions
+            )
+            churn_feature_builder.insert_daily_feature_frame(
+                meta_columns_w_values={
+                    'pipeline_version': CURRENT_PIPELINE_VERSION,
+                    'created_at': datetime.utcnow(),
+                    'window_days': self.moving_window,
+                    'feature_aggregation_functions': ','.join(
+                        list(self.feature_aggregation_functions.keys())
+                    )
+                }
+            )
 
-            except Exception as e:
-                raise ValueError(f'Failed to preaggregate & upload data for data: {date} with error: {e}')
+            # except Exception as e:
+            #     raise ValueError(f'Failed to preaggregate & upload data for data: {date} with error: {e}')
 
             logger.setLevel(logging.INFO)
             logger.info(f'Date {date} succesfully aggregated & uploaded to BQ')

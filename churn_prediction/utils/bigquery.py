@@ -55,7 +55,12 @@ class ChurnColumnJsonDumper(ColumnJsonDumper):
     def __init__(self, full_query, features_in_data, features_expected):
         super().__init__(full_query, features_in_data, features_expected)
         self.feature_type_to_column_mapping.update(
-            {'device_based_columns': self.features_expected.device_based_features}
+            {
+                'device_based_columns': self.features_expected.device_based_features,
+                'numeric_columns_subscriptions_base': self.features_expected.numeric_columns_subscriptions_base,
+                'numeric_columns_subscriptions_derived': self.features_expected.numeric_columns_subscriptions_derived,
+                'categorical_columns_subscriptions': self.features_expected.categorical_columns_subscriptions
+            }
         )
         self.column_defaults.update(
             {'device': '0.0'}
@@ -73,7 +78,7 @@ class SubscriptionFeatureBuilder:
     ):
         self.max_date = max_date
         self.min_date = min_date
-        client_secrets_path = f"../../{os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')}"
+        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
         self.credentials = service_account.Credentials.from_service_account_file(
             client_secrets_path,
         )
@@ -85,7 +90,7 @@ class SubscriptionFeatureBuilder:
         database = os.getenv('BIGQUERY_PROJECT_ID')
         schema = os.getenv('BIGQUERY_DATASET')
         self.sub_data = get_sqla_table(
-            table_name=f'{database}.{schema}.sub_data', engine=self.connection,
+            table_name=f'{database}.{schema}.sub_data', engine=self.engine,
         )
 
         self.sub_desc_column_names = ["length", "is_paid", "sub_print_access", "sub_print_friday_access"]
@@ -93,7 +98,7 @@ class SubscriptionFeatureBuilder:
     def upload_sub_data(self):
         from churn_prediction.utils.mysql import get_subscription_data
 
-        if not self.engine.has_table('sub_data', os.getenv('BIGQUERY_DATASET')):
+        if not self.engine.dialect.has_table(self.engine, 'sub_data', os.getenv('BIGQUERY_DATASET')):
             self.min_date = None
         else:
             result = self.engine.execute(
@@ -313,7 +318,7 @@ class SubscriptionFeatureBuilder:
         last_subscriptions_query = self.get_k_to_last_subscriptions(1)
         sub_prices = self.sub_prices_query()
         last_subscriptions_query = self.bq_session.query(
-            last_subscriptions_query
+            *[column.label(column.name) for column in last_subscriptions_query.columns]
         ).join(
             sub_prices,
             and_(
@@ -327,7 +332,7 @@ class SubscriptionFeatureBuilder:
 
         second_to_last_subscriptions_query = self.get_k_to_last_subscriptions(2)
         second_to_last_subscriptions_query = self.bq_session.query(
-            second_to_last_subscriptions_query
+            *[column.label(column.name) for column in second_to_last_subscriptions_query.columns]
         ).join(
             sub_prices,
             and_(
@@ -361,7 +366,7 @@ class SubscriptionFeatureBuilder:
                                'sub_print_friday_access', 'is_discount']
 
         last_and_previous_subscription = self.bq_session.query(
-            last_and_previous_subscription,
+            *[column.label(column.name) for column in last_and_previous_subscription.columns],
             # Diff for numeric columns
             *[
                 case(
@@ -397,47 +402,14 @@ class SubscriptionFeatureBuilder:
         subscription_level_features_query = self.get_subscription_based_features()
 
         merged_features_query = self.bq_session.query(
-            *[column.label(column.name) for column in user_level_features_query.columns],
-            *[column.label(column.name) for column in subscription_level_features_query.columns]
+            *[column.label(column.name) for column in user_level_features_query.columns if column.name != 'user_id'],
+            *[column.label(column.name) for column in subscription_level_features_query.columns
+              if column.name != 'user_id'],
+            user_level_features_query.c['user_id'].cast(String).label('user_id')
         ).join(
             subscription_level_features_query,
             subscription_level_features_query.c['user_id'] == user_level_features_query.c['user_id']
         ).subquery()
-
-        ['user_id', 'total_amount', 'average_amount', 'count_subs', 'paid_subs',
-         'free_subs', 'number_of_days_since_the_first_paid_sub', 'average_gap',
-         'max_gap', 'total_days_paid_sub', 'total_days_free_sub',
-         'upgraded_subs', 'discount_subs', 'created_at_last',
-         'subscription_id_last', 'start_time_last', 'end_time_last',
-         'length_last', 'is_recurrent_last', 'is_paid_last',
-         'subscription_type_last', 'subscription_type_id_last',
-         'payment_count_last', 'amount_last', 'additional_amount_last',
-         'is_recurrent_charge_last', 'payment_status_last', 'sub_type_name_last',
-         'sub_type_code_last', 'sub_type_length_last', 'sub_type_price_last',
-         'sub_web_access_last', 'sub_standard_access_last',
-         'sub_club_access_last', 'sub_print_access_last',
-         'sub_print_friday_access_last', 'is_upgraded_last',
-         'base_subscription_id_last', 'upgrade_type_last', 'is_upgrade_last',
-         'reverse_order_rank_last', 'web_access_level_last', 'daily_price_last',
-         'is_discount_last', 'created_at_previous', 'subscription_id_previous',
-         'start_time_previous', 'end_time_previous', 'length_previous',
-         'is_recurrent_previous', 'is_paid_previous',
-         'subscription_type_previous', 'subscription_type_id_previous',
-         'payment_count_previous', 'amount_previous',
-         'additional_amount_previous', 'is_recurrent_charge_previous',
-         'payment_status_previous', 'sub_type_name_previous',
-         'sub_type_code_previous', 'sub_type_length_previous',
-         'sub_type_price_previous', 'sub_web_access_previous',
-         'sub_standard_access_previous', 'sub_club_access_previous',
-         'sub_print_access_previous', 'sub_print_friday_access_previous',
-         'is_upgraded_previous', 'base_subscription_id_previous',
-         'upgrade_type_previous', 'is_upgrade_previous',
-         'reverse_order_rank_previous', 'web_access_level_previous',
-         'daily_price_previous', 'is_discount_previous', 'user_id',
-         'length_diff', 'amount_diff', 'is_recurrent_diff',
-         'is_recurrent_charge_diff', 'web_access_level_diff',
-         'sub_print_access_diff', 'sub_print_friday_access_diff',
-         'is_discount_diff']
 
         return merged_features_query
 
@@ -523,7 +495,7 @@ class ChurnFeatureBuilder(FeatureBuilder):
         ).subquery()
 
         feature_query_w_outcome = self.bq_session.query(
-            feature_query,
+            *[column.label(column.name) for column in feature_query.columns],
             relevant_events_deduplicated.c['outcome'].label('outcome'),
             relevant_events_deduplicated.c['date'].label('outcome_date')
         ).outerjoin(
@@ -761,7 +733,7 @@ class ChurnFeatureBuilder(FeatureBuilder):
             max_date=self.aggregation_time,
             min_date=None,
             engine=self.bq_engine,
-            connection=self.bq_engine,
+            connection=self.bq_engine.connect(),
             session=self.bq_session
         )
 
@@ -771,10 +743,10 @@ class ChurnFeatureBuilder(FeatureBuilder):
 
         full_query = self.bq_session.query(
             *[column.label(column.name) for column in full_query_transactional.columns],
-            *[column.label(column.name) for column in full_query_behavioural.columns]
+            *[column.label(column.name) for column in full_query_behavioural.columns if column.name != 'user_id']
         ).join(
             full_query_behavioural,
             full_query_behavioural.c['user_id'] == full_query_transactional.c['user_id']
-        )
+        ).subquery()
 
         return full_query

@@ -21,11 +21,12 @@ def rolling_daily_model_record_level_profile(id_column: str):
         bigquery.SchemaField('features__numeric_columns_with_window_variants', 'STRING'),
     ]
 
-    # For browsers level predictions, we only have one device per record, which means device based features are
-    # categorical. For user level features where a user can have multiple devices, we're using a separate feature
-    # category containing counts for most popular device types in a given period
+    # There are differences in columns we want to store between record levels
     if id_column == 'user_id':
         schema.append(bigquery.SchemaField('features__device_based_columns', 'STRING'))
+        schema.append(bigquery.SchemaField('features__numeric_columns_subscriptions_base', 'STRING'))
+        schema.append(bigquery.SchemaField('features__numeric_columns_subscriptions_derived', 'STRING'))
+        schema.append(bigquery.SchemaField('features__categorical_columns_subscriptions', 'STRING'))
 
     return schema
 

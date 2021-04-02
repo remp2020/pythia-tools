@@ -85,6 +85,11 @@ class FeatureColumns(object):
     ):
         self.aggregation_function_aliases = aggregation_function_aliases
         self.aggregation_time = aggregation_time
+
+        # The difference between columns and features with categorical variables we need to create dummy variables out
+        # of the columns, categorical_columns hold the names of the columns we unpack and featues are the unpacked
+        # features
+        self.categorical_columns = self.CATEGORICAL_COLUMNS
         self.categorical_features = []
 
         # Add one version for each aggregation whenever available

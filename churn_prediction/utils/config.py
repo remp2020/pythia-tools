@@ -21,6 +21,35 @@ class ChurnFeatureColumns(FeatureColumns):
 
     def __init__(self, aggregation_function_aliases, aggregation_time):
         super().__init__(aggregation_function_aliases, aggregation_time)
+        self.numeric_columns_subscriptions_base = [
+            'total_amount', 'average_amount', 'count_subs', 'paid_subs',
+            'free_subs', 'number_of_days_since_the_first_paid_sub', 'average_gap',
+            'max_gap', 'total_days_paid_sub', 'total_days_free_sub',
+            'upgraded_subs', 'discount_subs'
+        ]
+
+        suffixes = ['last', 'previous', 'diff']
+
+        self.numeric_columns_subscriptions_derived = [
+            f'amount_{suffix}' for suffix in suffixes
+        ]
+
+        self.numeric_columns_all.extend(
+            self.numeric_columns_subscriptions_base + self.numeric_columns_subscriptions_derived
+        )
+
+        self.categorical_columns_subscriptions = [
+                f'{column}_{suffix}' for column in
+                [
+                    'length', 'is_recurrent', 'is_recurrent_charge',
+                    'web_access_level', 'sub_print_access', 'sub_print_friday_access'
+                ]
+                for suffix in suffixes
+            ]
+
+        self.categorical_columns.extend(
+            self.categorical_columns_subscriptions
+        )
 
     def get_device_information_features(
             self
@@ -55,4 +84,9 @@ class ChurnModelFeatures(ModelFeatures):
     def __init__(self):
         super().__init__()
 
-        self.numeric_features.append('device_based_columns')
+        self.numeric_features.extend(
+            [
+                'device_based_columns', 'numeric_columns_subscriptions_base', 'numeric_columns_subscriptions_derived',
+                'categorical_columns_subscriptions'
+            ]
+        )
