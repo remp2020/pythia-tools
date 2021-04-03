@@ -1,7 +1,7 @@
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import DATE, String, INTEGER
-from sqlalchemy import and_, func, case, Float, text
+from sqlalchemy import and_, func, case, Float, text, Table
 from sqlalchemy.sql.expression import cast, literal
 from pybigquery.sqlalchemy_bigquery import INTEGER
 from google.oauth2 import service_account
@@ -87,11 +87,8 @@ class SubscriptionFeatureBuilder:
         self.bq_session = session
         self.connection = connection
 
-        database = os.getenv('BIGQUERY_PROJECT_ID')
-        schema = os.getenv('BIGQUERY_DATASET')
-        self.sub_data = get_sqla_table(
-            table_name=f'{database}.{schema}.sub_data', engine=self.engine,
-        )
+        # We can't initialize the table yet in case it doesn't exist
+        self.sub_data = None
 
         self.sub_desc_column_names = ["length", "is_paid", "sub_print_access", "sub_print_friday_access"]
 
@@ -117,6 +114,13 @@ class SubscriptionFeatureBuilder:
                 if_exists='append'
             )
 
+        database = os.getenv('BIGQUERY_PROJECT_ID')
+        schema = os.getenv('BIGQUERY_DATASET')
+        self.sub_data = get_sqla_table(
+            table_name=f'{database}.{schema}.sub_data', engine=self.engine,
+
+        )
+
     def sub_web_access(self):
 
         return case(
@@ -140,7 +144,10 @@ class SubscriptionFeatureBuilder:
 
         sub_prices = self.bq_session.query(
             func.avg(
-                (self.sub_data.c["amount"] - self.sub_data.c["additional_amount"]) / self.sub_data.c['length']
+                func.safe_divide(
+                    (self.sub_data.c["amount"] - self.sub_data.c["additional_amount"]),
+                    self.sub_data.c['length']
+                )
             ).label('average_price'),
             sub_web_access,
             *sub_desc_columns
@@ -159,8 +166,10 @@ class SubscriptionFeatureBuilder:
                 partition_by=self.sub_data.c['user_id'],
                 order_by=self.sub_data.c['start_time']
             ).label('previous_sub_end_time'),
-            ((self.sub_data.c['amount'] - self.sub_data.c['additional_amount']) / self.sub_data.c['length']).label(
-                'daily_price')
+            (func.safe_divide(
+                (self.sub_data.c['amount'] - self.sub_data.c['additional_amount']),
+                self.sub_data.c['length']
+            )).label('daily_price')
         ).subquery()
 
         sub_prices = self.sub_prices_query()
@@ -271,11 +280,10 @@ class SubscriptionFeatureBuilder:
                 order_by=self.sub_data.c['start_time']
             ).label('reverse_order_rank'),
             self.sub_web_access(),
-            (
-                    (
-                            self.sub_data.c["amount"] - self.sub_data.c["additional_amount"]
-                    ) / self.sub_data.c['length']).label(
-                'daily_price')
+            func.safe_divide(
+                (self.sub_data.c["amount"] - self.sub_data.c["additional_amount"]),
+                self.sub_data.c['length']
+            ).label('daily_price')
         ).filter(
             self.sub_data.c['start_time'].cast(DATE) <= self.max_date.date()
         ).subquery()
