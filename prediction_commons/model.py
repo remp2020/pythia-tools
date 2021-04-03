@@ -160,7 +160,6 @@ class PredictionModel(object):
 
         if self.user_profiles.empty:
             raise ValueError(f'No data retrieved for {self.min_date} - {self.max_date} aborting model training')
-
         self.unpack_json_columns()
 
         for column in [column for column in self.feature_columns.return_feature_list()
@@ -314,7 +313,7 @@ class PredictionModel(object):
         '''
         data = self.encode_unknown_categories(data.copy())
         dummies = pd.get_dummies(pd.Categorical(data, categories=self.category_list_dict[data.name]))
-        dummies.columns = [data.name + '_' + dummy_column for dummy_column in dummies.columns]
+        dummies.columns = [f'{data.name}_{dummy_column}' for dummy_column in dummies.columns]
         dummies.drop(columns=data.name + '_Unknown', axis=1, inplace=True)
         dummies.index = data.index
 

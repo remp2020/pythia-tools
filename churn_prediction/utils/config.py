@@ -31,7 +31,8 @@ class ChurnFeatureColumns(FeatureColumns):
         suffixes = ['last', 'previous', 'diff']
 
         self.numeric_columns_subscriptions_derived = [
-            f'amount_{suffix}' for suffix in suffixes
+            f'{column}_{suffix}' for suffix in suffixes
+            for column in ['amount', 'length']
         ]
 
         self.numeric_columns_all.extend(
@@ -41,7 +42,7 @@ class ChurnFeatureColumns(FeatureColumns):
         self.categorical_columns_subscriptions = [
                 f'{column}_{suffix}' for column in
                 [
-                    'length', 'is_recurrent', 'is_recurrent_charge',
+                    'is_recurrent', 'is_recurrent_charge',
                     'web_access_level', 'sub_print_access', 'sub_print_friday_access'
                 ]
                 for suffix in suffixes
@@ -86,7 +87,8 @@ class ChurnModelFeatures(ModelFeatures):
 
         self.numeric_features.extend(
             [
-                'device_based_columns', 'numeric_columns_subscriptions_base', 'numeric_columns_subscriptions_derived',
-                'categorical_columns_subscriptions'
+                'device_based_columns', 'numeric_columns_subscriptions_base', 'numeric_columns_subscriptions_derived'
             ]
         )
+
+        self.categorical_features.append('categorical_columns_subscriptions')
