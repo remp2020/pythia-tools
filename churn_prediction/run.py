@@ -130,17 +130,6 @@ class ChurnPredictionModel(PredictionModel):
             for column in ['article_pageviews_count', 'sum_paid', 'avg_price']:
                 self.user_profiles[column] = 0.0
 
-        try:
-            self.get_user_history_features_from_mysql()
-            logger.info('Successfully added user payment history features from mysql')
-        except Exception as e:
-            logger.info(
-                f'''Failed adding payment history features from mysql with exception:
-                {e};
-                proceeding with remaining features''')
-            for column in ['clv']:
-                self.user_profiles[column] = 0.0
-
         self.feature_columns.add_payment_history_features()
         self.feature_columns.add_global_context_features()
 
@@ -149,29 +138,6 @@ class ChurnPredictionModel(PredictionModel):
             self.user_profiles['feature_aggregation_functions'].tolist()[0].split(','),
             self.max_date
         )
-
-    def get_user_history_features_from_mysql(self):
-        '''
-        Requires:
-            - max_date
-        Retrieves clv and days since last subscription from the predplatne database data is then written to the main
-        feature frame iterating over rows of payment history features, since each feature frame row might contain
-        multiple user ids. Currently there is no logic for when there are multiple user ids, we simply use data
-        from the last relevant payment history row.
-        '''
-        payment_history_features = get_payment_history_features(self.max_date)
-        payment_history_features['user_id'] = payment_history_features['user_id'].astype(int).astype(str)
-        self.user_profiles = self.user_profiles.merge(
-            right=payment_history_features,
-            left_on='user_id',
-            right_on='user_id',
-            how='left'
-        )
-
-        self.user_profiles['clv'] = self.user_profiles['clv'].astype(float)
-        self.user_profiles['clv'].fillna(0.0, inplace=True)
-
-        return payment_history_features
 
     def get_contextual_features_from_mysql(self):
         '''
