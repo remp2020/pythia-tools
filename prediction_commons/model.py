@@ -659,19 +659,7 @@ class PredictionModel(object):
 
         self.remove_model_training_artefacts()
 
-    def upload_model_meta(self):
-        logger.info(f'Storing model metadata')
-        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
-        database = os.getenv('BIGQUERY_PROJECT_ID')
-        _, db_connection = create_connection(
-            f'bigquery://{database}',
-            engine_kwargs={'credentials_path': client_secrets_path}
-        )
-
-        credentials = service_account.Credentials.from_service_account_file(
-            client_secrets_path,
-        )
-
+    def create_model_meta_frame(self):
         self.model_meta = pd.DataFrame(
             {
                 'train_date': datetime.utcnow(),
@@ -685,7 +673,35 @@ class PredictionModel(object):
             index=[0]
         )
 
-        self.dump_feature_importances()
+        for feature_set_name, feature_set in {
+            'numeric_columns': self.feature_columns.numeric_columns,
+            'profile_numeric_columns_from_json_fields': self.feature_columns.profile_numeric_columns_from_json_fields,
+            'time_based_columns': self.feature_columns.time_based_columns,
+            'categorical_columns': [
+                column for column in self.variable_importances.index
+                for category in self.feature_columns.categorical_columns if f'{category}_' in column
+            ],
+            'bool_columns': self.feature_columns.BOOL_COLUMNS,
+            'numeric_columns_with_window_variants': self.feature_columns.numeric_columns_window_variants,
+            'device_based_columns': self.feature_columns.device_based_features
+        }.items():
+            self.dump_individual_feature_set(feature_set_name, feature_set)
+
+    def upload_model_meta(self):
+        logger.info(f'Storing model metadata')
+        client_secrets_path = os.getenv('GCLOUD_CREDENTIALS_SERVICE_ACCOUNT_JSON_KEY_PATH')
+        database = os.getenv('BIGQUERY_PROJECT_ID')
+        _, db_connection = create_connection(
+            f'bigquery://{database}',
+            engine_kwargs={'credentials_path': client_secrets_path}
+        )
+
+        credentials = service_account.Credentials.from_service_account_file(
+            client_secrets_path,
+        )
+
+        self.create_model_meta_frame()
+
         self.model_meta.to_gbq(
             destination_table=f'{os.getenv("BIGQUERY_DATASET")}.models',
             project_id=database,
@@ -695,7 +711,7 @@ class PredictionModel(object):
 
         logger.info(f'Model metadata stored')
 
-    def dump_individual_feature_set(self, feature_set, feature_set_name):
+    def dump_individual_feature_set(self, feature_set_name, feature_set):
         if isinstance(feature_set, list):
             feature_set_elements = feature_set
 
@@ -711,21 +727,6 @@ class PredictionModel(object):
                     feature_set_elements
                 ].to_dict()
             )
-
-    def dump_feature_importances(self):
-        for feature_set_name, feature_set in {
-            'numeric_columns': self.feature_columns.numeric_columns,
-            'profile_numeric_columns_from_json_fields': self.feature_columns.profile_numeric_columns_from_json_fields,
-            'time_based_columns': self.feature_columns.time_based_columns,
-            'categorical_columns': [
-                column for column in self.variable_importances.index
-                for category in self.feature_columns.categorical_columns if f'{category}_' in column
-            ],
-            'bool_columns': self.feature_columns.BOOL_COLUMNS,
-            'numeric_columns_with_window_variants': self.feature_columns.numeric_columns_window_variants,
-            'device_based_columns': self.feature_columns.device_based_features
-        }.items():
-            self.dump_individual_feature_set(feature_set, feature_set_name)
 
     def remove_model_training_artefacts(self):
         for artifact in [

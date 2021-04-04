@@ -270,8 +270,8 @@ class ChurnPredictionModel(PredictionModel):
             logger.setLevel(logging.INFO)
             logger.info(f'Date {date} succesfully aggregated & uploaded to BQ')
 
-    def dump_feature_importances(self):
-        super(ChurnPredictionModel, self).dump_feature_importances()
+    def create_model_meta_frame(self):
+        super(ChurnPredictionModel, self).create_model_meta_frame()
         for feature_set_name, feature_set in {
             'numeric_columns_subscriptions_base': self.feature_columns.numeric_columns_subscriptions_base,
             'numeric_columns_subscriptions_derived': self.feature_columns.numeric_columns_subscriptions_derived,
