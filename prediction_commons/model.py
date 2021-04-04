@@ -685,6 +685,34 @@ class PredictionModel(object):
             index=[0]
         )
 
+        self.dump_feature_importances()
+        self.model_meta.to_gbq(
+            destination_table=f'{os.getenv("BIGQUERY_DATASET")}.models',
+            project_id=database,
+            credentials=credentials,
+            if_exists='append'
+        )
+
+        logger.info(f'Model metadata stored')
+
+    def dump_individual_feature_set(self, feature_set, feature_set_name):
+        if isinstance(feature_set, list):
+            feature_set_elements = feature_set
+
+            self.model_meta[f'importances__{feature_set_name}'] = str(
+                self.variable_importances[
+                    feature_set_elements
+                ].to_dict()
+            )
+        elif isinstance(feature_set, dict):
+            feature_set_elements = sum(feature_set.values(), [])
+            self.model_meta[f'importances__{feature_set_name}'] = str(
+                self.variable_importances[
+                    feature_set_elements
+                ].to_dict()
+            )
+
+    def dump_feature_importances(self):
         for feature_set_name, feature_set in {
             'numeric_columns': self.feature_columns.numeric_columns,
             'profile_numeric_columns_from_json_fields': self.feature_columns.profile_numeric_columns_from_json_fields,
@@ -697,30 +725,7 @@ class PredictionModel(object):
             'numeric_columns_with_window_variants': self.feature_columns.numeric_columns_window_variants,
             'device_based_columns': self.feature_columns.device_based_features
         }.items():
-            if isinstance(feature_set, list):
-                feature_set_elements = feature_set
-
-                self.model_meta[f'importances__{feature_set_name}'] = str(
-                    self.variable_importances[
-                        feature_set_elements
-                    ].to_dict()
-                )
-            elif isinstance(feature_set, dict):
-                feature_set_elements = sum(feature_set.values(), [])
-                self.model_meta[f'importances__{feature_set_name}'] = str(
-                    self.variable_importances[
-                        feature_set_elements
-                    ].to_dict()
-                )
-
-        self.model_meta.to_gbq(
-            destination_table=f'{os.getenv("BIGQUERY_DATASET")}.models',
-            project_id=database,
-            credentials=credentials,
-            if_exists='append'
-        )
-
-        logger.info(f'Model metadata stored')
+            self.dump_individual_feature_set(feature_set, feature_set_name)
 
     def remove_model_training_artefacts(self):
         for artifact in [

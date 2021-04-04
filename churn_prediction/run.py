@@ -270,6 +270,18 @@ class ChurnPredictionModel(PredictionModel):
             logger.setLevel(logging.INFO)
             logger.info(f'Date {date} succesfully aggregated & uploaded to BQ')
 
+    def dump_feature_importances(self):
+        super(ChurnPredictionModel, self).dump_feature_importances()
+        for feature_set_name, feature_set in {
+            'numeric_columns_subscriptions_base': self.feature_columns.numeric_columns_subscriptions_base,
+            'numeric_columns_subscriptions_derived': self.feature_columns.numeric_columns_subscriptions_derived,
+            'categorical_columns_subscriptions': [
+                column for column in self.variable_importances.index
+                for category in self.feature_columns.categorical_columns_subscriptions if f'{category}_' in column
+            ]
+        }.items():
+            self.dump_individual_feature_set(feature_set_name, feature_set)
+
 
 def mkdatetime(datestr: str) -> datetime:
     '''
