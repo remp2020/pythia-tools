@@ -935,7 +935,7 @@ class PredictionModel(object):
         logger.setLevel(logging.INFO)
 
         self.batch_predict(self.user_profiles)
-        logging.info('  * Generatincg predictions')
+        logging.info('  * Generating predictions')
 
         self.predictions['model_version'] = self.current_model_version
         self.predictions['created_at'] = datetime.utcnow()
