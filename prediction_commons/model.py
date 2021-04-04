@@ -434,7 +434,7 @@ class PredictionModel(object):
         else:
             suffix = 'json'
 
-        if self.path_to_model_files in os.listdir(None):
+        if self.path_to_model_files.replace('/', '') in os.listdir(None):
             if f'{self.model_type}_{self.model_record_level}_scaler_{self.model_date}.pkl' in os.listdir(
                     None if self.path_to_model_files == '' else self.path_to_model_files):
                 os.remove(f'{self.path_to_model_files}{self.model_type}_'
