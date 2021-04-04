@@ -752,7 +752,7 @@ class ChurnFeatureBuilder(FeatureBuilder):
         full_query = self.bq_session.query(
             *[column.label(column.name) for column in full_query_transactional.columns],
             *[column.label(column.name) for column in full_query_behavioural.columns if column.name != 'user_id']
-        ).join(
+        ).outerjoin(
             full_query_behavioural,
             full_query_behavioural.c['user_id'] == full_query_transactional.c['user_id']
         ).subquery()
