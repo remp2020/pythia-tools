@@ -367,6 +367,9 @@ if __name__ == "__main__":
             dry_run=False
             )
 
+        if conversion_prediction.max_date.date() > datetime.utcnow().date():
+            raise ValueError("Can't train model on future data, check your date range")
+
         conversion_prediction.model_training_pipeline(
             model_arguments={'n_estimators': 250}
         )
@@ -393,4 +396,8 @@ if __name__ == "__main__":
             artifacts_to_retain=ArtifactRetentionCollection.MODEL_RETRAINING,
             dry_run=False
         )
+
+        if conversion_prediction.max_date.date() > datetime.utcnow().date():
+            raise ValueError("Can't preaggregate future data, check your date range")
+
         conversion_prediction.pregaggregate_daily_profiles()

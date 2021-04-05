@@ -812,6 +812,13 @@ class PredictionModel(object):
                 self.moving_window
             )
 
+        if self.model_meta.empty:
+            raise ValueError('''
+            No model record found in BQ, please check if a model record exists for which the max date (date of newest 
+            record in the train set) is lower than the min date for the prediction dataset. The model we're looking for
+            also needs to have the same window size and aggregation function (we're not changing these in PROD)
+            ''')
+
         for column in self.model_features.get_expected_table_column_names('models'):
             feature_set = column.replace('importances__', '')
             if feature_set in self.model_features.numeric_features:
@@ -929,6 +936,9 @@ class PredictionModel(object):
         '''
         logger.info(f'Executing prediction generation')
         self.get_full_user_profiles_by_date(DataRetrievalMode.PREDICT_DATA)
+        if self.user_profiles.empty:
+            raise ValueError('No data retrieved from BQ')
+
         self.unpack_feature_frame()
         self.artifact_retention_mode = ArtifactRetentionMode.DROP
 
