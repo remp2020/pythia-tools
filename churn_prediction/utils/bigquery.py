@@ -39,7 +39,8 @@ class ChurnDataDownloader(DataDownloader):
                         outcome_date,
                         outcome,
                         feature_aggregation_functions,
-                        {','.join([column.name for column in table.columns if 'features' in column.name])}
+                        {','.join([column.name for column in table.columns if 'features' in column.name])},
+                        RANK() OVER (PARTITION  BY user_id ORDER BY date DESC) AS date_rank
                     FROM
                         {os.getenv('BIGQUERY_DATASET')}.rolling_daily_{self.model_record_level}_profile
                     WHERE
@@ -47,6 +48,9 @@ class ChurnDataDownloader(DataDownloader):
                         AND outcome_date <= @end_time
                         AND ((outcome_date >= @start_time){minority_label_filter})
                 '''
+
+        if not self.historically_oversampled_outcome_type:
+            query = self.deduplicate_records(query, table)
 
         return query
 
@@ -419,7 +423,21 @@ class SubscriptionFeatureBuilder:
             subscription_level_features_query.c['user_id'] == user_level_features_query.c['user_id']
         ).subquery()
 
-        return merged_features_query
+        database = os.getenv('BIGQUERY_PROJECT_ID')
+        schema = os.getenv('BIGQUERY_DATASET')
+
+        user_id_table = get_sqla_table(
+            table_name=f'{database}.{schema}.user_ids_filter', engine=self.engine,
+        )
+
+        merged_features_filtered_query = self.bq_session.query(
+            merged_features_query
+        ).join(
+            user_id_table,
+            merged_features_query.c['user_id'] == user_id_table.c['user_id'].cast(String)
+        ).subquery('filtered_subscription_data')
+
+        return merged_features_filtered_query
 
 
 class ChurnFeatureBuilder(FeatureBuilder):
@@ -503,10 +521,12 @@ class ChurnFeatureBuilder(FeatureBuilder):
         ).subquery()
 
         feature_query_w_outcome = self.bq_session.query(
-            *[column.label(column.name) for column in feature_query.columns],
+            *[column.label(column.name) for column in feature_query.columns if column.name not in ['user_id', 'date']],
+            func.coalesce(feature_query.c['user_id'], relevant_events_deduplicated.c['user_id']).label('user_id'),
+            func.coalesce(feature_query.c['date'], self.aggregation_time.date()).label('date'),
             relevant_events_deduplicated.c['outcome'].label('outcome'),
             relevant_events_deduplicated.c['date'].label('outcome_date')
-        ).outerjoin(
+        ).join(
             relevant_events_deduplicated,
             and_(
                 feature_query.c['user_id'] == relevant_events_deduplicated.c['user_id'],
@@ -520,7 +540,8 @@ class ChurnFeatureBuilder(FeatureBuilder):
                     feature_query.c['date'],
                     text('day')
                 ) > 0,
-            )
+            ),
+            full=True
         ).subquery('feature_query_w_outcome')
 
         return feature_query_w_outcome
@@ -606,9 +627,11 @@ class ChurnFeatureBuilder(FeatureBuilder):
             table_name=f'{database}.{schema}.user_ids_filter', engine=self.bq_engine,
         )
 
-        filtered_data = self.bq_session.query(current_data).join(
+        filtered_data = self.bq_session.query(
+            *[column.label(column.name) for column in current_data.columns]
+        ).join(
             user_id_table,
-            current_data.c['user_id'] == user_id_table.c['user_id'].cast(String)
+            current_data.c['user_id'] == user_id_table.c['user_id'].cast(String),
         ).subquery('filtered_data')
 
         return filtered_data
@@ -750,8 +773,10 @@ class ChurnFeatureBuilder(FeatureBuilder):
         full_query_transactional = subscription_feature_builder.merge_all_subscription_related_features()
 
         full_query = self.bq_session.query(
-            *[column.label(column.name) for column in full_query_transactional.columns],
-            *[column.label(column.name) for column in full_query_behavioural.columns if column.name != 'user_id']
+            *[column.label(column.name) for column in full_query_transactional.columns if column.name != 'date'],
+            *[column.label(column.name) for column in full_query_behavioural.columns
+              if column.name not in ('user_id', 'date')],
+            func.coalesce(full_query_behavioural.c['date'], self.aggregation_time.date()).label('date')
         ).outerjoin(
             full_query_behavioural,
             full_query_behavioural.c['user_id'] == full_query_transactional.c['user_id']
