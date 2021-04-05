@@ -30,39 +30,6 @@ def get_sqlalchemy_tables_w_session(db_connection_string_name: str, schema: str,
     return table_mapping
 
 
-def get_payment_history_features(end_time: datetime):
-    predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
-        'MYSQL_CRM_CONNECTION_STRING',
-        'MYSQL_CRM_DB',
-        ['payments', 'subscriptions']
-    )
-
-    mysql_predplatne_session = predplatne_mysql_mappings['session']
-    payments = predplatne_mysql_mappings['payments']
-
-    clv = mysql_predplatne_session.query(
-        func.sum(payments.c['amount']).label('clv'),
-        payments.c['user_id']
-    ).filter(
-        and_(
-            payments.c['created_at'] <= end_time,
-            payments.c['status'] == 'paid'
-        )
-    ).group_by(
-        payments.c['user_id']
-    )
-
-    user_payment_history = pd.read_sql(
-        clv.statement,
-        clv.session.bind
-    )
-
-    user_payment_history['clv'] = user_payment_history['clv'].astype(float)
-    mysql_predplatne_session.close()
-
-    return user_payment_history
-
-
 def get_global_context(start_time, end_time):
     beam_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_BEAM_CONNECTION_STRING',
@@ -90,7 +57,7 @@ def get_global_context(start_time, end_time):
     ).filter(
         payments.c['created_at'].cast(DATE) >= start_time,
         payments.c['created_at'].cast(DATE) <= end_time,
-        payments.c['status'] == 'paid'
+        payments.c['status'].in_(['paid', 'prepaid', 'family', 'upgrade'])
     ).group_by(
         'date'
     )
@@ -149,7 +116,7 @@ def get_users_with_expirations(
         payments.c['subscription_id'] == subscriptions.c['id']
     ).filter(
         and_(
-            payments.c['status'].in_(['paid', 'prepaid']),
+            payments.c['status'].in_(['paid', 'prepaid', 'family', 'upgrade']),
             func.datediff(subscriptions.c['end_time'], aggregation_date) <= EVENT_LOOKAHEAD,
             func.datediff(subscriptions.c['end_time'], aggregation_date) > 0,
         )
@@ -308,7 +275,8 @@ def get_subscription_data(
         isouter=True
     ).filter(
         and_(
-            *get_table_created_at_filters(subscriptions, max_time, min_time)
+            *get_table_created_at_filters(subscriptions, max_time, min_time),
+            payments_grouped_filtered.c['payment_status'].in_(['paid', 'prepaid', 'family', 'upgrade'])
         )
     ).order_by(
         subscriptions.c['user_id'],

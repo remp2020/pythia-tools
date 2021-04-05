@@ -26,7 +26,7 @@ from prediction_commons.utils.config import PROFILE_COLUMNS, LOGGING
 from prediction_commons.utils.enums import NormalizedFeatureHandling, ArtifactRetentionMode, \
     ArtifactRetentionCollection, DataRetrievalMode, OutcomeLabelCategory
 from prediction_commons.utils.db_utils import create_connection
-from churn_prediction.utils.mysql import get_payment_history_features, get_global_context
+from churn_prediction.utils.mysql import get_global_context
 from prediction_commons.model import PredictionModel
 from churn_prediction.utils.bigquery import ChurnFeatureBuilder
 

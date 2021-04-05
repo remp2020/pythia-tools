@@ -48,6 +48,8 @@ class ChurnFeatureColumns(FeatureColumns):
                 for suffix in suffixes
             ]
 
+        self.categorical_columns_subscriptions.extend(['payment_status_last', 'payment_status_previous'])
+
         self.categorical_columns.extend(
             self.categorical_columns_subscriptions
         )
