@@ -65,13 +65,32 @@ class DataDownloader:
                 outcome_date,
                 outcome,
                 feature_aggregation_functions,
-                {','.join([column.name for column in table.columns if 'features' in column.name])}
+                {','.join([column.name for column in table.columns if 'features' in column.name])},
+                RANK() OVER (PARTITION  BY {self.model_record_level}_id ORDER BY date DESC) AS date_rank
             FROM
                 {os.getenv('BIGQUERY_DATASET')}.rolling_daily_{self.model_record_level}_profile
             WHERE
                 window_days = @window_days
                 AND outcome_date <= @end_time
                 AND ((outcome_date >= @start_time){minority_label_filter})
+        '''
+
+        if not self.historically_oversampled_outcome_type:
+            query = self.deduplicate_records(query, table)
+
+        return query
+
+    def deduplicate_records(self, query, table):
+        query = f'''
+            SELECT
+                {self.model_record_level}_id,
+                date,
+                outcome_date,
+                outcome,
+                feature_aggregation_functions,
+                {','.join([column.name for column in table.columns if 'features' in column.name])},
+            FROM ({query}) ranked_records
+        WHERE date_rank = 1
         '''
 
         return query
