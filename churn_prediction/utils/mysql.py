@@ -1,15 +1,14 @@
 import pandas as pd
 from sqlalchemy.types import DATE
-from sqlalchemy import and_, func, cast, or_, case
+from sqlalchemy import and_, func
 from datetime import datetime
 from sqlalchemy import MetaData, Table
 
 from churn_prediction.utils.config import EVENT_LOOKAHEAD
 from prediction_commons.utils.db_utils import create_connection
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from typing import List, Dict
 import os
-import numpy as np
 
 
 def get_sqla_table(table_name, engine, schema='public'):
@@ -141,20 +140,36 @@ def get_users_with_expirations(
     mysql_predplatne_session = predplatne_mysql_mappings['session']
     payments = predplatne_mysql_mappings['payments']
     subscriptions = predplatne_mysql_mappings['subscriptions']
-
     relevant_users = mysql_predplatne_session.query(
-        subscriptions.c['user_id']
+        subscriptions.c['user_id'],
+        subscriptions.c['end_time'],
+        subscriptions.c['start_time']
     ).join(
         payments,
         payments.c['subscription_id'] == subscriptions.c['id']
     ).filter(
         and_(
-            payments.c['status'] == 'paid',
+            payments.c['status'].in_(['paid', 'prepaid']),
             func.datediff(subscriptions.c['end_time'], aggregation_date) <= EVENT_LOOKAHEAD,
             func.datediff(subscriptions.c['end_time'], aggregation_date) > 0,
         )
     ).group_by(
         subscriptions.c['user_id']
+    ).subquery('relevant_users')
+
+    # We will be filtering out users that renewed before
+    relevant_users = mysql_predplatne_session.query(
+        relevant_users.c['user_id']
+    ).outerjoin(
+        subscriptions,
+        and_(
+            subscriptions.c['user_id'] == relevant_users.c['user_id'],
+            subscriptions.c['start_time'] > relevant_users.c['start_time'],
+            subscriptions.c['start_time'] <= relevant_users.c['end_time'],
+            subscriptions.c['start_time'] <= aggregation_date
+        )
+    ).filter(
+        subscriptions.c['user_id'] == None
     )
 
     relevant_users = relevant_users.all()
