@@ -12,20 +12,15 @@ from typing import Dict
 from sqlalchemy import func
 import logging.config
 
-# environment variables
-from dotenv import load_dotenv
-load_dotenv('../.env')
-
-
-from conversion_prediction.utils.config import LABELS, ConversionFeatureColumns, CURRENT_MODEL_VERSION, CURRENT_PIPELINE_VERSION
-from conversion_prediction.utils.mysql import get_payment_history_features, get_global_context
-from conversion_prediction.utils.config import LOGGING
-
 sys.path.append("../")
 
 # environment variables
 from dotenv import load_dotenv
-load_dotenv('churn_prediction/.env')
+load_dotenv('.env')
+
+from conversion_prediction.utils.config import LABELS, ConversionFeatureColumns, CURRENT_MODEL_VERSION, CURRENT_PIPELINE_VERSION
+from conversion_prediction.utils.mysql import get_payment_history_features, get_global_context
+from conversion_prediction.utils.config import LOGGING
 
 from prediction_commons.utils.enums import NormalizedFeatureHandling, ArtifactRetentionMode, \
     ArtifactRetentionCollection, DataRetrievalMode, OutcomeLabelCategory

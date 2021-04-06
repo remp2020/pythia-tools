@@ -12,6 +12,7 @@ typing==3.5.3.0
 imbalanced-learn==0.8.0
 pybigquery==0.5.0
 tqdm==4.59.0
+grpcio==1.36.1
 
 google-api-python-client==1.12.8
 google-api-core==1.25.1

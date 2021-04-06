@@ -18,6 +18,6 @@ The whole process is split to several steps:
 - [Churn model training and prediction](cmd/churn_prediction)
 - [Exporting generated data as segments for other applications via API](cmd/pythia_segments)
 
-For installation and running instructions, please see README files of the linked tools.
+For installation and running instructions, please see the INSTALLATION file and README files of the linked tools.
 
 To run Pythia tools, you'll need `python3` and `BigQuery`.
