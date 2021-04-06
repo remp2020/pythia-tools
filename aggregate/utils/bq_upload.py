@@ -8,6 +8,7 @@ import pandas as pd
 
 CSV_BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'csv')
 
+
 class BigQueryUploader:
     def __init__(self, project_id, dataset_id, tmp_folder=CSV_BASE_PATH, credentials=None):
         """
@@ -103,6 +104,12 @@ class BigQueryUploader:
 
                 jsonfile.write(json.dumps(row) + "\n")
         return tmpfile_path
+
+    def delete_rows(self, table_id, where_bq_condition):
+        dml_statement = "DELETE FROM " + self.__tid(table_id) + " WHERE " + where_bq_condition
+        print("Deleting rows with statement: " + dml_statement)
+        query_job = self.client.query(dml_statement)
+        query_job.result()
 
     def upload_to_table(self, table_id, data_source, array_columns=None):
         # TODO: this doesn't correctly process repeated fields, therefore doing conversion to JSON first

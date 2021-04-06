@@ -148,7 +148,6 @@ class UserParser:
 
     def upload_to_bq(self, bq_uploader, processed_date):
         print("UserParser - uploading data to BigQuery")
-        # TODO: delete data first?
         self.__save_to_aggregated_user_days(bq_uploader, processed_date)
         self.__save_to_aggregated_user_days_tags(bq_uploader, processed_date)
         self.__save_to_aggregated_user_days_categories(bq_uploader, processed_date)
@@ -169,6 +168,7 @@ class UserParser:
                 row[key] = func(user_data)
             records.append(row)
 
+        bq_uploader.delete_rows('aggregated_user_days', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             records,
             columns=["date", "user_id"] + list(ordered_accessors.keys())
@@ -185,6 +185,7 @@ class UserParser:
                     "tags": key,
                     "pageviews": user_data['article_tags_pageviews'][key]
                 })
+        bq_uploader.delete_rows('aggregated_user_days_tags', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             records,
             columns=["date", "user_id", "tags", "pageviews"]
@@ -201,6 +202,8 @@ class UserParser:
                     "categories": key,
                     "pageviews": user_data['article_categories_pageviews'][key]
                 })
+
+        bq_uploader.delete_rows('aggregated_user_days_categories', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             records,
             columns=["date", "user_id", "categories", "pageviews"]
@@ -217,6 +220,8 @@ class UserParser:
                     "referer_mediums": key,
                     "pageviews": user_data['referer_mediums_pageviews'][key]
                 })
+
+        bq_uploader.delete_rows('aggregated_user_days_referer_mediums', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             records,
             columns=["date", "user_id", "referer_mediums", "pageviews"]
@@ -292,7 +297,6 @@ class BrowserParser:
 
                 self.data[browser_id] = record
 
-
     def __process_timespent(self, f):
         print("BrowserParser - processing timespent data from: " + f)
         with open(f) as csvfile:
@@ -344,6 +348,7 @@ class BrowserParser:
                 })
 
         # 'browser' table
+        bq_uploader.delete_rows('browsers', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             browsers_records,
             columns=["date", "browser_id"] + list(ordered_accessors.keys())
@@ -351,6 +356,7 @@ class BrowserParser:
         bq_uploader.upload_to_table('browsers', data_source=df)
 
         # 'browser_users' table
+        bq_uploader.delete_rows('browser_users', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             browser_users_records,
             columns=["date", "browser_id", "user_id"]
@@ -397,6 +403,9 @@ class BrowserParser:
 
             records.append(row)
 
+        # first delete already existing data for that particular day (so aggregation can be run multiple times if error occurs)
+        bq_uploader.delete_rows('aggregated_browser_days', "date = '" + str(processed_date) + "'")
+        # upload data
         df = pandas.DataFrame(
             records,
             columns=["date", "browser_id"] + list(ordered_accessors.keys()) + ["commerce_checkouts", "commerce_payments", "commerce_purchases", "commerce_refunds"]
@@ -414,6 +423,7 @@ class BrowserParser:
                     "pageviews": browser_data['article_tags_pageviews'][key]
                 })
 
+        bq_uploader.delete_rows('aggregated_browser_days_tags', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             records,
             columns=["date", "browser_id", "tags", "pageviews"]
@@ -431,6 +441,7 @@ class BrowserParser:
                     "pageviews": browser_data['article_categories_pageviews'][key],
                 })
 
+        bq_uploader.delete_rows('aggregated_browser_days_categories', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             records,
             columns=["date", "browser_id", "categories", "pageviews"]
@@ -449,6 +460,7 @@ class BrowserParser:
                         "pageviews": browser_data['referer_mediums_pageviews'][key],
                     }
                 )
+        bq_uploader.delete_rows('aggregated_browser_days_referer_mediums', "date = '" + str(processed_date) + "'")
         df = pandas.DataFrame(
             records,
             columns=["date", "browser_id", "referer_mediums", "pageviews"]
@@ -457,7 +469,6 @@ class BrowserParser:
 
     def upload_to_bq(self, bq_uploader, processed_date):
         print("BrowserParser - uploading data to BigQuery")
-        # TODO: delete data first?
         self.__save_to_browsers_and_browser_users(bq_uploader, processed_date)
         self.__save_to_aggregated_browser_days(bq_uploader, processed_date)
         self.__save_to_aggregated_browser_days_tags(bq_uploader, processed_date)
