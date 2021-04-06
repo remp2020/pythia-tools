@@ -98,6 +98,21 @@ class ConversionFeatureBuilder(FeatureBuilder):
             )
         ).subquery()
 
+        # This assumes we're always aggregating for a given day, if we do multiple day at once
+        # This need to use a rolling window function
+        num_shared_account_logins_past_30_days = self.bq_session.query(
+            func.count(self.events.c['type']).label('shared_account_logins_past_30_days'),
+            self.events.c['browser_id']
+        ).filter(
+            and_(
+                self.events.c['type'] == 'shared_account_login',
+                self.events.c['time'].cast(DATE) <= cast(self.aggregation_time, DATE),
+                self.events.c['time'].cast(DATE) >= cast(self.aggregation_time - timedelta(days=30), DATE)
+            )
+        ).group_by(
+            self.events.c['browser_id']
+        ).subquery()
+
         feature_query_w_outcome = self.bq_session.query(
             feature_query,
             case(
@@ -117,7 +132,8 @@ class ConversionFeatureBuilder(FeatureBuilder):
                     )
                 ],
                 else_=self.negative_label()
-            ).label('outcome')
+            ).label('outcome'),
+            num_shared_account_logins_past_30_days.c['shared_account_logins_past_30_days']
         ).outerjoin(
             relevant_events,
             and_(
@@ -125,8 +141,12 @@ class ConversionFeatureBuilder(FeatureBuilder):
                 feature_query.c['date'] >= func.date_sub(
                     relevant_events.c['date'],
                     text(f'interval {1} day')
-                )
+                ),
+                feature_query.c['date'] < relevant_events.c['date']
             )
+        ).outerjoin(
+            num_shared_account_logins_past_30_days,
+            num_shared_account_logins_past_30_days.c['browser_id'] == feature_query.c['browser_id']
         ).subquery()
 
         return feature_query_w_outcome

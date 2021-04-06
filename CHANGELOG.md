@@ -6,6 +6,14 @@
 
 - Aggregation script rewritten to use BigQuery cloud storage instead of PostgreSQL for data aggregation.
 
+### [Conversion prediction]
+
+- Major rewrite of the script to work with BiqQuery database.
+
+### [Churn prediction]
+
+- Initial version of churn prediction pipeline based on BigQuery.
+
 ## 1.0.1 - 2020-02-01
 
 ### [Aggregate]
@@ -32,4 +40,5 @@ First major release after beta 18 months ago. We'll keep the track of changes fr
 
 [Aggregate]: https://github.com/remp2020/pythia-tools/tree/master/aggregate
 [Conversion prediction]: https://github.com/remp2020/pythia-tools/tree/master/conversion_prediction
+[Churn prediction]: https://github.com/remp2020/pythia-tools/tree/master/churn_prediction
 [Pythia segments]: https://github.com/remp2020/pythia-tools/tree/master/pythia_segments
