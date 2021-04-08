@@ -16,7 +16,7 @@ class ConversionFeatureColumns(FeatureColumns):
         'feature_aggregation_functions'
     ]
 
-    CATEGORICAL_COLUMNS = ['device', 'browser', 'os', 'day_of_week']
+    CATEGORICAL_COLUMNS = ['device', 'os', 'browser', 'day_of_week']
 
     BOOL_COLUMNS = [
         'is_desktop',
@@ -27,6 +27,8 @@ class ConversionFeatureColumns(FeatureColumns):
 
     def __init__(self, aggregation_function_aliases, aggregation_time):
         super().__init__(aggregation_function_aliases, aggregation_time)
+        self.numeric_columns.append('shared_account_logins_past_30_days')
+        self.numeric_columns_all.append('shared_account_logins_past_30_days')
 
 
 LOGGING = {

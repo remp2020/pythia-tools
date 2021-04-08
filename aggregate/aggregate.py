@@ -109,6 +109,7 @@ def run(file_date, aggregate_folder):
     if bq_uploader is None:
         exit(-1)
 
+    # Data are deleted for 'cur_date' (to avoid duplication) within parsers before actual upload is done
     browser_parser = BrowserParser()
     browser_parser.process_files(pageviews_file, pageviews_time_spent_file, commerce_file)
     browser_parser.upload_to_bq(bq_uploader, cur_date)
@@ -118,6 +119,11 @@ def run(file_date, aggregate_folder):
     user_parser.process_files(pageviews_file, pageviews_time_spent_file)
     user_parser.upload_to_bq(bq_uploader, cur_date)
     using_memory("After UserParser")
+
+    # CommerceParser, SharedLoginParser and ChurnEventsParser all upload data to 'events' table
+    # First, delete data in BQ table for 'cur_date',
+    # so if aggregation is run twice, data are not duplicated in the table.
+    bq_uploader.delete_rows('events', "computed_for_date = '" + str(cur_date) + "'")
 
     commerce_parser = CommerceParser()
     commerce_parser.process_file(commerce_file)

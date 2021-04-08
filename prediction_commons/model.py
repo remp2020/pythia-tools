@@ -1,5 +1,3 @@
-import sys
-
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from imblearn.under_sampling import RandomUnderSampler
@@ -26,13 +24,6 @@ from prediction_commons.utils.enums import SplitType, NormalizedFeatureHandling,
 from prediction_commons.utils.data_transformations import row_wise_normalization
 from prediction_commons.utils.db_utils import TableHandler, create_connection
 from prediction_commons.utils.bq_schemas import rolling_daily_model_record_level_profile
-
-sys.path.append("../")
-
-# environment variables
-from dotenv import load_dotenv
-
-load_dotenv('.env')
 
 # logging
 import logging.config
@@ -297,6 +288,7 @@ class PredictionModel(object):
         :param data:
         :return:
         '''
+        data.fillna('Unknown', inplace=True)
         data[~(data.isin(self.category_list_dict[data.name]))] = 'Unknown'
 
         return data
@@ -638,7 +630,6 @@ class PredictionModel(object):
 
         self.undersample_majority_class()
         self.unpack_feature_frame()
-
         if self.overwrite_files:
             for model_file in ['category_lists', 'scaler', 'model']:
                 self.delete_existing_model_file_for_same_date(model_file)
@@ -761,7 +752,11 @@ class PredictionModel(object):
                 if re.search(f'{model_related_file}_', filename)
             }
 
-            last_file_date = [date for date, diff in last_file_date.items() if diff == min(last_file_date.values())][0]
+            last_file_date = [
+                date for date, diff in last_file_date.items()
+                if diff == min(last_file_date.values())
+                and date <= self.max_date
+            ][0]
             last_model_related_files[model_related_file] = last_file_date.date()
         if len(set(last_model_related_files.values())) > 1:
             raise ValueError(f'''Unaligned model file dates

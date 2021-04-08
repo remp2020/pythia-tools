@@ -22,6 +22,9 @@ def sanitize_column_name(column_name: str) -> str:
         return ''
     new_column_name = column_name.replace('-', '_')
     new_column_name = new_column_name.replace('-', '_')
+    new_column_name = new_column_name.replace('.', '')
+    new_column_name = new_column_name.replace(' ', '_')
+
     return new_column_name
 
 

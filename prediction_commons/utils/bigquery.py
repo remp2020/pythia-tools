@@ -51,7 +51,7 @@ class DataDownloader:
             minority_labels = [f"'{outcome_label}'" for outcome_label, outcome_label_category in self.LABELS.items() if
                                outcome_label_category == self.historically_oversampled_outcome_type.value]
             minority_labels = ','.join(minority_labels)
-            minority_label_filter = f'OR (outcome IN ({minority_labels}))'
+            minority_label_filter = f' OR (outcome IN ({minority_labels}))'
 
         return minority_label_filter
 
@@ -205,8 +205,7 @@ class ColumnJsonDumper:
             'time_based_columns': self.features_expected.time_based_columns,
             'categorical_columns': [
                 column.name for column in full_query.columns
-                for category in self.features_expected.CATEGORICAL_COLUMNS if f'{category}_' in column.name
-                or column.name == 'day_of_week'
+                for category in self.features_expected.CATEGORICAL_COLUMNS if column.name == category
             ],
             'bool_columns': self.features_expected.BOOL_COLUMNS,
             'numeric_columns_with_window_variants': self.features_expected.numeric_columns_window_variants

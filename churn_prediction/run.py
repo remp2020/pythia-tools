@@ -19,7 +19,7 @@ sys.path.append("../")
 
 # environment variables
 from dotenv import load_dotenv
-load_dotenv('churn_prediction/.env')
+load_dotenv('.env')
 
 from churn_prediction.utils.bigquery import ChurnDataDownloader
 from prediction_commons.utils.config import PROFILE_COLUMNS, LOGGING

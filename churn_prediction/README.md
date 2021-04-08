@@ -2,49 +2,6 @@
 
 Script generating churn prediction models based on data aggregated by `cmd/aggregate` and exported to BigQuery, data stored in Beam's MySQL database and data provided by CRM MySQL database.
 
-## Requirements
-
-#### System prerequisities (Ubuntu)
-
-```bash
-apt update
-apt install libmysqlclient-dev python3-dev libblas-dev liblapack-dev python3-venv
-
-# numpy is causing some issues when building the package
-ln -s /usr/include/locale.h /usr/include/xlocale.h
-
-```
-
-#### System prerequisities (Fedora)
-
-```bash
-dnf update
-dnf install lapack-devel blas-devel
-
-# numpy is causing some issues when building the package
-ln -s /usr/include/locale.h /usr/include/xlocale.h
-```
-
-#### System prerequisities (Manjaro)
-
-```bash
-pacman -Syu
-pacman -Sy gcc-fortran lapack blas
-
-# numpy is causing some issues when building the package
-ln -s /usr/include/locale.h /usr/include/xlocale.h
-```
-
-## Instalation
-
-```bash
-python3 -m venv .virtualenv
-source .virtualenv/bin/activate
-pip3 install -r requirements.txt
-```
-
-Create `.env` file based on `.env.example` file and fill the configuration options based on the example values in the `.env.example` file.
-
 ## Usage
 
 Churn prediction works on train/predict flow. There are multiple steps to set up in your pipeline to get the churn prediction.
