@@ -529,12 +529,9 @@ class ChurnFeatureBuilder(FeatureBuilder):
                 relevant_events_deduplicated.c['date'],
                 feature_query.c['outcome_date'].cast(DATE)
             ).label('outcome_date')
-        ).join(
+        ).outerjoin(
             relevant_events_deduplicated,
-            and_(
-                feature_query.c['user_id'] == relevant_events_deduplicated.c['user_id'],
-                feature_query.c['outcome_date'].cast(DATE) == relevant_events_deduplicated.c['date']
-            )
+            feature_query.c['user_id'] == relevant_events_deduplicated.c['user_id']
         ).subquery('feature_query_w_outcome')
 
         return feature_query_w_outcome
