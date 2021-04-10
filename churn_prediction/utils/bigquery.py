@@ -136,23 +136,17 @@ class ChurnFeatureBuilder(FeatureBuilder):
         ).subquery()
 
         feature_query_w_outcome = self.bq_session.query(
-            feature_query,
+            *[column.label(column.name) for column in feature_query.columns if column.name != 'outcome_date'],
             relevant_events_deduplicated.c['outcome'].label('outcome'),
-            relevant_events_deduplicated.c['date'].label('outcome_date')
+            func.coalesce(
+                relevant_events_deduplicated.c['date'],
+                feature_query.c['outcome_date'].cast(DATE)
+            ).label('outcome_date')
         ).outerjoin(
             relevant_events_deduplicated,
             and_(
                 feature_query.c['user_id'] == relevant_events_deduplicated.c['user_id'],
-                func.date_diff(
-                    relevant_events_deduplicated.c['date'],
-                    feature_query.c['date'],
-                    text('day')
-                ) <= EVENT_LOOKAHEAD,
-                func.date_diff(
-                    relevant_events_deduplicated.c['date'],
-                    feature_query.c['date'],
-                    text('day')
-                ) > 0,
+                feature_query.c['outcome_date'].cast(DATE) == relevant_events_deduplicated.c['date']
             )
         ).subquery('feature_query_w_outcome')
 
@@ -176,6 +170,7 @@ class ChurnFeatureBuilder(FeatureBuilder):
             filtered_data_with_profile_fields.c['timespent'].label('timespent'),
             filtered_data_with_profile_fields.c['sessions_without_ref'].label('sessions_without_ref'),
             filtered_data_with_profile_fields.c['sessions'].label('sessions'),
+            filtered_data_with_profile_fields.c['outcome_date'].label('outcome_date'),
             # Add all columns created from json_fields
             *[filtered_data_with_profile_fields.c[profile_column].label(profile_column) for profile_column in
               profile_column_names],
@@ -239,7 +234,10 @@ class ChurnFeatureBuilder(FeatureBuilder):
             table_name=f'{database}.{schema}.user_ids_filter', engine=self.bq_engine,
         )
 
-        filtered_data = self.bq_session.query(current_data).join(
+        filtered_data = self.bq_session.query(
+            *[column.label(column.name) for column in current_data.columns],
+            user_id_table.c['outcome_date'].label('outcome_date')
+        ).join(
             user_id_table,
             current_data.c['user_id'] == user_id_table.c['user_id'].cast(String)
         ).subquery('filtered_data')
