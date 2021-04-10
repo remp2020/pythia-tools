@@ -131,7 +131,7 @@ def get_global_context(start_time, end_time):
 
 def get_users_with_expirations(
         aggregation_date: datetime.date = datetime.utcnow().date()
-) -> List[str]:
+) -> pd.DataFrame:
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_CRM_CONNECTION_STRING',
         'MYSQL_CRM_DB',
@@ -143,7 +143,8 @@ def get_users_with_expirations(
     subscriptions = predplatne_mysql_mappings['subscriptions']
 
     relevant_users = mysql_predplatne_session.query(
-        subscriptions.c['user_id']
+        subscriptions.c['user_id'],
+        func.max(subscriptions.c['end_time']).cast(DATE).label('outcome_date')
     ).join(
         payments,
         payments.c['subscription_id'] == subscriptions.c['id']
@@ -157,8 +158,11 @@ def get_users_with_expirations(
         subscriptions.c['user_id']
     )
 
-    relevant_users = relevant_users.all()
-    relevant_users = [user_id[0] for user_id in relevant_users]
+    relevant_users = pd.read_sql(
+        relevant_users.statement,
+        relevant_users.session.bind
+    )
+
     mysql_predplatne_session.close()
 
     return relevant_users
