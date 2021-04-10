@@ -97,7 +97,7 @@ def get_global_context(start_time, end_time):
 
 def get_users_with_expirations(
         aggregation_date: datetime.date = datetime.utcnow().date()
-) -> List[str]:
+) -> pd.DataFrame:
     predplatne_mysql_mappings = get_sqlalchemy_tables_w_session(
         'MYSQL_CRM_CONNECTION_STRING',
         'MYSQL_CRM_DB',
@@ -107,10 +107,11 @@ def get_users_with_expirations(
     mysql_predplatne_session = predplatne_mysql_mappings['session']
     payments = predplatne_mysql_mappings['payments']
     subscriptions = predplatne_mysql_mappings['subscriptions']
-    relevant_users = mysql_predplatne_session.query(
+    relevant_subscriptions = mysql_predplatne_session.query(
         subscriptions.c['user_id'],
         subscriptions.c['end_time'],
-        subscriptions.c['start_time']
+        subscriptions.c['start_time'],
+        subscriptions.c['user_id']
     ).join(
         payments,
         payments.c['subscription_id'] == subscriptions.c['id']
@@ -120,27 +121,31 @@ def get_users_with_expirations(
             func.datediff(subscriptions.c['end_time'], aggregation_date) <= EVENT_LOOKAHEAD,
             func.datediff(subscriptions.c['end_time'], aggregation_date) > 0,
         )
-    ).group_by(
-        subscriptions.c['user_id']
     ).subquery('relevant_users')
 
     # We will be filtering out users that renewed before
     relevant_users = mysql_predplatne_session.query(
-        relevant_users.c['user_id']
+        relevant_subscriptions.c['user_id'],
+        func.max(relevant_subscriptions.c['end_time']).cast(DATE).label('outcome_date')
     ).outerjoin(
         subscriptions,
         and_(
-            subscriptions.c['user_id'] == relevant_users.c['user_id'],
-            subscriptions.c['start_time'] > relevant_users.c['start_time'],
-            subscriptions.c['start_time'] <= relevant_users.c['end_time'],
+            subscriptions.c['user_id'] == relevant_subscriptions.c['user_id'],
+            subscriptions.c['start_time'] > relevant_subscriptions.c['start_time'],
+            subscriptions.c['start_time'] <= relevant_subscriptions.c['end_time'],
             subscriptions.c['start_time'] <= aggregation_date
         )
     ).filter(
         subscriptions.c['user_id'] == None
+    ).group_by(
+        relevant_subscriptions.c['user_id']
     )
 
-    relevant_users = relevant_users.all()
-    relevant_users = [user_id[0] for user_id in relevant_users]
+    relevant_users = pd.read_sql(
+        relevant_users.statement,
+        relevant_users.session.bind
+    )
+
     mysql_predplatne_session.close()
 
     return relevant_users

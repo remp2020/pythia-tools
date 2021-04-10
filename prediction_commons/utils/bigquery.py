@@ -643,7 +643,7 @@ class FeatureBuilder:
         )
 
         queries_with_basic_window_columns = self.bq_session.query(
-            joined_queries,
+            *[column.label(column.name) for column in joined_queries.columns],
             *rolling_agg_columns_base,
             *rolling_agg_columns_devices,
             func.date_diff(
@@ -799,10 +799,6 @@ class FeatureBuilder:
             self,
             joined_partial_queries
     ):
-        finalizing_filter = [
-        joined_partial_queries.c['pageviews'] > 0
-        ]
-
         derived_metrics_config = {}
 
         feature_columns = self.feature_columns(
@@ -826,7 +822,7 @@ class FeatureBuilder:
                 for key in derived_metrics_config.keys()
                 for suffix in ['_first_window_half', '_last_window_half']
             ]
-        ).filter(and_(*finalizing_filter)).subquery('filtered_w_derived_metrics')
+        )
 
         return filtered_w_derived_metrics
 
