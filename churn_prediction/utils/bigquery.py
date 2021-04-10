@@ -152,6 +152,14 @@ class ChurnFeatureBuilder(FeatureBuilder):
 
         return feature_query_w_outcome
 
+    def filter_joined_queries_adding_derived_metrics(
+            self,
+            joined_partial_queries
+    ):
+        filtered_w_derived_metrics = super().filter_joined_queries_adding_derived_metrics(joined_partial_queries)
+
+        return filtered_w_derived_metrics.subquery('filtered_w_derived_metrics')
+
     def join_all_partial_queries(
             self,
             filtered_data_with_profile_fields,

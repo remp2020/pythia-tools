@@ -803,7 +803,7 @@ class FeatureBuilder:
                 for key in derived_metrics_config.keys()
                 for suffix in ['_first_window_half', '_last_window_half']
             ]
-        ).filter(and_(*finalizing_filter)).subquery('filtered_w_derived_metrics')
+        )
 
         return filtered_w_derived_metrics
 

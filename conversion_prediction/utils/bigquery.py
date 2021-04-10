@@ -196,6 +196,22 @@ class ConversionFeatureBuilder(FeatureBuilder):
 
         return joined_queries
 
+    def filter_joined_queries_adding_derived_metrics(
+            self,
+            joined_partial_queries
+    ):
+        filtered_w_derived_metrics = super().filter_joined_queries_adding_derived_metrics(joined_partial_queries)
+
+        finalizing_filter = [
+            joined_partial_queries.c['pageviews'] > 0
+        ]
+
+        filtered_w_derived_metrics = filtered_w_derived_metrics.filter(
+            and_(*finalizing_filter)
+        ).subquery('filtered_w_derived_metrics')
+
+        return filtered_w_derived_metrics
+
     def positive_labels(self):
         return [label for label, label_type in self.labels.items() if label_type == 'positive']
 
