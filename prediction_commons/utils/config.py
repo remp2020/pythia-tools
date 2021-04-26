@@ -93,6 +93,7 @@ class FeatureColumns(object):
         # of the columns, categorical_columns hold the names of the columns we unpack and featues are the unpacked
         # features
         self.categorical_columns = self.CATEGORICAL_COLUMNS.copy()
+        self.bool_columns = self.BOOL_COLUMNS.copy()
         self.categorical_features = []
 
         # Add one version for each aggregation whenever available

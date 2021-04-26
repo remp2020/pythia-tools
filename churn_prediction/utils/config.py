@@ -42,16 +42,31 @@ class ChurnFeatureColumns(FeatureColumns):
         self.categorical_columns_subscriptions = [
                 f'{column}_{suffix}' for column in
                 [
-                    'is_recurrent', 'is_recurrent_charge',
                     'web_access_level', 'sub_print_access', 'sub_print_friday_access'
                 ]
                 for suffix in suffixes
+            ]
+
+        self.categorical_columns_subscriptions.extend(
+            ['is_recurrent_charge_diff', 'is_recurrent_diff']
+        )
+
+        self.bool_columns_subscriptions = [
+                f'{column}_{suffix}' for column in
+                [
+                    'is_recurrent', 'is_recurrent_charge'
+                ]
+                for suffix in ['last', 'previous']
             ]
 
         self.categorical_columns_subscriptions.extend(['payment_status_last', 'payment_status_previous'])
 
         self.categorical_columns.extend(
             self.categorical_columns_subscriptions
+        )
+
+        self.bool_columns.extend(
+            self.bool_columns_subscriptions
         )
 
     def get_device_information_features(

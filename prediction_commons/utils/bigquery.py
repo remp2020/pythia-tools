@@ -207,7 +207,7 @@ class ColumnJsonDumper:
                 column.name for column in full_query.columns
                 for category in self.features_expected.CATEGORICAL_COLUMNS if column.name == category
             ],
-            'bool_columns': self.features_expected.BOOL_COLUMNS,
+            'bool_columns': self.features_expected.bool_columns,
             'numeric_columns_with_window_variants': self.features_expected.numeric_columns_window_variants
         }
         

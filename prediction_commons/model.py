@@ -242,7 +242,7 @@ class PredictionModel(object):
 
     def unpack_json_columns(self):
         for column in self.model_features.get_expected_table_column_names('rolling_profiles'):
-            expansion_frame = self.user_profiles[column].apply(json.loads)
+            expansion_frame = self.user_profiles[column].fillna('{}').apply(json.loads)
             # We need special handling for jsons with len of 1
             if expansion_frame.apply(len).max() == 1:
                 single_key = next(iter(expansion_frame.iloc[0].keys()))
@@ -267,8 +267,9 @@ class PredictionModel(object):
             - user_profiles
         Transform True / False columns into 0/1 columns
         '''
-        for column in [column for column in self.feature_columns.BOOL_COLUMNS]:
+        for column in [column for column in self.feature_columns.bool_columns]:
             self.user_profiles[column] = self.user_profiles[column].apply(
+                # TODO: Unify bool values representations between subscription data and behavioural data
                 lambda value: True if value == 't' else False).astype(int)
 
     def generate_category_list_dict(self):
@@ -399,7 +400,7 @@ class PredictionModel(object):
         self.X_train = pd.concat(
             [
                 X_train_numeric.sort_index(),
-                self.X_train[self.feature_columns.categorical_features + self.feature_columns.BOOL_COLUMNS].sort_index()
+                self.X_train[self.feature_columns.categorical_features + self.feature_columns.bool_columns].sort_index()
             ],
             axis=1
         )
@@ -672,7 +673,7 @@ class PredictionModel(object):
                 column for column in self.variable_importances.index
                 for category in self.feature_columns.categorical_columns if f'{category}_' in column
             ],
-            'bool_columns': self.feature_columns.BOOL_COLUMNS,
+            'bool_columns': self.feature_columns.bool_columns,
             'numeric_columns_with_window_variants': self.feature_columns.numeric_columns_window_variants,
             'device_based_columns': self.feature_columns.device_based_features
         }.items():
@@ -857,7 +858,7 @@ class PredictionModel(object):
         self.prediction_data = pd.concat(
             [
                 feature_frame_numeric.sort_index(),
-                data[self.feature_columns.BOOL_COLUMNS + self.feature_columns.categorical_columns].sort_index()
+                data[self.feature_columns.bool_columns + self.feature_columns.categorical_columns].sort_index()
             ],
             axis=1
         )
