@@ -13,6 +13,7 @@ from utils.pageviews import UserParser, BrowserParser
 from utils.conversion_and_commerce_events import CommerceParser, SharedLoginParser
 from utils.subscriptions_churn_events import ChurnEventsParser
 from utils.bq_upload import BigQueryUploader
+import sentry_sdk
 
 BASE_PATH = os.path.dirname(os.path.realpath(__file__))
 # tables EXPIRATION currently turned OFF
@@ -82,6 +83,10 @@ def init_big_query_uploader(project_id, dataset_id):
 
 def run(file_date, aggregate_folder):
     load_dotenv()
+
+    sentry_string = os.getenv("SENTRY_STRING")
+    if sentry_string:
+        sentry_sdk.init(sentry_string)
 
     commerce_file = os.path.join(aggregate_folder, "commerce", "commerce_" + file_date + ".csv")
     pageviews_file = os.path.join(aggregate_folder, "pageviews", "pageviews_" + file_date + ".csv")

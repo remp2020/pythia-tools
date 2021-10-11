@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import pandas as pd
+import sentry_sdk
 
 from datetime import datetime, timedelta
 from dateutil.parser import parse
@@ -261,6 +262,10 @@ def mkdatetime(datestr: str) -> datetime:
 
 
 if __name__ == "__main__":
+    sentry_string = os.getenv("SENTRY_STRING")
+    if sentry_string:
+        sentry_sdk.init(sentry_string)
+        
     logger.info(f'CHURN PREDICTION')
     parser = argparse.ArgumentParser()
     parser.add_argument('--action',
