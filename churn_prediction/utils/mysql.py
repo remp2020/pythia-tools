@@ -249,7 +249,7 @@ def get_subscription_data(
         payments_grouped_filtered.c['additional_amount'].label("additional_amount"),
         payments_grouped_filtered.c['is_recurrent_charge'].label("is_recurrent_charge"),
         payments_grouped_filtered.c['payment_status'].label("payment_status"),
-        func.encode(subscription_id_access_level.c['name'], 'utf-8').label("sub_type_name"),
+        subscription_id_access_level.c['name'].label("sub_type_name"),
         subscription_id_access_level.c['code'].label("sub_type_code"),
         subscription_id_access_level.c['length'].label("sub_type_length"),
         subscription_id_access_level.c['price'].label("sub_type_price"),
