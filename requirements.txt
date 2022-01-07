@@ -1,7 +1,7 @@
 cython==0.29.14 # todo: check if still required
 mysqlclient==2.0.1
 numba==0.48
-numpy==1.18.1
+numpy==1.21.0
 pandas==0.25.3
 pandas-gbq==0.14.1
 psycopg2-binary==2.8.4 # required by sqlalchemy for postgres
