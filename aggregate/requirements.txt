@@ -1,4 +1,4 @@
-arrow==0.12.1
+arrow==0.15.1
 user-agents==2.0.0
 python-dotenv==0.9.1
 unidecode==1.0.23
