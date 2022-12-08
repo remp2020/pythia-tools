@@ -5,7 +5,7 @@ unidecode==1.0.23
 mysql-connector-python==8.0.23
 psutil==5.8.0
 cachetools==4.0.0
-certifi==2019.11.28
+certifi==2022.12.7
 chardet==3.0.4
 google-api-core==1.25.0
 google-auth==1.24.0
