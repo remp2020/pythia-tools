@@ -32,52 +32,53 @@ function add_day {
     else
         day=$(date -I -d "$1 + 1 day")
     fi
-    echo $day
+    echo "$day"
 }
 
 # Load arguments
 while [ $# -gt 0 ]; do
-  case "$1" in
+    case "$1" in
     --min_date=*)
-      min_date="${1#*=}"
-      ;;
+        min_date="${1#*=}"
+        ;;
     --max_date=*)
-      max_date="${1#*=}"
-      ;;
+        max_date="${1#*=}"
+        ;;
     --date=*)
-      date="${1#*=}"
-      ;;
+        date="${1#*=}"
+        ;;
     --dir=*)
-      dir="${1#*=}"
-      ;;
+        dir="${1#*=}"
+        ;;
     --tmp=*)
-      tmp="${1#*=}"
-      ;;
+        tmp="${1#*=}"
+        ;;
     --dryrun)
-      dryrun=1
-      ;;
+        dryrun=1
+        ;;
     --onlyaggregate)
-      onlyaggregate=1
-      ;;
+        onlyaggregate=1
+        ;;
     --env=*)
-      env="${1#*=}"
-      ;;
+        env="${1#*=}"
+        ;;
     --delimiter=*)
-      delimiter="${1#*=}"
-      ;;
+        delimiter="${1#*=}"
+        ;;
     --quotechar=*)
-      quotechar="${1#*=}"
-      ;;
+        quotechar="${1#*=}"
+        ;;
     --)
-      break
-      ;;
+        break
+        ;;
     *)
-      printf "***************************\n"
-      printf "* Error: Invalid argument.*\n"
-      printf "***************************\n"
-      exit 1
-  esac
-  shift
+        printf "***************************\n"
+        printf "* Error: Invalid argument.*\n"
+        printf "***************************\n"
+        exit 1
+        ;;
+    esac
+    shift
 done
 
 # Temporarily turned off
@@ -87,43 +88,51 @@ done
 #fi
 
 # Required arguments check
-if [ -z $date ] && ([ -z $min_date ] || [ -z $max_date ]) ; then
+if [ -z "$date" ] && { [ -z "$min_date" ] || [ -z "$max_date" ]; }; then
     usage
     exit 1
 fi
 
 # Defaults
-if [ -z $delimiter ] ; then
+if [ -z "$delimiter" ]; then
     delimiter=';'
 fi
-if [ -z $quotechar ] ; then
+if [ -z "$quotechar" ]; then
     quotechar='"'
+fi
+es2csv_arguments=()
+if [ -n "$ES2CSV_ARGUMENTS" ]; then
+    readarray -t es2csv_arguments < <(printf '%s\n' "${ES2CSV_ARGUMENTS}" | xargs -n1)
+fi
+if [ -n "$ELASTIC_AUTH" ]; then
+    es2csv_arguments+=("-a")
+    es2csv_arguments+=("$ELASTIC_AUTH")
 fi
 
 # Arguments validation
-if [ ! -z $date ]; then
-    if ! check_valid_date $date; then
+if [ -n "$date" ]; then
+    if ! check_valid_date "$date"; then
         echo "Date $date is in an invalid format (not YYYY-MM-DD)."
     fi
 
     di=$date
-    end_on=$(add_day $date)
+    end_on="$(add_day "$date")"
 fi
 
-if [ ! -z $min_date ]; then
-    if ! check_valid_date $min_date; then
+if [ -n "$min_date" ]; then
+    if ! check_valid_date "$min_date"; then
         echo "Date $min_date is in an invalid format (not YYYY-MM-DD)."
     fi
 
-    if ! check_valid_date $max_date; then
+    if ! check_valid_date "$max_date"; then
         echo "Date $max_date is in an invalid format (not YYYY-MM-DD)."
     fi
 
     di=$min_date
-    end_on=$(add_day $max_date)
+    end_on="$(add_day "$max_date")"
 fi
 
-if [ ! -z $dir ]; then
+if [ -n "$dir" ]; then
     if [ ! -e "$dir" ]; then
         echo "Directory $dir does not exist"
         exit 4
@@ -135,7 +144,7 @@ else
     dir=$(pwd)
 fi
 
-if [ ! -z $tmp ]; then
+if [ -n "$tmp" ]; then
     if [ ! -e "$tmp" ]; then
         echo "Directory $tmp does not exist"
         exit 4
@@ -147,13 +156,13 @@ else
     tmp=$dir
 fi
 
-if [ -z $env ]; then
+if [ -z "$env" ]; then
     env=".env"
 fi
 
-
 echo "Sourcing environment variables from $env"
-export $(grep -v '^#' $env | xargs)
+# shellcheck disable=SC2046
+export $(grep -v '^#' "$env" | xargs) > /dev/null
 
 echo "Searching for aggregated files in $dir"
 
@@ -167,11 +176,11 @@ while [ "$di" != "$end_on" ]; do
     for idx in "${files[@]}"; do
         cur_dir="$dir/$idx"
         cur_tmp_dir="$tmp/$idx"
-        mkdir -p $cur_tmp_dir # create directory if does not exist
+        mkdir -p "$cur_tmp_dir" # create directory if does not exist
         cur_file_gz="${cur_dir}/${idx}_${file_date}.csv.gz"
         cur_file_csv="${cur_tmp_dir}/${idx}_${file_date}.csv"
 
-        if [ ! -f $cur_file_gz ]; then
+        if [ ! -f "$cur_file_gz" ]; then
             if [ -n "$onlyaggregate" ]; then
                 echo "File ${cur_file_gz} not found, --onlyaggregate mode is turned on, skipping the date"
                 skip_date=1
@@ -180,46 +189,40 @@ while [ "$di" != "$end_on" ]; do
 
             echo "File ${cur_file_gz} not found, downloading from Elastic ($ELASTIC_ADDR): ${idx} [ ${di} TO ${di} ]"
             # aggregate CSV file from elastic
-            if [ -z "$ELASTIC_AUTH" ]; then
-                authstring=''
-            else
-                authstring="-a $ELASTIC_AUTH"
-            fi
-
             indexname="${ELASTIC_PREFIX}${idx}"
 
-            es2csv -u ${ELASTIC_ADDR} ${authstring} -i "${indexname}" -q "time: [ ${di} TO ${di} ]" -s 10000 -o ${cur_file_csv} --quotechar='${quotechar}' --delimiter='${delimiter}'
+            es2csv -u "${ELASTIC_ADDR}" "${es2csv_arguments[@]}" -i "${indexname}" -q "time: [ ${di} TO ${di} ]" -s 10000 -o "${cur_file_csv}" --quotechar="${quotechar}" --delimiter="${delimiter}"
             # pack file to .gz if it was downloaded (at least one record was present for the day)
-            if [ -f $cur_file_csv ]; then
+            if [ -f "$cur_file_csv" ]; then
                 echo "Unpacking ${idx}, date: ${di}"
-                gzip -k -f -c $cur_file_csv > $cur_file_gz
+                gzip -k -f -c "$cur_file_csv" >"$cur_file_gz"
             fi
         else
             # unpack .csv.gz file
             echo "Unpacking ${idx}, date: ${di}"
-            gzip -k -f -d -c $cur_file_gz > $cur_file_csv
+            gzip -k -f -d -c "$cur_file_gz" >"$cur_file_csv"
         fi
     done
 
     if [ "$skip_date" -eq "1" ]; then
-        di=$(add_day $di)
+        di="$(add_day "$di")"
         continue
     fi
 
     # Run aggregation
-    if [ -z $dryrun ]; then
+    if [ -z "$dryrun" ]; then
         # -u directly flush output
-        python -u aggregate.py ${file_date} --dir=$tmp
+        python -u aggregate.py "${file_date}" "--dir=$tmp"
     fi
 
     # Delete csv files
     for idx in "${files[@]}"; do
         cur_dir="$tmp/$idx"
         cur_file_csv="${cur_dir}/${idx}_${file_date}.csv"
-        if [ -f $cur_file_csv ]; then
-        rm $cur_file_csv
+        if [ -f "$cur_file_csv" ]; then
+            rm "$cur_file_csv"
         fi
     done
 
-    di=$(add_day $di)
+    di="$(add_day "$di")"
 done

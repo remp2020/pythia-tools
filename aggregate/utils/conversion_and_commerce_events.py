@@ -28,7 +28,7 @@ class CommerceParser:
 
     def __load_data(self, commerce_file):
         with open(commerce_file) as csv_file:
-            r = csv.DictReader(csv_file, delimiter=',')
+            r = csv.DictReader(csv_file, delimiter=';')
             for row in r:
                 self.data.append(Commerce(row))
 
@@ -104,7 +104,7 @@ class SharedLoginParser:
 
     def __load_data(self, f):
         with open(f) as csv_file:
-            r = csv.DictReader(csv_file, delimiter=',')
+            r = csv.DictReader(csv_file, delimiter=';')
             for row in r:
                 self.data.append(PageView(row))
 
