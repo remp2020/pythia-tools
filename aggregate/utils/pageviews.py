@@ -50,9 +50,12 @@ def update_record_from_pageviews_row(record, row):
     add_one(record['referer_mediums_pageviews'], row['derived_referer_medium'])
     add_one(record['article_categories_pageviews'], row['category'])
 
-    for tag in row['tags'].split(','):
-        if tag:
-            add_one(record['article_tags_pageviews'], tag)
+    try:
+        for tag in row['tags'].split(','):
+            if tag:
+                add_one(record['article_tags_pageviews'], tag)
+    except KeyError:
+        add_one(record['article_tags_pageviews'], "")
 
     # Hour aggregations
     hour = arrow.get(row['time']).to('utc').hour
@@ -106,7 +109,7 @@ class UserParser:
         print("UserParser - processing file: " + f)
 
         with open(f) as csvfile:
-            r = csv.DictReader(csvfile, delimiter=',')
+            r = csv.DictReader(csvfile, delimiter=';')
             for row in r:
                 if row['user_id'] == '' or row['subscriber'] != 'True':
                     continue
@@ -133,7 +136,7 @@ class UserParser:
     def __process_timespent(self, f):
         print("UserParser - processing file: " + f)
         with open(f) as csvfile:
-            r = csv.DictReader(csvfile, delimiter=',')
+            r = csv.DictReader(csvfile, delimiter=';')
             for row in r:
                 user_id = row['user_id']
                 if user_id != '' and user_id in self.data:
@@ -238,7 +241,7 @@ class BrowserParser:
     def __process_commerce(self, commerce_file):
         print("BrowserParser - processing commerce data from: " + commerce_file)
         with open(commerce_file) as csv_file:
-            r = csv.DictReader(csv_file, delimiter=',')
+            r = csv.DictReader(csv_file, delimiter=';')
             for row in r:
                 if row['browser_id']:
                     if row['browser_id'] not in self.browser_commerce_steps:
@@ -260,7 +263,7 @@ class BrowserParser:
 
         ua_cache = {}
         with open(f) as csvfile:
-            r = csv.DictReader(csvfile, delimiter=',')
+            r = csv.DictReader(csvfile, delimiter=';')
 
             for row in r:
                 # save UA to cache
@@ -300,7 +303,7 @@ class BrowserParser:
     def __process_timespent(self, f):
         print("BrowserParser - processing timespent data from: " + f)
         with open(f) as csvfile:
-            r = csv.DictReader(csvfile, delimiter=',')
+            r = csv.DictReader(csvfile, delimiter=';')
             for row in r:
                 browser_id = row['browser_id']
                 if browser_id in self.data:
