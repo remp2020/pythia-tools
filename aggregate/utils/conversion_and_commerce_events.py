@@ -30,7 +30,11 @@ class CommerceParser:
         with open(commerce_file) as csv_file:
             r = csv.DictReader(csv_file, delimiter=csv_delimiter)
             for row in r:
-                self.data.append(Commerce(row))
+                try:
+                    if row['browser_id']:
+                        self.data.append(Commerce(row))
+                except KeyError:
+                    continue
 
     def process_file(self, commerce_file, csv_delimiter):
         # TODO: rely on `commerce_session_id` instead of `browser_id` to identify commerce session

@@ -243,20 +243,23 @@ class BrowserParser:
         with open(commerce_file) as csv_file:
             r = csv.DictReader(csv_file, delimiter=csv_delimiter)
             for row in r:
-                if row['browser_id']:
-                    if row['browser_id'] not in self.browser_commerce_steps:
-                        self.browser_commerce_steps[row['browser_id']] = {
-                            'checkout': 0,
-                            'payment': 0,
-                            'purchase': 0,
-                            'refund': 0
-                        }
+                try:
+                    if row['browser_id']:
+                        if row['browser_id'] not in self.browser_commerce_steps:
+                            self.browser_commerce_steps[row['browser_id']] = {
+                                'checkout': 0,
+                                'payment': 0,
+                                'purchase': 0,
+                                'refund': 0
+                            }
 
-                    if row['step'] not in ['checkout', 'payment', 'purchase', 'refund']:
-                        raise Exception(
-                            "unknown commerce step: " + row['step'] + ' for browser_id: ' + row['browser_id'])
-                    else:
-                        self.browser_commerce_steps[row['browser_id']][row['step']] += 1
+                        if row['step'] not in ['checkout', 'payment', 'purchase', 'refund']:
+                            raise Exception(
+                                "unknown commerce step: " + row['step'] + ' for browser_id: ' + row['browser_id'])
+                        else:
+                            self.browser_commerce_steps[row['browser_id']][row['step']] += 1
+                except KeyError:
+                    continue
 
     def __process_pageviews(self, f, csv_delimiter):
         print("BrowserParser - processing pageviews from: " + f)
