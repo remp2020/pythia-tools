@@ -105,11 +105,11 @@ class UserParser:
     def __init__(self):
         self.data = {}
 
-    def __process_pageviews(self, f):
+    def __process_pageviews(self, f, csv_delimiter):
         print("UserParser - processing file: " + f)
 
         with open(f) as csvfile:
-            r = csv.DictReader(csvfile, delimiter=';')
+            r = csv.DictReader(csvfile, delimiter=csv_delimiter)
             for row in r:
                 if row['user_id'] == '' or row['subscriber'] != 'True':
                     continue
@@ -133,19 +133,19 @@ class UserParser:
                 # Save record
                 self.data[user_id] = record
 
-    def __process_timespent(self, f):
+    def __process_timespent(self, f, csv_delimiter):
         print("UserParser - processing file: " + f)
         with open(f) as csvfile:
-            r = csv.DictReader(csvfile, delimiter=';')
+            r = csv.DictReader(csvfile, delimiter=csv_delimiter)
             for row in r:
                 user_id = row['user_id']
                 if user_id != '' and user_id in self.data:
                     self.data[user_id]['timespent'] += int(row['timespent'])
 
-    def process_files(self, pageviews_file, pageviews_timespent_file):
-        self.__process_pageviews(pageviews_file)
+    def process_files(self, pageviews_file, pageviews_timespent_file, csv_delimiter):
+        self.__process_pageviews(pageviews_file, csv_delimiter)
         if os.path.isfile(pageviews_timespent_file):
-            self.__process_timespent(pageviews_timespent_file)
+            self.__process_timespent(pageviews_timespent_file, csv_delimiter)
         else:
             print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 
@@ -238,10 +238,10 @@ class BrowserParser:
         self.browser_commerce_steps = {}
         self.data = {}
 
-    def __process_commerce(self, commerce_file):
+    def __process_commerce(self, commerce_file, csv_delimiter):
         print("BrowserParser - processing commerce data from: " + commerce_file)
         with open(commerce_file) as csv_file:
-            r = csv.DictReader(csv_file, delimiter=';')
+            r = csv.DictReader(csv_file, delimiter=csv_delimiter)
             for row in r:
                 if row['browser_id']:
                     if row['browser_id'] not in self.browser_commerce_steps:
@@ -258,12 +258,12 @@ class BrowserParser:
                     else:
                         self.browser_commerce_steps[row['browser_id']][row['step']] += 1
 
-    def __process_pageviews(self, f):
+    def __process_pageviews(self, f, csv_delimiter):
         print("BrowserParser - processing pageviews from: " + f)
 
         ua_cache = {}
         with open(f) as csvfile:
-            r = csv.DictReader(csvfile, delimiter=';')
+            r = csv.DictReader(csvfile, delimiter=csv_delimiter)
 
             for row in r:
                 # save UA to cache
@@ -300,20 +300,20 @@ class BrowserParser:
 
                 self.data[browser_id] = record
 
-    def __process_timespent(self, f):
+    def __process_timespent(self, f, csv_delimiter):
         print("BrowserParser - processing timespent data from: " + f)
         with open(f) as csvfile:
-            r = csv.DictReader(csvfile, delimiter=';')
+            r = csv.DictReader(csvfile, delimiter=csv_delimiter)
             for row in r:
                 browser_id = row['browser_id']
                 if browser_id in self.data:
                     self.data[browser_id]['timespent'] += int(row['timespent'])
 
-    def process_files(self, pageviews_file, pageviews_timespent_file, commerce_file):
-        self.__process_pageviews(pageviews_file)
-        self.__process_commerce(commerce_file)
+    def process_files(self, pageviews_file, pageviews_timespent_file, commerce_file, csv_delimiter):
+        self.__process_pageviews(pageviews_file, csv_delimiter)
+        self.__process_commerce(commerce_file, csv_delimiter)
         if os.path.isfile(pageviews_timespent_file):
-            self.__process_timespent(pageviews_timespent_file)
+            self.__process_timespent(pageviews_timespent_file, csv_delimiter)
         else:
             print("Missing pageviews timespent data, skipping (file: " + str(pageviews_timespent_file) + ")")
 

@@ -26,16 +26,16 @@ class CommerceParser:
         self.events_to_save = []
         pass
 
-    def __load_data(self, commerce_file):
+    def __load_data(self, commerce_file, csv_delimiter):
         with open(commerce_file) as csv_file:
-            r = csv.DictReader(csv_file, delimiter=';')
+            r = csv.DictReader(csv_file, delimiter=csv_delimiter)
             for row in r:
                 self.data.append(Commerce(row))
 
-    def process_file(self, commerce_file):
+    def process_file(self, commerce_file, csv_delimiter):
         # TODO: rely on `commerce_session_id` instead of `browser_id` to identify commerce session
         print("Processing file: " + commerce_file)
-        self.__load_data(commerce_file)
+        self.__load_data(commerce_file, csv_delimiter)
         self.data.sort(key=lambda x: x.time)
 
         for c in self.data:
@@ -102,9 +102,9 @@ class SharedLoginParser:
         self.logged_in_browsers_time = {}
         self.browser_user_id = {}
 
-    def __load_data(self, f):
+    def __load_data(self, f, csv_delimiter):
         with open(f) as csv_file:
-            r = csv.DictReader(csv_file, delimiter=';')
+            r = csv.DictReader(csv_file, delimiter=csv_delimiter)
             for row in r:
                 self.data.append(PageView(row))
 
@@ -142,8 +142,8 @@ class SharedLoginParser:
         )
         bq_uploader.upload_to_table('events', data_source=df)
 
-    def process_file(self, pageviews_file):
+    def process_file(self, pageviews_file, csv_delimiter):
         print("Processing file: " + pageviews_file)
-        self.__load_data(pageviews_file)
+        self.__load_data(pageviews_file, csv_delimiter)
         self.data.sort(key=lambda x: x.time)
         self.__find_login_events()
