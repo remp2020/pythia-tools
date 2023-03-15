@@ -85,7 +85,7 @@ class PageView:
         self.browser_id = row['browser_id']
         self.user_id = row['user_id']
         self.time = row['time']
-        self.subscriber = row['subscriber'] == 'True'
+        self.subscriber = row['subscriber'].lower() == 'true'
 
     def __str__(self):
         return "[" + self.time + "|" + self.browser_id + "|" + self.user_id + "|" + str(self.subscriber) + "]"

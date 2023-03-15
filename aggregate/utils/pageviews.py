@@ -111,7 +111,7 @@ class UserParser:
         with open(f) as csvfile:
             r = csv.DictReader(csvfile, delimiter=csv_delimiter)
             for row in r:
-                if row['user_id'] == '' or row['subscriber'] != 'True':
+                if row['user_id'] == '' or row['subscriber'].lower() != 'true':
                     continue
 
                 if row['derived_referer_medium'] == '':
@@ -280,7 +280,7 @@ class BrowserParser:
                 self.browsers_with_users[browser_id]['ua'] = ua_cache[user_agent]
 
                 # continue with pageviews only for subscribers
-                if row['subscriber'] == 'True':
+                if row['subscriber'].lower() == 'true':
                     continue
 
                 if row['derived_referer_medium'] == '':
