@@ -17,12 +17,14 @@ sentry-sdk==1.4.3
 
 setuptools==54.2.0
 
-google-api-python-client==1.12.8
 google-api-core==1.25.1
+google-api-python-client==1.12.8
+google-auth==1.28.0
 google-auth-httplib2==0.0.4
 google-auth-oauthlib==0.4.2
 google-cloud-bigquery==2.6.1
-google-resumable-media>=1.2.0
+google-cloud-bigquery-storage==2.2.1
+google-cloud-core==1.6.0
+google-crc32c==1.1.2
+google-resumable-media==1.2.0
 googleapis-common-protos==1.52.0
-google-cloud-bigquery-storage===2.2.1
-pyarrow==2.0.0
