@@ -104,6 +104,10 @@ es2csv_arguments=()
 if [ -n "$ES2CSV_ARGUMENTS" ]; then
     readarray -t es2csv_arguments < <(printf '%s\n' "${ES2CSV_ARGUMENTS}" | xargs -n1)
 fi
+aggregate_options=()
+if [ -n "$AGGREGATE_OPTIONS" ]; then
+    readarray -t aggregate_options < <(printf '%s\n' "${AGGREGATE_OPTIONS}" | xargs -n1)
+fi
 if [ -n "$ELASTIC_AUTH" ]; then
     es2csv_arguments+=("-a")
     es2csv_arguments+=("$ELASTIC_AUTH")
@@ -212,7 +216,7 @@ while [ "$di" != "$end_on" ]; do
     # Run aggregation
     if [ -z "$dryrun" ]; then
         # -u directly flush output
-        python -u aggregate.py "${file_date}" "--dir=$tmp" "--delimiter=$delimiter"
+        python -u aggregate.py "${file_date}" "--dir=$tmp" "--delimiter=$delimiter" "${aggregate_options[@]}"
     fi
 
     # Delete csv files

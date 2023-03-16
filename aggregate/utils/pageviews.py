@@ -238,7 +238,7 @@ class BrowserParser:
         self.browser_commerce_steps = {}
         self.data = {}
 
-    def __process_commerce(self, commerce_file, csv_delimiter):
+    def __process_commerce(self, commerce_file, csv_delimiter, ignore_empty_browser_id):
         print("BrowserParser - processing commerce data from: " + commerce_file)
         with open(commerce_file) as csv_file:
             r = csv.DictReader(csv_file, delimiter=csv_delimiter)
@@ -258,8 +258,10 @@ class BrowserParser:
                                 "unknown commerce step: " + row['step'] + ' for browser_id: ' + row['browser_id'])
                         else:
                             self.browser_commerce_steps[row['browser_id']][row['step']] += 1
-                except KeyError:
-                    continue
+                except KeyError as e:
+                    if ignore_empty_browser_id:
+                        continue
+                    raise
 
     def __process_pageviews(self, f, csv_delimiter):
         print("BrowserParser - processing pageviews from: " + f)
@@ -312,9 +314,9 @@ class BrowserParser:
                 if browser_id in self.data:
                     self.data[browser_id]['timespent'] += int(row['timespent'])
 
-    def process_files(self, pageviews_file, pageviews_timespent_file, commerce_file, csv_delimiter):
+    def process_files(self, pageviews_file, pageviews_timespent_file, commerce_file, csv_delimiter, ignore_empty_browser_id):
         self.__process_pageviews(pageviews_file, csv_delimiter)
-        self.__process_commerce(commerce_file, csv_delimiter)
+        self.__process_commerce(commerce_file, csv_delimiter, ignore_empty_browser_id)
         if os.path.isfile(pageviews_timespent_file):
             self.__process_timespent(pageviews_timespent_file, csv_delimiter)
         else:

@@ -26,20 +26,22 @@ class CommerceParser:
         self.events_to_save = []
         pass
 
-    def __load_data(self, commerce_file, csv_delimiter):
+    def __load_data(self, commerce_file, csv_delimiter, ignore_empty_browser_id):
         with open(commerce_file) as csv_file:
             r = csv.DictReader(csv_file, delimiter=csv_delimiter)
             for row in r:
                 try:
                     if row['browser_id']:
                         self.data.append(Commerce(row))
-                except KeyError:
-                    continue
+                except KeyError as e:
+                    if ignore_empty_browser_id:
+                        continue
+                    raise
 
-    def process_file(self, commerce_file, csv_delimiter):
+    def process_file(self, commerce_file, csv_delimiter, ignore_empty_browser_id):
         # TODO: rely on `commerce_session_id` instead of `browser_id` to identify commerce session
         print("Processing file: " + commerce_file)
-        self.__load_data(commerce_file, csv_delimiter)
+        self.__load_data(commerce_file, csv_delimiter, ignore_empty_browser_id)
         self.data.sort(key=lambda x: x.time)
 
         for c in self.data:
