@@ -81,7 +81,7 @@ def init_big_query_uploader(project_id, dataset_id):
     return uploader
 
 
-def run(file_date, aggregate_folder):
+def run(file_date, aggregate_folder, csv_delimiter, ignore_empty_browser_id):
     load_dotenv()
 
     sentry_string = os.getenv("SENTRY_STRING")
@@ -116,12 +116,12 @@ def run(file_date, aggregate_folder):
 
     # Data are deleted for 'cur_date' (to avoid duplication) within parsers before actual upload is done
     browser_parser = BrowserParser()
-    browser_parser.process_files(pageviews_file, pageviews_time_spent_file, commerce_file)
+    browser_parser.process_files(pageviews_file, pageviews_time_spent_file, commerce_file, csv_delimiter, ignore_empty_browser_id)
     browser_parser.upload_to_bq(bq_uploader, cur_date)
     using_memory("After BrowserParser")
 
     user_parser = UserParser()
-    user_parser.process_files(pageviews_file, pageviews_time_spent_file)
+    user_parser.process_files(pageviews_file, pageviews_time_spent_file, csv_delimiter)
     user_parser.upload_to_bq(bq_uploader, cur_date)
     using_memory("After UserParser")
 
@@ -131,12 +131,12 @@ def run(file_date, aggregate_folder):
     bq_uploader.delete_rows('events', "computed_for_date = '" + str(cur_date) + "'")
 
     commerce_parser = CommerceParser()
-    commerce_parser.process_file(commerce_file)
+    commerce_parser.process_file(commerce_file, csv_delimiter, ignore_empty_browser_id)
     commerce_parser.upload_to_bq(bq_uploader, cur_date)
     using_memory("After CommerceParser")
 
     shared_login_parser = SharedLoginParser()
-    shared_login_parser.process_file(pageviews_file)
+    shared_login_parser.process_file(pageviews_file, csv_delimiter)
     shared_login_parser.upload_to_bq(bq_uploader, cur_date)
     using_memory("After SharedLoginParser")
 
@@ -166,11 +166,13 @@ def main():
     parser.add_argument('date', metavar='date', help='Aggregate date, format YYYYMMDD')
     parser.add_argument('--dir', metavar='AGGREGATE_DIRECTORY', dest='dir', default=BASE_PATH, help='where to look for aggregated CSV files')
     parser.add_argument('--debug', action='store_true', default=False, dest='debug', help='Print debug information (e.g. memory usage)')
+    parser.add_argument('--delimiter', metavar='CSV_DELIMITER', dest='delimiter', default=';', help='what is the delimiter of aggregated CSV files')
+    parser.add_argument('--ignore-empty-browser-id', action='store_true', dest='ignore_empty_browser_id', default=False, help='whether to ignore empty browser_id in CSV export')
 
     args = parser.parse_args()
     global debug
     debug = args.debug
-    run(args.date, args.dir)
+    run(args.date, args.dir, args.delimiter, args.ignore_empty_browser_id)
 
 
 if __name__ == '__main__':
